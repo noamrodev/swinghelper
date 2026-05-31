@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Data Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="app.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Inter', 'sans-serif'] },
+      colors: {
+        ink: '#0a0d14', panel: '#11161f', panel2: '#18202e', line: '#222c3c',
+        accent: '#5b8cff', up: '#2ec27e', down: '#f25268', warn: '#f5a623' } } } }
+  </script>
+</head>
+<body class="bg-ink text-slate-200 antialiased" x-data="dataCenter()" x-init="init()" x-cloak>
+
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 shrink-0 bg-panel border-r border-line flex flex-col">
+      <div class="px-5 py-5 border-b border-line">
+        <div class="text-xl font-extrabold tracking-tight brand">◆ Data Center</div>
+      </div>
+      <nav class="flex-1 py-3">
+        <template x-for="item in nav" :key="item.id">
+          <button @click="selectView(item.id)"
+            class="nav-item w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium"
+            :class="view===item.id ? 'nav-item-active' : 'text-slate-400 hover:text-slate-200'">
+            <span x-text="item.icon"></span><span x-text="item.label"></span>
+          </button>
+        </template>
+      </nav>
+      <div class="px-5 py-4 border-t border-line text-xs text-slate-500 leading-relaxed space-y-2">
+        <div class="flex items-center gap-2">
+          <span>Display size</span>
+          <button class="scale-btn" @click="incScale(-10)">A−</button>
+          <span class="text-slate-300 w-11 text-center font-semibold" x-text="scalePct+'%'"></span>
+          <button class="scale-btn" @click="incScale(10)">A+</button>
+        </div>
+        <div>Account:
+          <span class="text-slate-300 font-semibold" x-text="settings.account_size ? ('$'+Number(settings.account_size).toLocaleString()) : 'not set'"></span>
+        </div>
+        <div>Risk/trade: <span class="text-slate-300 font-semibold" x-text="(settings.risk_pct||1)+'%'"></span>
+          <span x-show="settings.account_size" class="text-up font-semibold" x-text="'≈ $'+riskDollar"></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 overflow-y-auto">
+      <header class="sticky top-0 z-10 bg-ink/90 backdrop-blur border-b border-line px-7 py-4 flex items-center justify-between">
+        <h1 class="text-xl font-semibold" x-text="nav.find(n=>n.id===view)?.label"></h1>
+        <div class="text-xs text-slate-500" x-show="suggestions.scanned_at">
+          Last scan: <span x-text="suggestions.scanned_at"></span> · <span x-text="suggestions.screener_name"></span>
+        </div>
+      </header>
+      <div class="p-7">
+
+        <!-- ===== DASHBOARD ===== -->
+        <section x-show="view==='dashboard'" x-transition.opacity.duration.250ms class="space-y-6">
+          <!-- new-day refresh -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="text-xs text-slate-500" x-show="suggestions.scanned_at">Data as of <span x-text="suggestions.scanned_at"></span></div>
+            <button class="btn-sm" @click="buildUniverse()" :disabled="universe.status && universe.status.running"
+              title="Re-scan all US-listed stocks and rebuild the Market Leaders universe">
+              <span x-show="!(universe.status && universe.status.running)">🌐 Rebuild universe</span>
+              <span x-show="universe.status && universe.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="universe.status.stage"></span> <span x-show="universe.status.total" x-text="'('+universe.status.done+'/'+universe.status.total+')'"></span></span>
+            </button>
+            <button class="btn ml-auto" @click="refreshAll()" :disabled="refreshState.running">
+              <span x-show="!refreshState.running">🔄 New day — refresh everything</span>
+              <span x-show="refreshState.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="refreshState.stage"></span> (<span x-text="refreshState.done"></span>/<span x-text="refreshState.total"></span>)</span>
+            </button>
+          </div>
+
+          <!-- universe coverage line -->
+          <div class="text-xs text-slate-500 -mt-2" x-show="universe.kept">
+            🌐 Scanning <b class="text-slate-300" x-text="universe.kept"></b> names — top <span x-text="universe.kept"></span> by liquidity of <b class="text-slate-300" x-text="universe.passed_filter"></b> that pass your Market Leaders filter (mkt cap &gt; $300M · price &gt; $10 · $vol &gt; $10M), from <b class="text-slate-300" x-text="universe.universe_total"></b> US-listed stocks. <span x-show="universe.built_at">Built <span x-text="universe.built_at"></span>.</span>
+          </div>
+
+          <!-- market regime: SPX / QQQ / IWM + blended posture -->
+          <div class="card p-5" x-show="marketRegime.indexes && marketRegime.indexes.length">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
+              <span>📊 Market regime <span class="text-xs font-normal text-slate-500">— is the tape too extended, mid-correction, recovering?</span></span>
+              <span class="text-xs font-bold px-2 py-1 rounded" :style="'color:'+postureColor(marketRegime.posture)+';border:1px solid '+postureColor(marketRegime.posture)+'55'">
+                <span x-text="marketRegime.label"></span> · posture <span x-text="marketRegime.posture"></span>/100
+              </span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <template x-for="ix in marketRegime.indexes" :key="ix.name">
+                <div class="lvl !p-4" :style="'border-left:3px solid '+postureColor(ix.posture)">
+                  <div class="flex items-center justify-between">
+                    <div class="font-extrabold text-lg" x-text="ix.name"></div>
+                    <div class="text-sm font-bold" x-text="stateEmoji(ix.state)+' '+ix.state"></div>
+                  </div>
+                  <!-- distance from the 20-EMA & 50-MA in ADR units = extension / correction-risk gauge -->
+                  <div class="mt-2 flex flex-wrap items-center gap-2" x-show="ix.atr_mult_50!=null">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded" :class="ix.stretched_50?'text-warn':'text-slate-300'"
+                          :style="'background:rgba(255,181,61,'+(ix.stretched_50?0.18:0.06)+')'"
+                          :title="'Price is '+ix.atr_mult_50+'x its average daily range above the 50-MA ('+ix.gain_50+'% gain). High = stretched, correction possible.'">
+                      50-MA <span x-text="ix.atr_mult_50"></span>× <span class="opacity-70" x-text="(ix.gain_50>=0?'+':'')+ix.gain_50+'%'"></span><span x-show="ix.stretched_50"> ⚠</span>
+                    </span>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded text-slate-300" style="background:rgba(120,140,180,.10)"
+                          :title="'Price is '+ix.atr_mult_20+'x its average daily range above the 20-EMA ('+ix.gain_20+'% gain).'">
+                      20-EMA <span x-text="ix.atr_mult_20"></span>× <span class="opacity-70" x-text="(ix.gain_20>=0?'+':'')+ix.gain_20+'%'"></span>
+                    </span>
+                  </div>
+                  <div class="text-xs text-slate-400 mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span>px <b class="text-slate-200" x-text="ix.close"></b></span>
+                    <span :class="ix.off_high>3?'text-warn':''">−<span x-text="ix.off_high"></span>% off high</span>
+                    <span :class="ix.ext10>=0?'text-up':'text-down'"><span x-text="(ix.ext10>=0?'+':'')+ix.ext10"></span>% vs 10-EMA</span>
+                    <span :class="ix.p1m>=0?'text-up':'text-down'">1m <span x-text="(ix.p1m>=0?'+':'')+ix.p1m"></span>%</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-3">Equal-blend of SPX/QQQ/IWM feeds 15% of every suggestion's grade — breakouts are demoted harder when the tape is weak. <span x-show="marketRegime.computed_at">Read <span x-text="marketRegime.computed_at"></span>.</span></div>
+          </div>
+          <!-- actionable catalyst alerts — compact single row -->
+          <div x-show="alerts.length" class="space-y-2">
+            <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">🚨 Actionable now — catalysts</div>
+            <div class="flex gap-2 overflow-x-auto pb-1">
+              <template x-for="a in alerts" :key="a.title+a.headline">
+                <a :href="a.link" target="_blank" :title="a.headline" class="shrink-0 rounded-lg px-3 py-2 border text-xs transition hover:brightness-125" :style="alertStyle(a.dir)">
+                  <span class="font-extrabold" x-text="(a.dir==='buy'?'🚀 BUY ':a.dir==='avoid'?'🛑 AVOID ':'👀 ')+a.title"></span>
+                  <span class="opacity-60 ml-1" x-text="alertDate(a)"></span>
+                </a>
+              </template>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="stat"><div class="stat-label">Open P&L (unrealized)</div><div class="stat-val" :class="openPnl>=0?'text-up':'text-down'" x-text="(openPnl>=0?'+':'-')+'$'+Math.abs(Math.round(openPnl)).toLocaleString()"></div></div>
+            <div class="stat"><div class="stat-label">Realized P&L</div><div class="stat-val" :class="realizedPnl>=0?'text-up':'text-down'" x-text="(realizedPnl>=0?'+':'-')+'$'+Math.abs(Math.round(realizedPnl)).toLocaleString()"></div></div>
+            <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null ? stats.win_rate+'%' : '—'"></div></div>
+            <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null ? stats.avg_r+'R' : '—'"></div></div>
+          </div>
+
+          <!-- Position size calculator -->
+          <div class="card p-5">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
+              <span>Position calculator</span>
+              <span class="text-xs font-normal text-slate-500">risk ≤ <span x-text="(settings.risk_pct||1)"></span>% (<span class="text-up" x-text="'$'+riskDollar"></span>) · position ≤ <span x-text="(settings.max_position_pct||15)"></span>%</span>
+            </div>
+            <div class="flex flex-wrap items-end gap-4">
+              <label class="text-sm">Entry price<input type="number" step="0.01" class="input w-32 block mt-1" x-model.number="calc.entry" placeholder="e.g. 156.10"></label>
+              <label class="text-sm">Stop price<input type="number" step="0.01" class="input w-32 block mt-1" x-model.number="calc.stop" placeholder="e.g. 147.90"></label>
+              <div class="text-xs text-slate-500 pb-2" x-show="calc.entry && calc.stop && calc.stop<calc.entry">
+                stop is <span x-text="(((calc.entry-calc.stop)/calc.entry)*100).toFixed(1)"></span>% below entry
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4" x-show="calcShares!=null">
+              <div class="lvl"><div class="lvl-l">Buy</div><div class="text-2xl font-extrabold text-accent" x-text="calcShares+' sh'"></div></div>
+              <div class="lvl"><div class="lvl-l">Position cost</div><div class="text-xl font-bold" x-text="'$'+calcCost"></div><div class="text-[11px] text-slate-500" x-text="calcPct+'% of acct'"></div></div>
+              <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-xl font-bold text-down" x-text="'$'+calcRisk"></div><div class="text-[11px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
+              <div class="lvl"><div class="lvl-l">Buying power</div><div class="text-xl font-bold" :class="calcPct>100?'text-down':''" x-text="calcPct+'%'"></div></div>
+            </div>
+            <div class="text-xs text-warn mt-3" x-show="calcCapped">⚠ Capped by <b x-text="calcCapReason"></b> — full 1% risk would buy more, but this keeps the position within your limit. Your actual risk is shown above.</div>
+            <div class="text-xs text-down mt-2" x-show="calc.entry && calc.stop && calc.stop>=calc.entry">Stop must be below entry (longs only).</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Open positions</div>
+            <template x-if="openTrades.length===0"><div class="p-5 text-sm text-slate-500">No open positions.</div></template>
+            <template x-for="t in openTrades" :key="t.id">
+              <div class="flex items-center justify-between px-5 py-3 border-t border-line gap-3">
+                <div class="w-40"><span class="font-semibold" x-text="t.ticker"></span>
+                  <span class="badge ml-2" x-text="t.setup_type"></span></div>
+                <div class="flex-1 text-sm text-slate-400">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span> · <span x-text="t.shares||'?'"></span> sh</div>
+                <div class="w-32 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></div>
+                <div class="flex gap-2">
+                  <button class="btn-sm" @click="showChart(t.ticker, t)">📈</button>
+                  <button class="btn-sm" @click="openEdit(t)">✏️ Edit</button>
+                  <button class="btn-sm bg-accent/40" @click="openClose(t)">Close</button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="card">
+            <div class="card-head flex items-center justify-between">
+              <span>Top suggestions today</span>
+              <button class="btn-sm" @click="view='suggestions'">View all →</button>
+            </div>
+            <template x-if="topSuggestions.length===0"><div class="p-5 text-sm text-slate-500">No scan yet — go to Suggestions and run one.</div></template>
+            <template x-for="s in topSuggestions" :key="s.ticker">
+              <div class="flex items-center gap-3 px-5 py-2.5 border-t border-line text-sm">
+                <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
+                <div class="w-20 font-bold flex items-center gap-1">
+                  <span x-show="inZone(s)" title="buyable now">🟢</span><span x-text="s.ticker"></span>
+                  <span x-show="groupMedal(s)" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme" x-text="groupMedal(s)"></span>
+                </div>
+                <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
+                <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)" x-text="trendIcon(s.theme_trend)+' '+s.theme_trend"></span>
+                <span class="badge" x-show="s.news_flag" x-text="s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰'"></span>
+                <div class="flex-1 text-slate-500 truncate hidden lg:block" x-text="s.entry_note"></div>
+                <div class="text-slate-300 text-right whitespace-nowrap" x-text="(s.entry_type==='limit'?'limit ':'stop ')+s.entry"></div>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- ===== SUGGESTIONS ===== -->
+        <section x-show="view==='suggestions'" x-transition.opacity.duration.250ms class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <select x-model="scanScreener" class="input w-52">
+              <template x-for="s in screeners" :key="s.id"><option :value="s.id" x-text="s.name"></option></template>
+            </select>
+            <button class="btn" @click="runScan()" :disabled="scan.running">
+              <span x-show="!scan.running">▶ Run scan</span>
+              <span x-show="scan.running">Scanning… <span x-text="scan.done"></span>/<span x-text="scan.total"></span></span>
+            </button>
+            <div x-show="scan.running" class="flex-1 max-w-xs h-2 bg-panel2 rounded overflow-hidden">
+              <div class="h-full bg-accent transition-all" :style="`width:${scan.total?Math.round(scan.done/scan.total*100):0}%`"></div>
+            </div>
+            <div class="ml-auto flex gap-2 text-sm">
+              <template x-for="f in filters" :key="f">
+                <button @click="filter=f" class="px-3 py-1 rounded"
+                  :class="filter===f?'bg-accent text-white':'bg-panel2 text-slate-400'" x-text="f"></button>
+              </template>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap text-sm">
+            <span class="text-slate-500">Setup:</span>
+            <template x-for="t in ['All','Pullback','AVWAP','Breakout','EP']" :key="t">
+              <button @click="setupFilter=t" class="px-3 py-1 rounded-lg font-semibold" :class="setupFilter===t?'bg-accent text-white':'bg-panel2 text-slate-400'" x-text="t"></button>
+            </template>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap text-sm">
+            <span class="text-slate-500">Momentum screen:</span>
+            <template x-for="m in [['All','All'],['1M','🔥 New (1M >20%)'],['3M','3M >25%'],['6M','Established (6M >30%)']]" :key="m[0]">
+              <button @click="momFilter=m[0]" class="px-3 py-1 rounded-lg font-semibold"
+                :title="m[0]==='All'?'Show every setup':m[0]==='1M'?'NEW movers: up >20% in the last month, near 52W high, but NOT yet an established 3M/6M trend — fresh breakouts only':m[0]==='3M'?'Mid-term movers: up >25% over 3M with the 50/200-MA stack, but not yet a 6M trend':'Established leaders: up >30% over 6M in a 50/200-MA golden-stack uptrend'"
+                :class="momFilter===m[0]?'bg-accent text-white':'bg-panel2 text-slate-400'" x-text="m[1]"></button>
+            </template>
+          </div>
+
+          <div class="flex items-center gap-3 flex-wrap text-sm">
+            <span class="text-slate-500">Sector:</span>
+            <select x-model="sectorFilter" class="input py-1.5 pr-8 min-w-[200px]">
+              <option value="All">All sectors</option>
+              <template x-for="t in sectorOptions" :key="t"><option :value="t" x-text="t"></option></template>
+            </select>
+            <button @click="waitFilter=!waitFilter" class="px-3 py-1 rounded-lg font-semibold"
+              :class="waitFilter?'bg-accent text-white':'bg-panel2 text-slate-400'"
+              title="Patient entries: buy zone is below current price (wait for the dip), incl. deep pullbacks into the 50 EMA">⏳ Worth waiting</button>
+            <span class="text-xs text-slate-500"><b class="text-slate-300" x-text="filteredSuggestions.length"></b> match<span x-show="filteredSuggestions.length!==1">es</span></span>
+            <button class="btn-ghost text-xs" x-show="setupFilter!=='All'||momFilter!=='All'||sectorFilter!=='All'||filter!=='all'||waitFilter"
+              @click="setupFilter='All';momFilter='All';sectorFilter='All';filter='all';waitFilter=false">✕ clear filters</button>
+          </div>
+
+          <div x-show="hotSectors.length" class="flex items-center gap-2 flex-wrap text-sm">
+            <span class="text-slate-400">🔥 Hot sectors:</span>
+            <template x-for="hs in hotSectors" :key="hs"><span class="badge badge-hot"><span class="fire">🔥</span><span x-text="hs"></span></span></template>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <template x-for="(s,i) in filteredSuggestions" :key="s.ticker">
+              <div class="card card-hover anim-in p-4 space-y-3" :style="`animation-delay:${Math.min(i*40,400)}ms`" :class="s.extended?'ring-1 ring-amber-500/40':''">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <div class="text-xl font-extrabold tracking-tight" x-text="s.ticker"></div>
+                    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
+                      <span class="badge" :class="s.theme_hot?'badge-hot':''" x-show="s.theme"><span x-show="s.theme_hot" class="fire">🔥</span><span x-text="s.theme"></span></span>
+                      <span class="badge" x-show="groupMedal(s)" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme+' by relative strength'"
+                        style="background:linear-gradient(110deg,rgba(255,181,61,.22),rgba(255,95,162,.18));color:#ffd591;border-color:rgba(255,181,61,.5)">
+                        <span x-text="groupMedal(s)"></span> <span x-text="s.group_leader ? 'Group leader' : '#'+s.group_rank"></span>
+                      </span>
+                      <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)"><span x-text="trendIcon(s.theme_trend)"></span> <span x-text="s.theme_trend"></span></span>
+                      <span class="badge" x-show="s.news_trump" style="background:rgba(255,95,162,.22);color:#ffc6dd;border-color:rgba(255,95,162,.5)">🇺🇸 Trump</span>
+                      <span class="badge" x-show="s.news_flag && !s.news_trump"
+                        :style="s.news_dir==='bad'?'background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)':s.news_dir==='good'?'background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)':'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)'"
+                        x-text="(s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰')+(s.news_scope==='sector'?' Sector':' News')"></span>
+                      <template x-for="ms in [['1M',s.screen_1m],['3M',s.screen_3m],['6M',s.screen_6m]]" :key="ms[0]">
+                        <span class="badge" x-show="ms[1]" :title="'Passes the '+ms[0]+' momentum screen'"
+                          style="background:rgba(106,141,255,.18);color:#b8c8ff;border-color:rgba(106,141,255,.45)">🚀 <span x-text="ms[0]"></span></span>
+                      </template>
+                      <span class="badge" x-show="s.worth_waiting" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA"
+                        style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⏳ Worth waiting</span>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
+                    <div class="text-[10px] text-slate-500" x-text="s.rating+'/100 · ADR '+s.adr+'%'"></div>
+                    <span class="badge mt-1" :class="statusClass(s.status)" x-text="s.status"></span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                  <div class="lvl"><div class="lvl-l">Buy zone</div><div class="text-up font-bold text-[13px]" x-text="s.zone_bottom+'–'+s.zone_top"></div></div>
+                  <div class="lvl"><div class="lvl-l">Stop</div><div class="text-down font-bold" x-text="s.stop"></div></div>
+                  <div class="lvl"><div class="lvl-l">Target 2R</div><div class="font-bold" style="color:var(--cyan)" x-text="s.target"></div></div>
+                </div>
+                <div x-show="inZone(s)" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · $<span x-text="s.close"></span> is in the zone</div>
+                <div x-show="!inZone(s)" class="text-xs text-slate-500">⏳ wait — pull back toward <span x-text="s.entry"></span> (now $<span x-text="s.close"></span>)</div>
+                <div class="text-xs text-slate-400"><b class="text-slate-100" x-text="s.shares ?? '—'"></b> sh · ≈$<span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> · risk $<span x-text="s.risk_ps"></span>/sh (1%)<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
+                <div class="text-xs text-slate-500" x-text="s.why"></div>
+                <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
+                <div class="flex gap-2 pt-1">
+                  <button class="btn-sm flex-1" @click="showChart(s.ticker, s)">📈</button>
+                  <button class="btn-sm btn-up flex-1 text-white" @click="act(s,'approve')">Approve</button>
+                  <button class="btn-sm btn-down flex-1 text-white" @click="act(s,'reject')">Reject</button>
+                  <button class="btn-sm flex-1" style="background:rgba(106,141,255,.25);border-color:rgba(106,141,255,.5)" @click="openTake(s)">Took it</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="suggestions.items && suggestions.items.length===0" class="text-sm text-slate-500">No suggestions yet — run a scan.</div>
+        </section>
+
+        <!-- ===== SCREENERS ===== -->
+        <section x-show="view==='screeners'" x-transition.opacity.duration.250ms class="space-y-5">
+          <div class="flex gap-2">
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='lists'?'btn':'btn-sm'" @click="screenTab='lists'">🗂️ Screener lists</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat()">🔥 Sector Heat</button>
+          </div>
+
+          <!-- lists -->
+          <div x-show="screenTab==='lists'" class="space-y-4 max-w-3xl">
+            <template x-for="s in screeners" :key="s.id">
+              <div class="card card-hover p-4 flex items-center justify-between">
+                <div>
+                  <div class="font-semibold" x-text="s.name"></div>
+                  <div class="text-xs text-slate-500"><span x-text="s.tickers.length"></span> tickers <span x-show="s.is_default" class="badge ml-2">default</span></div>
+                </div>
+                <div class="flex gap-2">
+                  <button class="btn-sm" @click="scanScreener=s.id; view='suggestions'">Use</button>
+                  <button class="btn-sm" x-show="!s.is_default" @click="deleteScreener(s.id)">Delete</button>
+                </div>
+              </div>
+            </template>
+            <div class="card p-4 space-y-3">
+              <div class="card-head -m-4 mb-1 px-4 py-3">Add screener (paste tickers)</div>
+              <input class="input w-full" placeholder="Screener name" x-model="newScreener.name" />
+              <textarea class="input w-full h-28" placeholder="Paste tickers — commas, spaces or new lines (e.g. AAPL, MSFT, NVDA)" x-model="newScreener.tickers"></textarea>
+              <button class="btn" @click="addScreener()">Add screener</button>
+            </div>
+          </div>
+
+          <!-- sector heat -->
+          <div x-show="screenTab==='heat'" class="space-y-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="refreshSectorHeat()" :disabled="sectorStatus.running">
+                <span x-show="!sectorStatus.running">↻ Refresh heat</span>
+                <span x-show="sectorStatus.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="sectorStatus.current"></span> <span x-text="sectorStatus.done+'/'+sectorStatus.total"></span></span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="sectorHeat.computed_at">Updated <span x-text="sectorHeat.computed_at"></span></span>
+              <div class="ml-auto flex items-center gap-2 text-xs">
+                <span class="text-slate-500">Sort:</span>
+                <template x-for="o in [['score','Heat'],['perf_1d','Today'],['perf_1w','Week'],['perf_1mo','Month'],['perf_6mo','6mo'],['streak','Streak']]" :key="o[0]">
+                  <button class="px-2.5 py-1 rounded-lg font-semibold" :class="sectorSort===o[0]?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="sectorSort=o[0]" x-text="o[1]"></button>
+                </template>
+              </div>
+            </div>
+            <div class="card overflow-hidden">
+              <div class="grid grid-cols-12 px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-500 border-b border-line font-semibold">
+                <div class="col-span-4">Sector</div>
+                <div class="col-span-2">Trend</div>
+                <div class="text-right">Today</div><div class="text-right">Week</div><div class="text-right">Month</div><div class="text-right">6mo</div>
+                <div class="text-right">Streak</div><div class="text-right">Heat</div>
+              </div>
+              <template x-for="s in sortedSectors" :key="s.sector">
+                <div class="border-b border-line">
+                  <div class="grid grid-cols-12 items-center px-4 py-3 text-sm hover:bg-white/5 transition cursor-pointer" @click="toggleSector(s.sector)">
+                    <div class="col-span-4 font-semibold flex items-center gap-2">
+                      <span class="text-slate-500 text-xs inline-block transition-transform" :class="secOpen[s.sector]?'rotate-90':''">▸</span>
+                      <span x-text="s.sector"></span><span class="text-xs text-slate-500" x-text="s.count"></span>
+                    </div>
+                    <div class="col-span-2"><span class="badge" :class="trendClass(s.trend)"><span x-text="trendIcon(s.trend)"></span> <span x-text="s.trend"></span><span x-show="s.fresh" title="newly sparking up"> ✦</span></span></div>
+                    <div class="text-right font-semibold" :class="s.perf_1d>=0?'text-up':'text-down'" x-text="s.perf_1d+'%'"></div>
+                    <div class="text-right font-semibold" :class="s.perf_1w>=0?'text-up':'text-down'" x-text="s.perf_1w+'%'"></div>
+                    <div class="text-right font-semibold" :class="s.perf_1mo>=0?'text-up':'text-down'" x-text="s.perf_1mo+'%'"></div>
+                    <div class="text-right font-semibold" :class="s.perf_6mo>=0?'text-up':'text-down'" x-text="s.perf_6mo+'%'"></div>
+                    <div class="text-right"><span class="badge" :class="s.streak>=3?'badge-hot':''"><span x-show="s.streak>=3" class="fire">🔥</span><span x-text="s.streak+'d'"></span></span></div>
+                    <div class="text-right"><span class="badge" :class="tierClass(s.tier)" x-text="s.tier"></span></div>
+                  </div>
+                  <div x-show="secOpen[s.sector]" x-cloak class="px-4 pb-3 pt-1" style="background:rgba(7,10,18,.45)">
+                    <div class="grid grid-cols-12 text-[10px] uppercase tracking-wide text-slate-500 px-2 py-1">
+                      <div class="col-span-4">Symbol (hottest first)</div><div class="text-right col-span-2">Last</div><div class="text-right col-span-2">Today</div><div class="text-right col-span-2">Week</div><div class="text-right col-span-2">Month</div>
+                    </div>
+                    <template x-for="(m,mi) in s.members" :key="m.ticker">
+                      <div class="grid grid-cols-12 items-center px-2 py-1.5 text-sm rounded hover:bg-white/5 cursor-pointer" @click="showChart(m.ticker, {})">
+                        <div class="col-span-4 font-semibold flex items-center gap-2">
+                          <span x-show="mi<3" x-text="['🥇','🥈','🥉'][mi]"></span>
+                          <span x-text="m.ticker"></span>
+                          <span x-show="m.above20" class="text-up text-[10px]" title="above 20-day MA">▲</span>
+                        </div>
+                        <div class="text-right col-span-2 text-slate-400" x-text="m.close"></div>
+                        <div class="text-right col-span-2 font-semibold" :class="m.perf_1d>=0?'text-up':'text-down'" x-text="m.perf_1d+'%'"></div>
+                        <div class="text-right col-span-2 font-semibold" :class="m.perf_1w>=0?'text-up':'text-down'" x-text="m.perf_1w+'%'"></div>
+                        <div class="text-right col-span-2 font-semibold" :class="m.perf_1mo>=0?'text-up':'text-down'" x-text="m.perf_1mo+'%'"></div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!sectorHeat.sectors || sectorHeat.sectors.length===0" class="p-6 text-sm text-slate-500">No data yet — click <b>Refresh heat</b> to compute sector momentum from your themes.</div>
+            </div>
+            <div class="text-xs text-slate-500 leading-relaxed">
+              <b>Trend</b>: 🚀 Rising = accelerating (✦ = just started), 🐢 Slowing = losing steam, 🔻 Falling, ➖ Steady · <b>Streak</b> = days held above the 10-day EMA · <b>Heat</b> = overall rank (Hot / Warm / Cool). Click any sector to see its stocks.
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== WATCHLIST ===== -->
+        <section x-show="view==='watchlist'" x-transition.opacity.duration.250ms class="space-y-5">
+          <div class="card p-4 flex flex-wrap gap-3 items-end">
+            <label class="text-sm">Add ticker
+              <input class="input w-36 block mt-1 uppercase" x-model="newWatch" @keydown.enter="addWatch()" placeholder="e.g. NVDA"></label>
+            <button class="btn" @click="addWatch()">Add &amp; analyze</button>
+            <span class="ml-auto text-xs text-slate-500 self-center flex items-center gap-2" x-show="wlLoading"><span class="spinner"></span> analyzing…</span>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <template x-for="(r,i) in watchlist" :key="r.ticker">
+              <div class="card card-hover anim-in p-4 space-y-3" :style="`animation-delay:${Math.min(i*40,400)}ms`">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <div class="text-xl font-extrabold tracking-tight" x-text="r.ticker"></div>
+                    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span class="badge" :class="setupClass(wl(r).setup_type)" x-text="wl(r).setup_type || r.setup || '—'"></span>
+                      <span class="badge" :class="wl(r).sector_hot?'badge-hot':''" x-show="wl(r).sector"><span x-show="wl(r).sector_hot" class="fire">🔥</span><span x-text="wl(r).sector"></span></span>
+                    </div>
+                  </div>
+                  <button class="btn-ghost text-rose-400" @click="removeWatch(i)">✕</button>
+                </div>
+                <div :id="'wlc-'+r.ticker" class="w-full h-32 rounded-xl overflow-hidden" style="background:rgba(7,10,18,.5)"></div>
+                <div class="grid grid-cols-3 gap-2 text-center text-sm" x-show="wl(r).entry">
+                  <div class="lvl"><div class="lvl-l">Entry &gt;</div><div class="text-up font-bold" x-text="wl(r).entry"></div></div>
+                  <div class="lvl"><div class="lvl-l">Stop</div><div class="text-down font-bold" x-text="wl(r).stop"></div></div>
+                  <div class="lvl"><div class="lvl-l">Target</div><div class="font-bold" style="color:var(--cyan)" x-text="wl(r).target"></div></div>
+                </div>
+                <div class="text-xs text-slate-400" x-text="wl(r).why || r.why || 'Run scan / analyze for setup detail.'"></div>
+                <div class="flex gap-2">
+                  <button class="btn-sm flex-1" @click="showChart(r.ticker, wl(r))">📈 Chart</button>
+                  <button class="btn-sm flex-1" @click="openCalc({...wl(r), ticker:r.ticker})">🧮 Size it</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="watchlist.length===0" class="text-sm text-slate-500">Watchlist empty — add a ticker above, or approve setups from Suggestions.</div>
+        </section>
+
+        <!-- ===== JOURNAL ===== -->
+        <section x-show="view==='journal'" x-transition.opacity.duration.250ms class="space-y-5 max-w-5xl">
+          <!-- log form on top -->
+          <div class="card p-4 space-y-3">
+            <div class="card-head -m-4 mb-1 px-4 py-3">➕ Log a new trade</div>
+            <div class="flex flex-wrap gap-2">
+              <input class="input w-24 uppercase" placeholder="Ticker" x-model="newTrade.ticker">
+              <input class="input w-40" placeholder="Setup" x-model="newTrade.setup_type">
+              <input class="input w-24" placeholder="Entry" x-model.number="newTrade.entry">
+              <input class="input w-24" placeholder="Stop" x-model.number="newTrade.stop">
+              <input class="input w-24" placeholder="Shares" x-model.number="newTrade.shares">
+            </div>
+            <input class="input w-full" placeholder="Notes" x-model="newTrade.notes">
+            <button class="btn" @click="addTrade()">Add trade</button>
+          </div>
+
+          <!-- active -->
+          <div class="flex items-center gap-2"><h2 class="text-base font-bold">Active trades</h2><span class="badge" x-text="activeTrades.length"></span></div>
+          <template x-if="activeTrades.length===0"><div class="text-sm text-slate-500">No open positions.</div></template>
+          <div class="grid gap-4 md:grid-cols-2">
+            <template x-for="t in activeTrades" :key="t.id">
+              <div class="card card-hover anim-in p-4 space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2"><span class="font-extrabold text-lg" x-text="t.ticker"></span>
+                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span></div>
+                  <div class="text-xs text-slate-500" x-text="t.taken_at"></div>
+                </div>
+                <div class="text-sm text-slate-400">entry <b class="text-slate-200" x-text="t.entry||t.planned_entry||'?'"></b> · stop <b class="text-down" x-text="t.stop"></b> · <span x-text="t.shares||'?'"></span> sh</div>
+                <div class="text-sm" x-show="t.pnl!=null">P&L <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></b> <span class="text-xs text-slate-500">@ <span x-text="t.last"></span></span></div>
+                <div class="text-xs text-slate-500" x-show="t.notes" x-text="t.notes"></div>
+                <div class="flex gap-2 flex-wrap" x-show="t.screenshots && t.screenshots.length">
+                  <template x-for="sh in t.screenshots" :key="sh"><a :href="sh" target="_blank"><img :src="sh" class="h-16 rounded-lg border border-line"></a></template>
+                </div>
+                <div class="flex gap-2 pt-1 flex-wrap">
+                  <button class="btn-sm" @click="showChart(t.ticker, t)">📈</button>
+                  <button class="btn-sm" @click="openEdit(t)">✏️ Edit</button>
+                  <label class="btn-sm cursor-pointer">📎<input type="file" accept="image/*" class="hidden" @change="uploadShot(t, $event)"></label>
+                  <button class="btn-sm btn-down text-white" @click="openClose(t)">Close</button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- closed -->
+          <div class="flex items-center gap-2 pt-2"><h2 class="text-base font-bold">Closed trades</h2><span class="badge" x-text="closedTrades.length"></span></div>
+          <template x-if="closedTrades.length===0"><div class="text-sm text-slate-500">No closed trades yet.</div></template>
+          <div class="grid gap-4 md:grid-cols-2">
+            <template x-for="t in closedTrades" :key="t.id">
+              <div class="card anim-in p-4 space-y-2 opacity-90">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2"><span class="font-bold text-lg" x-text="t.ticker"></span>
+                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span></div>
+                  <b :class="t.result_r>=0?'text-up':'text-down'" x-text="(t.result_r>0?'+':'')+(t.result_r!=null?t.result_r+'R':'—')"></b>
+                </div>
+                <div class="text-sm text-slate-400">entry <span x-text="t.entry||'?'"></span> → exit <span x-text="t.exit||'?'"></span>
+                  <span x-show="t.pnl!=null"> · <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()"></b></span></div>
+                <div class="text-xs text-amber-300/80" x-show="t.lesson">💡 <span x-text="t.lesson"></span></div>
+                <button class="btn-sm" @click="showChart(t.ticker, t)">📈 Chart</button>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- ===== NEWS ===== -->
+        <section x-show="view==='news'" x-transition.opacity.duration.250ms class="space-y-5">
+          <div class="flex gap-2">
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab!=='suspicious'?'btn':'btn-sm'" @click="newsTab='news'">📰 News</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='suspicious'?'btn':'btn-sm'" @click="newsTab='suspicious'; loadSuspicious()">🕵️ Suspicious activity</button>
+          </div>
+
+          <div x-show="newsTab!=='suspicious'" class="space-y-5">
+          <div class="flex items-center gap-3 flex-wrap">
+            <button class="btn" @click="refreshNews()" :disabled="newsStatus.running">
+              <span x-show="!newsStatus.running">↻ Refresh news</span>
+              <span x-show="newsStatus.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="newsStatus.current"></span></span>
+            </button>
+            <span class="text-xs text-slate-500" x-show="news.computed_at">Updated <span x-text="news.computed_at"></span></span>
+            <span class="ml-auto text-xs text-slate-500">Last 7 days · 📈 good / 📉 bad · pink = Trump</span>
+          </div>
+          <div x-show="alerts.length" class="space-y-2">
+            <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">🚨 Actionable now — catalysts</div>
+            <template x-for="a in alerts" :key="a.title+a.headline">
+              <a :href="a.link" target="_blank" class="block rounded-xl px-4 py-3 border transition hover:brightness-125" :style="alertStyle(a.dir)">
+                <div class="flex items-center gap-2 flex-wrap font-extrabold text-sm">
+                  <span x-text="a.dir==='buy'?'🚀 BUY':a.dir==='avoid'?'🛑 AVOID':'👀 WATCH'"></span>
+                  <span x-text="a.scope==='sector'?(a.title.toUpperCase()+' SECTOR'):a.title"></span>
+                  <span class="ml-auto text-xs font-normal opacity-70" x-text="alertDate(a)"></span>
+                </div>
+                <div class="text-xs mt-1 opacity-90" x-text="a.headline"></div>
+                <div class="text-xs mt-1 opacity-70" x-show="a.tickers && a.tickers.length">→ <span x-text="a.tickers.join('  ·  ')"></span></div>
+              </a>
+            </template>
+          </div>
+          <div class="grid lg:grid-cols-3 gap-5 items-start">
+            <!-- headlines -->
+            <div class="lg:col-span-2 space-y-5">
+              <template x-if="!news.sections || news.sections.length===0"><div class="text-sm text-slate-500">No news yet — click <b>Refresh news</b>.</div></template>
+              <template x-for="sec in news.sections" :key="sec.name">
+                <div class="card">
+                  <div class="card-head" x-text="sec.name"></div>
+                  <template x-if="!sec.items || sec.items.length===0"><div class="p-4 text-sm text-slate-500">No fresh catalysts.</div></template>
+                  <template x-for="(it,ii) in sec.items" :key="ii">
+                    <a :href="it.link" target="_blank" class="block px-5 py-3 border-t border-line hover:bg-white/5 transition">
+                      <div class="text-sm font-medium" :class="(it.title||'').toLowerCase().includes('trump')?'text-pink-300':it.sentiment==='bad'?'text-down':it.sentiment==='good'?'text-up':''" x-text="(it.sentiment==='good'?'📈 ':it.sentiment==='bad'?'📉 ':'')+it.title"></div>
+                      <div class="text-xs text-slate-500"><span x-text="it.source"></span> · <span x-text="it.published"></span></div>
+                    </a>
+                  </template>
+                </div>
+              </template>
+            </div>
+            <!-- tickers worth watching based on the news -->
+            <div class="card lg:sticky lg:top-24">
+              <div class="card-head">📈 Tickers worth watching</div>
+              <template x-if="Object.keys(news.ticker_news||{}).length===0"><div class="p-4 text-sm text-slate-500">Refresh news to populate from your positions + top setups.</div></template>
+              <template x-for="row in Object.entries(news.ticker_news||{})" :key="row[0]">
+                <div class="px-4 py-2.5 border-t border-line hover:bg-white/5 cursor-pointer transition" @click="showChart(row[0],{})">
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold" x-text="row[0]"></span>
+                    <span x-text="row[1].sentiment==='good'?'📈':row[1].sentiment==='bad'?'📉':'•'"></span>
+                    <span x-show="row[1].trump" class="badge" style="background:rgba(255,95,162,.2);color:#ffc6dd;border-color:rgba(255,95,162,.5)">🇺🇸</span>
+                  </div>
+                  <div class="text-xs text-slate-500 truncate" x-text="row[1].title"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+          </div><!-- /news wrapper -->
+
+          <!-- suspicious end-of-day activity -->
+          <div x-show="newsTab==='suspicious'" class="space-y-5">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="scanSuspicious()" :disabled="suspicious.status && suspicious.status.running">
+                <span x-show="!(suspicious.status && suspicious.status.running)">🔍 Scan now (full universe)</span>
+                <span x-show="suspicious.status && suspicious.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="suspicious.status.current"></span> (<span x-text="suspicious.status.done"></span>/<span x-text="suspicious.status.total"></span>)</span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="suspicious.scanned_at">Scanned <span x-text="suspicious.scanned"></span> · <span x-text="suspicious.scanned_at"></span></span>
+              <span class="ml-auto text-xs text-slate-500">Unusual end-of-day / after-hours volume + move — often an insider/institutional footprint.</span>
+            </div>
+            <div class="grid md:grid-cols-2 gap-5 items-start">
+              <div class="card">
+                <div class="card-head flex items-center justify-between"><span>🟢 Unusual buying</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.buying||[]).length+' names'"></span></div>
+                <template x-if="!(suspicious.buying||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
+                <template x-for="s in (suspicious.buying||[])" :key="'b'+s.ticker">
+                  <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
+                    <span class="font-bold w-14" x-text="s.ticker"></span>
+                    <span class="text-up font-bold w-16 text-right" x-text="(s.move>=0?'+':'')+s.move+'%'"></span>
+                    <span class="badge" style="background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)" x-text="s.vol_mult+'× vol'"></span>
+                    <span class="text-xs text-slate-500" x-text="s.after_hours?'after-hrs':'into close'"></span>
+                    <span class="ml-auto text-slate-400" x-text="'$'+s.price"></span>
+                  </div>
+                </template>
+              </div>
+              <div class="card">
+                <div class="card-head flex items-center justify-between"><span>🔴 Unusual selling</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.selling||[]).length+' names'"></span></div>
+                <template x-if="!(suspicious.selling||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
+                <template x-for="s in (suspicious.selling||[])" :key="'s'+s.ticker">
+                  <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
+                    <span class="font-bold w-14" x-text="s.ticker"></span>
+                    <span class="text-down font-bold w-16 text-right" x-text="s.move+'%'"></span>
+                    <span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)" x-text="s.vol_mult+'× vol'"></span>
+                    <span class="text-xs text-slate-500" x-text="s.after_hours?'after-hrs':'into close'"></span>
+                    <span class="ml-auto text-slate-400" x-text="'$'+s.price"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== STATS ===== -->
+        <section x-show="view==='stats'" class="space-y-5 max-w-3xl">
+          <div class="grid grid-cols-3 gap-4">
+            <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null?stats.win_rate+'%':'—'"></div></div>
+            <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null?stats.avg_r+'R':'—'"></div></div>
+            <div class="stat"><div class="stat-label">Closed</div><div class="stat-val" x-text="stats.closed??0"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-head">By setup type</div>
+            <template x-if="!stats.by_setup || Object.keys(stats.by_setup).length===0"><div class="p-5 text-sm text-slate-500">Close some trades to see stats by setup.</div></template>
+            <template x-for="(v,k) in stats.by_setup" :key="k">
+              <div class="flex justify-between px-5 py-2.5 border-t border-line text-sm">
+                <span x-text="k"></span>
+                <span class="text-slate-400"><span x-text="v.n"></span> trades · <span x-text="v.win_rate"></span>% win · <span :class="v.avg_r>=0?'text-up':'text-down'" x-text="v.avg_r+'R avg'"></span></span>
+              </div>
+            </template>
+          </div>
+          <div class="card">
+            <div class="card-head">Lessons (the coach reads these before every scan)</div>
+            <pre class="p-5 text-xs whitespace-pre-wrap text-slate-400" x-text="docs.lessons"></pre>
+          </div>
+        </section>
+
+        <!-- ===== STRATEGY & RULES ===== -->
+        <section x-show="view==='strategy'" class="space-y-5 max-w-4xl">
+          <div class="card p-4 space-y-3">
+            <div class="card-head -m-4 mb-1 px-4 py-3">Settings</div>
+            <div class="flex gap-3 items-end">
+              <label class="text-sm">Account size ($)
+                <input class="input w-40 block mt-1" type="number" x-model.number="settings.account_size"></label>
+              <label class="text-sm">Risk per trade (%)
+                <input class="input w-28 block mt-1" type="number" step="0.1" x-model.number="settings.risk_pct"></label>
+              <label class="text-sm">Max position (% of acct)
+                <input class="input w-36 block mt-1" type="number" step="1" x-model.number="settings.max_position_pct"></label>
+              <button class="btn" @click="saveSettings()">Save</button>
+              <span class="text-xs text-emerald-400" x-show="savedMsg" x-text="savedMsg"></span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <template x-for="d in docTabs" :key="d.id">
+              <button @click="docTab=d.id; loadDoc(d.id)" class="px-3 py-1.5 rounded text-sm"
+                :class="docTab===d.id?'bg-accent text-white':'bg-panel2 text-slate-400'" x-text="d.label"></button>
+            </template>
+          </div>
+          <div class="card p-4 space-y-3">
+            <textarea class="input w-full h-[55vh] font-mono text-xs" x-model="docEdit"></textarea>
+            <button class="btn" @click="saveDoc()">Save <span x-text="docTabs.find(d=>d.id===docTab)?.label"></span></button>
+            <span class="text-xs text-emerald-400" x-show="savedMsg" x-text="savedMsg"></span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== Chart modal ===== -->
+  <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="closeChart()" x-cloak>
+    <div class="bg-panel border border-line rounded-lg w-[1340px] max-w-[97vw] p-4">
+      <div class="flex justify-between items-center mb-3">
+        <div class="font-bold text-xl" x-text="chartModal.ticker"></div>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.logScale?'bg-accent text-white':'bg-panel2 text-slate-400'"
+            @click="chartModal.logScale=!chartModal.logScale; renderChart()" title="Logarithmic price scale">Log</button>
+          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showChannel?'bg-accent text-white':'bg-panel2 text-slate-400'"
+            @click="chartModal.showChannel=!chartModal.showChannel; renderChart()" title="Linear-regression trend channel (the 'tunnel')">📐 Channel</button>
+          <button class="btn-ghost" @click="closeChart()">✕</button>
+        </div>
+      </div>
+      <div id="chartBox" class="w-full h-[72vh]"></div>
+      <div class="text-xs text-slate-500 mt-2">
+        <span class="text-up">Buy zone</span> = the band between the two green lines (buy anywhere inside it) · <span class="text-down">stop</span> red ·
+        EMAs <span style="color:#eab308">9</span>/<span style="color:#f59e0b">21</span>/<span style="color:#5b8cff">50</span> ·
+        AVWAP <span style="color:#a855f7">ATH</span>/<span style="color:#22d3ee">earnings</span> ·
+        <span style="color:#3b82f6">channel</span>.
+        Exit on a close under the <b>9 EMA</b>. EOD data.
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Take / Close modal ===== -->
+  <div x-show="tradeModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="tradeModal.open=false" x-cloak>
+    <div class="bg-panel border border-line rounded-lg w-[420px] p-5 space-y-3">
+      <div class="font-bold text-lg" x-text="(tradeModal.mode==='take'?'Took ':tradeModal.mode==='edit'?'Edit ':'Close ')+tradeModal.ticker"></div>
+      <template x-if="tradeModal.mode==='edit'">
+        <div class="space-y-2">
+          <label class="text-sm block">Setup <input class="input w-full" x-model="tradeModal.setup_type"></label>
+          <label class="text-sm block">Entry <input class="input w-full" type="number" x-model.number="tradeModal.entry"></label>
+          <label class="text-sm block">Stop <input class="input w-full" type="number" x-model.number="tradeModal.stop"></label>
+          <label class="text-sm block">Target <input class="input w-full" type="number" x-model.number="tradeModal.target"></label>
+          <label class="text-sm block">Shares <input class="input w-full" type="number" x-model.number="tradeModal.shares"></label>
+        </div>
+      </template>
+      <template x-if="tradeModal.mode==='take'">
+        <div class="space-y-2">
+          <label class="text-sm block">Fill price <input class="input w-full" type="number" x-model.number="tradeModal.entry"></label>
+          <label class="text-sm block">Stop <input class="input w-full" type="number" x-model.number="tradeModal.stop"></label>
+          <label class="text-sm block">Shares <input class="input w-full" type="number" x-model.number="tradeModal.shares"></label>
+        </div>
+      </template>
+      <template x-if="tradeModal.mode==='close'">
+        <div class="space-y-2">
+          <label class="text-sm block">Exit price <input class="input w-full" type="number" x-model.number="tradeModal.exit"></label>
+          <label class="text-sm block">Result (R) <input class="input w-full" type="number" step="0.1" x-model.number="tradeModal.result_r"></label>
+          <label class="text-sm block">Followed rules?
+            <select class="input w-full" x-model="tradeModal.rules_followed"><option value="yes">yes</option><option value="no">no</option></select></label>
+          <label class="text-sm block">Lesson (optional → saved to lessons.md)
+            <input class="input w-full" x-model="tradeModal.lesson" placeholder="e.g. don't chase >1 ADR from trigger"></label>
+        </div>
+      </template>
+      <textarea class="input w-full h-16" placeholder="notes" x-model="tradeModal.notes"></textarea>
+      <div class="flex gap-2 justify-end">
+        <button class="btn-ghost" @click="tradeModal.open=false">Cancel</button>
+        <button class="btn" @click="submitTrade()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Position calculator modal ===== -->
+  <div x-show="calcModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="calcModal.open=false" x-cloak>
+    <div class="bg-panel border border-line rounded-2xl w-[470px] max-w-[95vw] p-5 space-y-3">
+      <div class="flex justify-between items-center">
+        <div class="font-bold text-lg">🧮 Position size <span class="text-slate-500" x-show="calcModal.ticker" x-text="'· '+calcModal.ticker"></span></div>
+        <button class="btn-ghost" @click="calcModal.open=false">✕</button>
+      </div>
+      <div class="text-xs text-slate-500">risk ≤ <span x-text="settings.risk_pct||1"></span>% ($<span x-text="riskDollar"></span>) · position ≤ <span x-text="settings.max_position_pct||15"></span>%</div>
+      <div class="flex gap-3">
+        <label class="text-sm flex-1">Entry price<input type="number" step="0.01" class="input w-full mt-1" x-model.number="calc.entry"></label>
+        <label class="text-sm flex-1">Stop price<input type="number" step="0.01" class="input w-full mt-1" x-model.number="calc.stop"></label>
+      </div>
+      <div class="grid grid-cols-2 gap-3" x-show="calcShares!=null">
+        <div class="lvl"><div class="lvl-l">Buy</div><div class="text-2xl font-extrabold text-accent" x-text="calcShares+' sh'"></div></div>
+        <div class="lvl"><div class="lvl-l">Position cost</div><div class="text-xl font-bold" x-text="'$'+calcCost"></div><div class="text-[11px] text-slate-500" x-text="calcPct+'% of acct'"></div></div>
+        <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-xl font-bold text-down" x-text="'$'+calcRisk"></div><div class="text-[11px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
+        <div class="lvl"><div class="lvl-l">Buying power</div><div class="text-xl font-bold" :class="calcPct>100?'text-down':''" x-text="calcPct+'%'"></div></div>
+      </div>
+      <div class="text-xs text-warn" x-show="calcCapped">⚠ Capped by <b x-text="calcCapReason"></b> — full 1% risk would buy more, but this keeps the position within your limit.</div>
+      <div class="text-xs text-down" x-show="calc.entry && calc.stop && calc.stop>=calc.entry">Stop must be below entry (longs only).</div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,787 @@
+"""
+Scanner engine for the Trading Data Center.
+
+Fetches daily price data (Yahoo public chart API), computes momentum metrics in the
+Qullamaggie / Martin-Luk style, classifies the setup, and returns structured trades
+with entry / stop / invalidation / position size.
+
+Setup preference (per the trader): Pullbacks and AVWAP reclaims (from all-time-high
+or the last earnings gap) are favored over plain breakouts.
+
+Standard library only.
+"""
+import json
+import math
+import os
+import urllib.request
+import time
+import statistics as st
+from pathlib import Path
+from datetime import datetime, timezone
+
+BASE = Path(__file__).resolve().parent
+# Cache lives under DATA_DIR when set (so it persists on a host's volume), else data/.
+CACHE = (Path(os.environ["DATA_DIR"]) if os.environ.get("DATA_DIR") else BASE / "data") / "cache"
+
+# how strongly each setup type is preferred (added to the score).
+# Pullbacks/AVWAP get a slight edge, but breakouts & EPs still rank competitively.
+PREF = {
+    "Pullback @ AVWAP": 4,
+    "Pullback": 3,
+    "AVWAP reclaim (ATH)": 3,
+    "AVWAP reclaim (earnings)": 2.5,
+    "Episodic Pivot": 2,
+    "Breakout": 1.5,
+    "Deep Pullback": 3,
+    "Consolidation": 3,
+}
+
+# Benchmarks for market regime + relative strength (equal-blend, per user choice).
+INDEXES = [("SPX", "^GSPC"), ("QQQ", "QQQ"), ("IWM", "IWM")]
+
+
+# --------------------------------------------------------------------------- #
+# Data fetching (with on-disk daily cache)
+# --------------------------------------------------------------------------- #
+def _fetch_raw(sym):
+    sym = sym.strip().upper()
+    for host in ("query1", "query2"):
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/"
+               f"{sym}?interval=1d&range=1y")          # 1y so 200-MA + 52W-high are computable
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                d = json.load(r)
+            res = d["chart"]["result"][0]
+            ts = res["timestamp"]
+            q = res["indicators"]["quote"][0]
+            vol = q.get("volume") or [None] * len(ts)
+            bars = []
+            for i in range(len(ts)):
+                o, h, l, c, v = q["open"][i], q["high"][i], q["low"][i], q["close"][i], vol[i]
+                if None in (o, h, l, c):
+                    continue
+                bars.append({
+                    "time": datetime.fromtimestamp(ts[i], tz=timezone.utc).strftime("%Y-%m-%d"),
+                    "open": round(o, 2), "high": round(h, 2),
+                    "low": round(l, 2), "close": round(c, 2),
+                    "volume": int(v) if v else 0,
+                })
+            if len(bars) > 60:
+                return bars
+        except Exception:
+            time.sleep(0.4)
+    return None
+
+
+def get_bars(sym, max_age_hours=12):
+    sym = sym.strip().upper()
+    CACHE.mkdir(parents=True, exist_ok=True)
+    f = CACHE / f"{sym}.json"
+    if f.exists():
+        try:
+            age = (time.time() - f.stat().st_mtime) / 3600
+            obj = json.loads(f.read_text())
+            if age < max_age_hours and obj.get("bars"):
+                return obj["bars"]
+        except Exception:
+            pass
+    bars = _fetch_raw(sym)
+    if bars:
+        try:
+            f.write_text(json.dumps({"sym": sym, "bars": bars}))
+        except Exception:
+            pass
+    return bars
+
+
+# --------------------------------------------------------------------------- #
+# Indicators
+# --------------------------------------------------------------------------- #
+def _sma(a, n):
+    return sum(a[-n:]) / n
+
+
+def _ema(a, n):
+    k = 2 / (n + 1)
+    e = a[0]
+    for x in a[1:]:
+        e = x * k + e * (1 - k)
+    return e
+
+
+def _avwap(bars, anchor):
+    num = den = 0.0
+    for b in bars[anchor:]:
+        tp = (b["high"] + b["low"] + b["close"]) / 3
+        num += tp * b["volume"]
+        den += b["volume"]
+    return num / den if den else bars[-1]["close"]
+
+
+def _earnings_anchor(bars, lookback=75):
+    """Proxy for the last earnings day: the biggest gap-up in recent history."""
+    best_i, best_gap = None, 0.0
+    start = max(1, len(bars) - lookback)
+    for i in range(start, len(bars)):
+        prev_c = bars[i - 1]["close"]
+        if prev_c <= 0:
+            continue
+        gap = (bars[i]["open"] / prev_c - 1) * 100
+        if gap > best_gap:
+            best_gap, best_i = gap, i
+    return (best_i, best_gap) if best_gap >= 6 else (None, best_gap)
+
+
+def _swing_highs(h, left=3, right=3, lookback=60):
+    """Pivot highs: bars whose high is the local max within a +/- window.
+    Returns [(index, price)] over the last `lookback` bars. Used to find a prior
+    swing high that price has reclaimed (resistance-turned-support) for stop placement."""
+    n = len(h)
+    start = max(left, n - lookback)
+    out = []
+    for i in range(start, n - right):
+        if h[i] == max(h[i - left:i + right + 1]):
+            out.append((i, h[i]))
+    return out
+
+
+def regression_channel(bars, max_lookback=120, min_len=30):
+    """Linear-regression channel on LOG price, ANCHORED to the most recent major low so it fits
+    the current trend leg (a fixed window mis-fits V-shaped moves and the bands blow out). Bands
+    are an envelope that touches the extreme deviations (capped at ~2.4 sd so a single spike can't
+    distort it), so the 'tunnel' hugs the price like a hand-drawn channel. LOG fit => straight on
+    a log chart."""
+    n = len(bars)
+    if n < min_len:
+        return None
+    window = bars[-min(max_lookback, n):]
+    mw = len(window)
+    lows = [b["low"] for b in window]
+    lo_i = lows.index(min(lows))
+    start = max(0, min(lo_i, mw - min_len))               # anchor at the leg low, keep >= min_len bars
+    seg = [b for b in window[start:] if b["close"] > 0]
+    m = len(seg)
+    if m < min_len:
+        return None
+    xs = list(range(m))
+    ys = [math.log(b["close"]) for b in seg]
+    mx = sum(xs) / m
+    my = sum(ys) / m
+    denom = sum((x - mx) ** 2 for x in xs) or 1
+    slope = sum((xs[i] - mx) * (ys[i] - my) for i in range(m)) / denom
+    intercept = my - slope * mx
+    resid = [ys[i] - (slope * xs[i] + intercept) for i in range(m)]
+    sd = (sum(r * r for r in resid) / m) ** 0.5 or 1e-9
+    up = min(max(resid), 2.0 * sd)                         # envelope, but capped so spikes don't distort
+    dn = max(min(resid), -2.0 * sd)
+    upper, mid, lower = [], [], []
+    for i in range(m):
+        base = intercept + slope * xs[i]
+        t = seg[i]["time"]
+        mid.append({"time": t, "value": round(math.exp(base), 2)})
+        upper.append({"time": t, "value": round(math.exp(base + up), 2)})
+        lower.append({"time": t, "value": round(math.exp(base + dn), 2)})
+    return {"upper": upper, "mid": mid, "lower": lower}
+
+
+# --------------------------------------------------------------------------- #
+# Analysis
+# --------------------------------------------------------------------------- #
+def analyze(sym, bars, settings=None):
+    settings = settings or {}
+    c = [b["close"] for b in bars]
+    h = [b["high"] for b in bars]
+    l = [b["low"] for b in bars]
+    v = [b["volume"] for b in bars]
+    o = [b["open"] for b in bars]
+    close = c[-1]
+
+    adr = st.mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0])
+    adr_safe = adr or 1
+    s10, s20, s50 = _sma(c, 10), _sma(c, 20), _sma(c, 50)
+    s200 = _sma(c, 200) if len(c) >= 200 else None
+    e10, e20, e50 = _ema(c, 10), _ema(c, 20), _ema(c, 50)
+    above = int(close > s10) + int(close > s20) + int(close > s50)
+    ext10 = (close / e10 - 1) * 100
+    p1m = (close / c[-21] - 1) * 100 if len(c) >= 21 else 0
+    p3m = (close / c[-63] - 1) * 100 if len(c) >= 63 else 0
+    p6m = (close / c[-126] - 1) * 100 if len(c) >= 126 else 0
+    volc = (st.mean(v[-5:]) / st.mean(v[-25:-5])) if len(v) >= 25 and st.mean(v[-25:-5]) > 0 else 0
+
+    # ----- liquidity (avg daily dollar volume) -> a 0-100 score on a log scale -----
+    # No liquidity = no institutions. ~$10M/d scores low, ~$1B/d ~90, $5B+/d = 100.
+    dv = st.mean([c[k] * v[k] for k in range(-20, 0)]) if len(c) >= 20 else c[-1] * v[-1]
+    dollar_vol = round(dv)
+    liq_score = round(max(0.0, min(100.0, (math.log10(dv) - 6.7) / 2.5 * 100))) if dv > 0 else 0
+
+    # ----- 52-week-high distance + MA stack (for the 1M/3M/6M momentum screens) -----
+    hi_52w = max(h)
+    pull_from_52w = round((hi_52w / close - 1) * 100, 1)
+    above_50 = close > s50
+    above_200 = s200 is not None and close > s200
+    ma_stack = s200 is not None and s50 > s200            # 50-MA over 200-MA (golden-cross trend)
+    near_high = pull_from_52w <= 20
+    screen_1m = p1m >= 20 and above_50 and near_high
+    screen_3m = p3m >= 25 and above_50 and above_200 and ma_stack and near_high and adr >= 3.5
+    screen_6m = p6m >= 30 and above_50 and above_200 and ma_stack and near_high
+
+    # recent swing / pullback geometry
+    hi40 = max(h[-40:]) if len(h) >= 40 else max(h)
+    pull_from_high = (hi40 / close - 1) * 100
+    dist_e10 = (close / e10 - 1) * 100
+    dist_e20 = (close / e20 - 1) * 100
+    near_line, near_dist = ("10EMA", abs(dist_e10)) if abs(dist_e10) <= abs(dist_e20) else ("20EMA", abs(dist_e20))
+
+    # anchored VWAPs
+    ath_anchor = max(range(len(h)), key=lambda i: h[i])
+    avwap_ath = _avwap(bars, ath_anchor)
+    dist_avwap_ath = (close / avwap_ath - 1) * 100
+    earn_i, earn_gap = _earnings_anchor(bars)
+    avwap_earn = _avwap(bars, earn_i) if earn_i is not None else None
+    dist_avwap_earn = (close / avwap_earn - 1) * 100 if avwap_earn else None
+
+    # breakout geometry (for fallback)
+    base_h = max(h[-10:])
+    base_l = min(l[-10:])
+    tight = (base_h / base_l - 1) * 100
+    dist_hi = (base_h / close - 1) * 100
+    max_day = max(((c[k] / c[k - 1] - 1) * 100) for k in range(-10, 0)) if len(c) > 11 else 0
+    # recent catalyst/news move: biggest gap or 1-day jump in the last 5 sessions
+    if len(c) > 6:
+        gap5 = max((o[k] / c[k - 1] - 1) * 100 for k in range(-5, 0))
+        move5 = max((c[k] / c[k - 1] - 1) * 100 for k in range(-5, 0))
+        recent_gap = round(max(gap5, move5), 1)
+    else:
+        recent_gap = 0.0
+    news_move = recent_gap >= 8
+
+    uptrend = close > s50 and above >= 2
+    not_extended = ext10 < 1.6 * adr
+
+    is_pullback = (uptrend and 3 <= pull_from_high <= 40
+                   and near_dist <= 1.8 * adr and not_extended)
+    is_avwap_ath = (uptrend and 0 <= dist_avwap_ath <= 1.5 * adr and pull_from_high >= 3)
+    is_avwap_earn = (uptrend and avwap_earn is not None
+                     and 0 <= dist_avwap_earn <= 1.5 * adr and pull_from_high >= 3)
+    # Deep pullback: a STRONG leader (big run, still above the 200-MA) that has pulled back
+    # BELOW its short EMAs toward the 50 EMA. Normal pullback logic drops these (uptrend test
+    # needs price above the short MAs), so they used to fall through to a near-ATH breakout.
+    # The stock's own strength is the edge here even if the sector is cooling.
+    above_200_now = s200 is not None and close > s200
+    strong_leader = above_200_now and (p6m >= 30 or p3m >= 30)
+    is_deep_pullback = (strong_leader and close < e10 and close < e20
+                        and 5 <= pull_from_high <= 50)
+    # Consolidation: a strong stock going SIDEWAYS in a tight base while riding the 50 EMA
+    # (the SNDK base — buy the dips to the 50 while it "waits"). A patient, worth-waiting setup.
+    rng15 = (max(h[-15:]) / min(l[-15:]) - 1) * 100 if len(h) >= 15 else 100.0
+    net15 = abs(c[-1] / c[-16] - 1) * 100 if len(c) >= 16 else 100.0   # net move = how SIDEWAYS it is
+    is_consolidation = (above_200_now and (p3m >= 15 or p6m >= 25) and close > s50
+                        and rng15 <= 4.0 * adr            # tight base
+                        and net15 <= 0.4 * rng15          # genuinely sideways (not a directional pullback)
+                        and ext10 <= 1.5 * adr)           # not extended above the 10
+
+    if is_consolidation:                                  # tight sideways base takes priority
+        setup_type = "Consolidation"
+    elif is_pullback and (is_avwap_ath or is_avwap_earn):
+        setup_type = "Pullback @ AVWAP"
+    elif is_pullback:
+        setup_type = "Pullback"
+    elif is_avwap_ath:
+        setup_type = "AVWAP reclaim (ATH)"
+    elif is_avwap_earn:
+        setup_type = "AVWAP reclaim (earnings)"
+    elif is_deep_pullback:
+        setup_type = "Deep Pullback"
+    elif max_day >= 10 and dist_hi <= 1.5 * adr:
+        setup_type = "Episodic Pivot"
+    else:
+        setup_type = "Breakout"
+
+    deep = setup_type == "Deep Pullback"
+    consol = setup_type == "Consolidation"
+    extended = ext10 > 2.2 * adr
+    pullback_like = setup_type in ("Pullback", "Pullback @ AVWAP",
+                                   "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+
+    # ----- score -----
+    score = above * 1.5 + PREF.get(setup_type, 0)
+    if adr >= 4:
+        score += 2
+    if adr >= 7:
+        score += 1
+    if deep:
+        score += 4                                         # a strong-leader deep pullback is quality
+        score += max(0, 2 - abs(close / e50 - 1) * 100 / adr_safe)   # close to the 50 EMA
+        score += min(2, max(p3m, p6m) / 50)                # don't forget the run / performance
+    elif consol:
+        score += 3                                         # tight base riding the 50 = quality wait
+        score += max(0, 2 - rng15 / adr_safe)              # the tighter the base, the better
+        score += min(2, max(p3m, p6m) / 50)
+    elif pullback_like:
+        score += max(0, 3 - near_dist / adr_safe)          # tight to the line/VWAP
+    else:
+        score += max(0, 4 - dist_hi / adr_safe)            # near the breakout trigger
+        score += max(0, 4 - tight / adr_safe)              # tight base
+    if extended:
+        score -= 4
+    if ext10 < -1 and not deep and not consol:             # below the 10-EMA IS the deep pullback / base
+        score -= 2
+    if volc and volc < 0.85:
+        score += 1
+
+    # ----- trade levels -----
+    swing_low = min(l[-7:])
+    if deep:
+        # Catch the strong leader at the 50 EMA — but never DEEPER than the recent pullback low.
+        # On parabolic names the 50 EMA lags far below price; the stock is really finding support
+        # at the swing low, so we floor the entry there. Buy zone can sit below current price
+        # (wait for the dip) or above (a reclaim). Stop tight, just under the swing low.
+        swing = min(l[-10:])
+        entry = round(max(e50, swing), 2)
+        if close < entry:
+            entry_type = "stop"
+            entry_note = "buy on a reclaim toward the 50 EMA (strong leader — worth waiting)"
+        else:
+            entry_type = "limit"
+            entry_note = "buy the dip into the 50 EMA / recent support (worth waiting)"
+        adr_px = entry * adr / 100
+        raw = min(swing - 0.10 * adr_px, entry - 0.40 * adr_px)   # tight, just under the swing
+        raw = max(raw, entry - 1.5 * adr_px)                       # but never absurdly wide
+        stop = round(raw, 2)
+        inval = round(swing, 2)
+        stop_basis = f"below the pullback swing low ${round(swing, 2)} (close below)"
+    elif consol:
+        # Buy the dip to the 50 EMA inside the base (floored at the base low). Stop below the base.
+        base_low = min(l[-15:])
+        entry = round(max(e50, base_low), 2)
+        if close < entry:
+            entry_type = "stop"
+            entry_note = "buy the reclaim of the 50 EMA in the base (worth waiting)"
+        else:
+            entry_type = "limit"
+            entry_note = "buy the dip to the 50 EMA inside the consolidation (worth waiting)"
+        adr_px = entry * adr / 100
+        raw = min(base_low - 0.10 * adr_px, entry - 0.40 * adr_px)
+        raw = max(raw, entry - 1.5 * adr_px)
+        stop = round(raw, 2)
+        inval = round(base_low, 2)
+        stop_basis = f"below the consolidation low ${round(base_low, 2)} (close below)"
+    elif pullback_like:
+        # Entry = the rising support the stock is pulling back INTO. If price is still
+        # above a support line, the entry sits BELOW current price (a limit buy on a
+        # further dip). Only if price already reached/undercut support do we use a
+        # reclaim (buy-stop above the prior-day high).
+        cands = [("10-EMA", e10), ("20-EMA", e20), ("50-MA", s50)]
+        if "AVWAP" in setup_type:
+            cands.append(("AVWAP (ATH)", avwap_ath))
+        if avwap_earn:
+            cands.append(("AVWAP (earnings)", avwap_earn))
+        below = [(lbl, v) for lbl, v in cands if v and v < close]
+        if below:
+            lbl, sup = max(below, key=lambda x: x[1])      # nearest support beneath price
+            entry = round(sup, 2)
+            entry_type = "limit"
+            entry_note = f"buy the pullback into the {lbl} (limit, below current ${round(close,2)})"
+        else:
+            entry = round(max(h[-2:]), 2)                  # already at/under support -> reclaim
+            entry_type = "stop"
+            entry_note = "buy on reclaim of the prior-day high"
+        # Stop anchors to STRUCTURE. Two candidates, pick the TIGHTER valid one
+        # (better R-location): (1) just under the recent higher-low the pullback is
+        # holding, or (2) just below a reclaimed prior swing high (resistance-turned-
+        # support — the NVDA ~$194 / ASTS $104.98 line), reported "close below".
+        # Clamp width 0.35-1.2x ADR (never risk > 1.2 ADR, never tighter than noise).
+        recent_low = min(l[-5:])
+        adr_px = entry * adr / 100
+        wide_floor = entry - 1.2 * adr_px
+        tight_cap = entry - 0.35 * adr_px
+        struct = recent_low - 0.15 * adr_px
+        reclaimed = [p for _, p in _swing_highs(h) if p < entry - 0.02 * adr_px]
+        sh_stop = (max(reclaimed) - 0.10 * adr_px) if reclaimed else None
+        cands = []
+        if struct >= wide_floor:
+            cands.append((struct, "5-day structure low"))
+        if sh_stop is not None and sh_stop >= wide_floor:
+            cands.append((sh_stop, f"reclaimed swing high ${round(max(reclaimed), 2)} (close below)"))
+        if cands:
+            raw, stop_basis = max(cands, key=lambda x: x[0])   # tighter (higher) valid stop
+        else:
+            raw, stop_basis = max(wide_floor, struct), "1.2x ADR limit"
+        stop = round(min(raw, tight_cap), 2)
+        inval = round(recent_low, 2)
+    else:
+        entry = round(base_h, 2)                           # buy-stop above the consolidation high
+        stop = round(entry * (1 - adr / 100), 2)
+        inval = round(base_l, 2)
+        entry_type = "stop"
+        entry_note = "buy-stop above the consolidation high"
+        stop_basis = "1x ADR below the trigger"
+    risk_ps = round(entry - stop, 2)
+    target = round(entry + 2 * risk_ps, 2)
+    # entry-location quality (0-100): penalize buying stretched far above the 10-EMA and
+    # penalize a stop forced near the full 1x-ADR limit. A valid setup bought right on the
+    # rising line with a tight stop scores ~100; the same setup chased 2x ADR up scores low.
+    stretch_x = max(0.0, ext10 / adr_safe)
+    stretch_pen = min(50.0, stretch_x * 25.0)
+    one_adr_px = entry * adr / 100 or 1
+    width_pen = min(40.0, max(0.0, risk_ps / one_adr_px - 0.4) * 60.0)
+    entry_quality = round(max(0.0, 100.0 - stretch_pen - width_pen))
+    # buy zone = a band around the entry (you don't need an exact tick). Being inside it = buyable now.
+    adr_px = entry * adr / 100
+    if entry_type == "limit":
+        zone_top = round(entry + 0.6 * adr_px, 2)        # a bit above the support still buys the pullback
+        zone_bottom = round(entry - 0.25 * adr_px, 2)
+    else:
+        zone_top = round(entry + 0.5 * adr_px, 2)
+        zone_bottom = round(entry, 2)
+    buf = 0.3 * adr_px                                    # a little tolerance — just-above the zone still counts
+    buyable_now = (zone_bottom - buf) <= close <= (zone_top + buf)
+    # "worth waiting" = patient entries you watch and buy at support: a STRONG leader correcting
+    # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
+    # (the SNDK base). NOT shallow pullbacks near the highs that are still moving up.
+    worth_waiting = deep or consol
+
+    # ----- sizing -----
+    acct = settings.get("account_size")
+    risk_pct = settings.get("risk_pct", 1.0)
+    shares = dollar_risk = None
+    if acct and risk_ps > 0:
+        shares = int((acct * risk_pct / 100) // risk_ps)
+        dollar_risk = round(shares * risk_ps, 2)
+    shares_per_10k = int((10000 * risk_pct / 100) // risk_ps) if risk_ps > 0 else 0
+
+    # ----- why -----
+    why = ["Above 10/20/50 MA" if above == 3 else f"Above {above}/3 MAs", f"+{p1m:.0f}% 1m"]
+    if setup_type == "Deep Pullback":
+        why.append(f"strong leader (+{max(p3m, p6m):.0f}%/{'6m' if p6m >= p3m else '3m'}) "
+                   f"pulled back {pull_from_high:.0f}% to the 50 EMA")
+    elif setup_type == "Consolidation":
+        why.append(f"tight base ({rng15 / adr_safe:.1f}x ADR) riding the 50 EMA, "
+                   f"strong (+{max(p3m, p6m):.0f}%)")
+    elif setup_type == "Pullback":
+        why.append(f"pulled back {pull_from_high:.0f}% to {near_line}")
+    elif setup_type == "Pullback @ AVWAP":
+        why.append(f"pullback to {near_line} + holding AVWAP")
+    elif setup_type == "AVWAP reclaim (ATH)":
+        why.append(f"holding AVWAP from ATH ({dist_avwap_ath:+.1f}%)")
+    elif setup_type == "AVWAP reclaim (earnings)":
+        why.append(f"holding AVWAP from earnings gap (+{earn_gap:.0f}%)")
+    elif setup_type == "Breakout":
+        why.append(f"base {tight / adr_safe:.1f}x ADR, {dist_hi:.1f}% to trigger")
+    else:
+        why.append(f"gap {max_day:.0f}%, {dist_hi:.1f}% to trigger")
+    if volc and volc < 0.85:
+        why.append(f"vol drying {volc:.2f}")
+    if extended:
+        why.append("EXTENDED - don't chase")
+
+    return {
+        "ticker": sym.upper(), "setup_type": setup_type, "close": round(close, 2),
+        "adr": round(adr, 1), "above": above, "ext10": round(ext10, 1),
+        "pull_from_high": round(pull_from_high, 1), "near_line": near_line,
+        "avwap_ath": round(avwap_ath, 2), "avwap_earn": round(avwap_earn, 2) if avwap_earn else None,
+        "dist_avwap_ath": round(dist_avwap_ath, 1),
+        "tight_x": round(tight / adr_safe, 1), "dist_hi": round(dist_hi, 1),
+        "p1m": round(p1m, 1), "p3m": round(p3m, 1), "p6m": round(p6m, 1), "volc": round(volc, 2),
+        "dollar_vol": dollar_vol, "liq_score": liq_score,
+        "pull_from_52w": pull_from_52w, "above_50": above_50, "above_200": above_200,
+        "ma_stack": ma_stack, "screen_1m": screen_1m, "screen_3m": screen_3m, "screen_6m": screen_6m,
+        "score": round(score, 1), "entry": entry, "stop": stop, "inval": inval,
+        "risk_ps": risk_ps, "target": target, "shares": shares,
+        "shares_per_10k": shares_per_10k, "dollar_risk": dollar_risk,
+        "extended": extended, "why": " - ".join(why),
+        "entry_type": entry_type, "entry_note": entry_note, "stop_basis": stop_basis,
+        "entry_quality": entry_quality, "worth_waiting": worth_waiting,
+        "zone_top": zone_top, "zone_bottom": zone_bottom, "buyable_now": buyable_now,
+        "recent_gap": recent_gap, "news_move": news_move,
+    }
+
+
+def _fetch_intraday(sym, rng="2d"):
+    """5-minute bars incl. pre/post-market for the last ~2 sessions. Returns (bars, gmtoffset)."""
+    sym = sym.strip().upper()
+    for host in ("query1", "query2"):
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{sym}"
+               f"?interval=5m&range={rng}&includePrePost=true")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                d = json.load(r)
+            res = d["chart"]["result"][0]
+            ts = res["timestamp"]
+            q = res["indicators"]["quote"][0]
+            gmt = res["meta"].get("gmtoffset", -14400)
+            bars = []
+            for i in range(len(ts)):
+                o, h, l, c, v = q["open"][i], q["high"][i], q["low"][i], q["close"][i], q["volume"][i]
+                if c is None:
+                    continue
+                bars.append({"t": ts[i], "o": o or c, "c": c, "v": v or 0})
+            if len(bars) > 20:
+                return bars, gmt
+        except Exception:
+            time.sleep(0.3)
+    return None, None
+
+
+def eod_signal(sym):
+    """Detect unusual end-of-day / after-hours activity: a 5-min volume spike well above the
+    session's norm paired with a directional move — a sign of aggressive buying or selling
+    (often insider/institutional) into the close or after hours."""
+    bars, gmt = _fetch_intraday(sym)
+    if not bars:
+        return None
+    last_t = bars[-1]["t"]
+    day = [b for b in bars if last_t - b["t"] <= 16 * 3600]      # one session incl pre/post
+    if len(day) < 20:
+        return None
+
+    def ethr(t):
+        return ((t + gmt) % 86400) / 3600                       # hour-of-day in exchange tz
+
+    reg = [b for b in day if 9.5 <= ethr(b["t"]) < 16.0]
+    post = [b for b in day if ethr(b["t"]) >= 16.0]             # after-hours (post-close)
+    vols = [b["v"] for b in reg if b["v"] > 0]
+    if len(vols) < 8:
+        return None
+    avg5 = st.mean(vols)
+    if avg5 <= 0:
+        return None
+    eod = (reg[-12:] if reg else day[-12:]) + post              # closing hour + after-hours
+    if not eod:
+        return None
+    spike = max(eod, key=lambda b: b["v"])
+    spike_ratio = spike["v"] / avg5
+    w_open = eod[0]["o"]
+    w_close = eod[-1]["c"]
+    move = (w_close / w_open - 1) * 100 if w_open else 0.0
+    if spike_ratio < 4.0 or abs(move) < 1.0:                    # not unusual enough
+        return None
+    return {
+        "ticker": sym.upper(), "signal": "buying" if move > 0 else "selling",
+        "move": round(move, 1), "vol_mult": round(spike_ratio, 1),
+        "after_hours": ethr(spike["t"]) >= 16.0, "price": round(w_close, 2),
+        "strength": round(spike_ratio * abs(move), 1),
+    }
+
+
+def scan_suspicious(tickers, progress=None):
+    """Scan tickers for end-of-day buy/sell anomalies; return ranked buying & selling lists."""
+    buys, sells = [], []
+    total = len(tickers)
+    for i, t in enumerate(tickers, 1):
+        if progress:
+            progress(i, total, t)
+        try:
+            sig = eod_signal(t)
+        except Exception:
+            sig = None
+        if sig:
+            (buys if sig["signal"] == "buying" else sells).append(sig)
+        time.sleep(0.03)
+    buys.sort(key=lambda x: -x["strength"])
+    sells.sort(key=lambda x: -x["strength"])
+    return {"buying": buys[:50], "selling": sells[:50], "scanned": total,
+            "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+
+
+def sector_metrics(tickers):
+    """Composite momentum metrics for a group of tickers (a sector/theme),
+    plus per-member detail (sorted hottest-first) for the expandable view."""
+    arrays = []
+    members = []
+    for t in tickers:
+        bars = get_bars(t)
+        if not bars or len(bars) < 25:
+            continue
+        c = [b["close"] for b in bars]
+        arrays.append(c)
+
+        def mp(k):
+            return round((c[-1] / c[-1 - k] - 1) * 100, 2) if len(c) > k else 0.0
+        members.append({"ticker": t, "close": round(c[-1], 2), "perf_1d": mp(1),
+                        "perf_1w": mp(5), "perf_1mo": mp(21), "above20": c[-1] > _sma(c, 20)})
+    if not arrays:
+        return None
+
+    def perf(k):
+        vals = [(c[-1] / c[-1 - k] - 1) * 100 for c in arrays if len(c) > k]
+        return round(st.mean(vals), 2) if vals else 0.0
+
+    breadth = round(100 * sum(1 for c in arrays if c[-1] > _sma(c, 20)) / len(arrays))
+    w = min(70, min(len(c) for c in arrays))
+    comp = [st.mean([c[i] / c[-w] for c in arrays]) for i in range(-w, 0)]
+    k = 2 / 11
+    e = comp[0]
+    emas = []
+    for x in comp:
+        e = x * k + e * (1 - k)
+        emas.append(e)
+    streak = 0
+    for i in range(len(comp) - 1, -1, -1):
+        if comp[i] >= emas[i]:
+            streak += 1
+        else:
+            break
+    p1, p5, p21, p63, p126 = perf(1), perf(5), perf(21), perf(63), perf(126)
+    # momentum state: is the move accelerating (Rising) or losing steam (Slowing)?
+    mo_pace, wk_pace = p21 / 21, p5 / 5
+    if p5 <= -3:
+        trend = "Falling"
+    elif p5 >= 2 and wk_pace >= mo_pace:
+        trend = "Rising"
+    elif p21 >= 3 and wk_pace < mo_pace * 0.5:
+        trend = "Slowing"
+    else:
+        trend = "Steady"
+    fresh = trend == "Rising" and streak <= 5          # newly sparking up
+    score = round(p5 * 0.4 + p21 * 0.3 + p1 * 0.2 + (breadth - 50) * 0.05, 2)
+    members.sort(key=lambda m: m["perf_1w"], reverse=True)
+    return {"count": len(arrays), "perf_1d": p1, "perf_1w": p5, "perf_1mo": p21,
+            "perf_3mo": p63, "perf_6mo": p126, "breadth": breadth, "streak": streak,
+            "trend": trend, "fresh": fresh, "score": score, "members": members}
+
+
+# --------------------------------------------------------------------------- #
+# Market regime (SPX / QQQ / IWM) + relative-strength benchmark
+# --------------------------------------------------------------------------- #
+def _regime_one(name, bars):
+    c = [b["close"] for b in bars]
+    h = [b["high"] for b in bars]
+    l = [b["low"] for b in bars]
+    close = c[-1]
+    adr = st.mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0]) or 1
+    e10, e20, s50 = _ema(c, 10), _ema(c, 20), _sma(c, 50)
+    above = int(close > e10) + int(close > e20) + int(close > s50)
+    ext10 = (close / e10 - 1) * 100
+    hi = max(h[-50:]) if len(h) >= 50 else max(h)
+    off_high = (hi / close - 1) * 100
+    dipped = min(l[-6:]) < e20                              # recently traded below the 20-EMA
+    # Distance from the 50-MA as a multiple of daily range — the correction-risk gauge.
+    # (% gain above the 50 divided by ADR%; a high multiple marks possible highs before a
+    # pullback. Normalizing by ADR self-adjusts for each index's volatility.)
+    gain_50 = (close / s50 - 1) * 100
+    atr_mult_50 = round(gain_50 / adr, 1)
+    gain_20 = (close / e20 - 1) * 100                       # shorter-term extension gauge
+    atr_mult_20 = round(gain_20 / adr, 1)
+    very_stretched = atr_mult_50 >= 4.5                     # far above the 50 -> chase risk
+    # base state from trend position
+    if close < s50 and off_high >= 8:
+        state, posture = "Deep correction", 15
+    elif close < s50:
+        state, posture = "Mid-correction", 25
+    elif above == 3 and ext10 > 2.2 * adr:
+        state, posture = "Extended", 55
+    elif above < 2:                                        # above 50 but below the 10 & 20
+        state, posture = "Pullback", 45
+    elif close > e20 and dipped:
+        state, posture = "Recovery", 80
+    else:
+        state, posture = "Healthy uptrend", 85
+    # correction-risk haircut: the further above the 50 (in ADR units), the lower the upside.
+    # Graded, so a mildly-stretched index is barely dinged while a very stretched one is capped.
+    if very_stretched:
+        posture = min(posture, round(max(48, 78 - (atr_mult_50 - 4.5) * 6)))
+        if state in ("Healthy uptrend", "Recovery"):
+            state = "Extended"
+    p1m = (close / c[-21] - 1) * 100 if len(c) >= 21 else 0.0
+    p3m = (close / c[-63] - 1) * 100 if len(c) >= 63 else 0.0
+    return {"name": name, "state": state, "posture": posture, "close": round(close, 2),
+            "ext10": round(ext10, 1), "off_high": round(off_high, 1), "above": above,
+            "adr": round(adr, 2), "p1m": round(p1m, 1), "p3m": round(p3m, 1),
+            "gain_50": round(gain_50, 1), "atr_mult_50": atr_mult_50,
+            "gain_20": round(gain_20, 1), "atr_mult_20": atr_mult_20,
+            "stretched_50": very_stretched}
+
+
+def market_regime():
+    """Classify SPX / QQQ / IWM and return a blended market posture (0-100)."""
+    idx = []
+    for name, sym in INDEXES:
+        bars = get_bars(sym)
+        if bars and len(bars) >= 60:
+            try:
+                idx.append(_regime_one(name, bars))
+            except Exception:
+                pass
+    if not idx:
+        return None
+    avg = st.mean([i["posture"] for i in idx])
+    if avg >= 80:
+        label = "Risk-on - uptrend"
+    elif avg >= 60:
+        label = "Constructive"
+    elif avg >= 45:
+        label = "Mixed / pullback"
+    elif avg >= 25:
+        label = "Caution - correction"
+    else:
+        label = "Risk-off - deep correction"
+    return {"computed_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "posture": round(avg), "label": label, "indexes": idx}
+
+
+def _benchmark_returns():
+    """Equal-blend 1m / 3m return of SPX+QQQ+IWM, for relative-strength outperformance."""
+    r1, r3 = [], []
+    for _, sym in INDEXES:
+        bars = get_bars(sym)
+        if not bars:
+            continue
+        c = [b["close"] for b in bars]
+        if len(c) > 21:
+            r1.append((c[-1] / c[-21] - 1) * 100)
+        if len(c) > 63:
+            r3.append((c[-1] / c[-63] - 1) * 100)
+    return (st.mean(r1) if r1 else 0.0), (st.mean(r3) if r3 else 0.0)
+
+
+def _attach_rs(results):
+    """Relative strength = 0.5 * percentile-in-universe + 0.5 * outperformance-vs-index."""
+    if not results:
+        return
+    b1, b3 = _benchmark_returns()
+    blended = [0.5 * r.get("p1m", 0) + 0.5 * r.get("p3m", 0) for r in results]
+    order = sorted(range(len(results)), key=lambda i: blended[i])
+    n = len(results)
+    pct = [0.0] * n
+    for rank, i in enumerate(order):
+        pct[i] = 100.0 * rank / (n - 1) if n > 1 else 100.0
+    for i, r in enumerate(results):
+        outperf = 0.5 * (r.get("p1m", 0) - b1) + 0.5 * (r.get("p3m", 0) - b3)
+        op_score = max(0.0, min(100.0, 50.0 + outperf * 2.0))
+        r["rs_outperf"] = round(outperf, 1)
+        r["rs_pct"] = round(pct[i])
+        r["rs_score"] = round(0.5 * pct[i] + 0.5 * op_score)
+
+
+def scan(tickers, settings=None, progress=None):
+    results, fails = [], []
+    total = len(tickers)
+    for i, t in enumerate(tickers, 1):
+        bars = get_bars(t)
+        if progress:
+            progress(i, total, t)
+        if not bars:
+            fails.append(t)
+            continue
+        try:
+            results.append(analyze(t, bars, settings))
+        except Exception:
+            fails.append(t)
+        time.sleep(0.05)
+    _attach_rs(results)
+    results.sort(key=lambda r: r["score"], reverse=True)
+    return {"results": results, "failed": fails,
+            "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+
+
+if __name__ == "__main__":
+    import sys
+    test = sys.argv[1:] or ["DOCN", "INOD", "MSFT", "ONDS", "FIVN", "RNG", "NBIS", "AAON"]
+    out = scan(test, settings={"account_size": 20217.62, "risk_pct": 1.0})
+    print(f"scanned={len(out['results'])} failed={out['failed']}\n")
+    for r in out["results"]:
+        print(f"{r['ticker']:6} {r['setup_type']:22} sc={r['score']:5} "
+              f"entry={r['entry']:>9} stop={r['stop']:>9} sh={r['shares']} | {r['why']}")

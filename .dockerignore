@@ -1,0 +1,18 @@
+# Never bake personal data or per-user workspaces into the image.
+.git
+__pycache__/
+*.pyc
+
+# Your private local data (account, journal, watchlist, marks) — stays on YOUR machine.
+data/settings.json
+data/trades.json
+data/watchlist.json
+data/suggestions.json
+data/status.json
+data/uploads/
+data/users/
+data/cache/
+
+# Coach-only generated markdown (regenerated locally; unused in hosted mode).
+watchlist.md
+journal/trades.md

@@ -1,0 +1,25 @@
+# Fly.io config for the hosted Trading Data Center.
+# First time: install flyctl, then run `fly launch --no-deploy` (it will pick an app
+# name + region and may rewrite this file), create the volume, then `fly deploy`.
+app = "trading-data-center"          # change to a unique name (fly launch does this)
+primary_region = "iad"
+
+[build]
+
+[env]
+  HOSTED = "1"
+  DATA_DIR = "/data"                 # persistent volume mount — journals survive redeploys
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"         # keep running so the daily shared-refresh thread fires
+  auto_start_machines = true
+  min_machines_running = 1
+
+# Persistent disk for data/ (per-user journals, settings, price cache).
+# Create once with:  fly volumes create tdc_data --size 1 --region iad
+[mounts]
+  source = "tdc_data"
+  destination = "/data"

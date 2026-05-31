@@ -1,0 +1,19 @@
+# Render Blueprint — deploy from the GitHub website with no CLI.
+# In Render: New ➜ Blueprint ➜ pick this repo. It reads this file.
+# Needs the Starter plan (or higher) because the persistent disk keeps friends' journals
+# across deploys. Render injects $PORT automatically; the app reads it.
+services:
+  - type: web
+    name: swinghelper
+    runtime: docker
+    plan: starter
+    autoDeploy: true            # every push to the repo redeploys for everyone
+    envVars:
+      - key: HOSTED
+        value: "1"
+      - key: DATA_DIR
+        value: /data
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
