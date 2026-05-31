@@ -48,6 +48,7 @@ NEWS_F = DATA / "news.json"
 MARKET_F = DATA / "market.json"
 UNIVERSE_F = DATA / "universe.json"
 SUSPICIOUS_F = DATA / "suspicious.json"
+PREMARKET_F = DATA / "premarket.json"
 
 DOCS = {
     "qullamaggie": BASE / "strategy" / "qullamaggie.md",
@@ -114,7 +115,7 @@ def bootstrap_workspace(ud):
 # persistent disk these are copied from the baked-in SEED so the app works immediately.
 _SHARED_SEED = ["screeners.json", "universe.json", "themes.json", "sectors.json",
                 "market.json", "sector_heat.json", "news.json", "suspicious.json",
-                "suggestions.json"]
+                "premarket.json", "suggestions.json"]
 
 
 def seed_shared():
@@ -191,6 +192,8 @@ NEWS = {"running": False, "done": 0, "total": 0, "current": ""}
 _news_lock = threading.Lock()
 SUSPECT = {"running": False, "done": 0, "total": 0, "current": ""}
 _suspect_lock = threading.Lock()
+PREMKT = {"running": False, "done": 0, "total": 0, "current": ""}
+_premkt_lock = threading.Lock()
 
 
 def fetch_rss(query, n=8):
@@ -361,6 +364,25 @@ def run_suspicious():
     except Exception as e:
         SUSPECT.update(current="error: " + str(e))
     SUSPECT.update(running=False, current="")
+
+
+def run_premarket():
+    """Scan the universe for notable pre-market gaps (run during pre-market hours)."""
+    tickers = []
+    screeners = read_json(SCREENERS_F, [])
+    default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
+    if default:
+        tickers = default.get("tickers", [])
+    PREMKT.update(running=True, done=0, total=len(tickers) or 1, current="")
+
+    def prog(done, total, t):
+        PREMKT.update(done=done, total=total, current=t)
+    try:
+        out = scanner.scan_premarket(tickers, prog)
+        write_json(PREMARKET_F, out)
+    except Exception as e:
+        PREMKT.update(current="error: " + str(e))
+    PREMKT.update(running=False, current="")
 
 
 def run_market_regime():
@@ -816,6 +838,33 @@ class Handler(BaseHTTPRequestHandler):
             s = read_json(SUSPICIOUS_F, {"buying": [], "selling": []})
             s["status"] = SUSPECT
             self._json(s)
+        elif route == "premarket":
+            pm = read_json(PREMARKET_F, {"movers": []})
+            rev = reverse_themes()
+            heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
+            news_map = read_json(NEWS_F, {}).get("ticker_news", {})
+            sug = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
+            for m in pm.get("movers", []):
+                th = rev.get(m["ticker"])
+                m["theme"] = th
+                hr = heat.get(th)
+                if hr:
+                    m["theme_trend"] = hr.get("trend")
+                    m["theme_tier"] = hr.get("tier")
+                    m["theme_hot"] = hr.get("tier") == "Hot" or hr.get("trend") == "Rising"
+                nm = news_map.get(m["ticker"])
+                if nm:
+                    m["news_headline"] = nm["title"]
+                    m["news_link"] = nm["link"]
+                    m["news_dir"] = nm.get("sentiment")
+                    m["news_trump"] = bool(nm.get("trump"))
+                si = sug.get(m["ticker"])
+                if si:
+                    m["setup_type"] = si.get("setup_type")
+                    m["rs_pct"] = si.get("rs_pct")
+                    m["worth_waiting"] = si.get("setup_type") in ("Deep Pullback", "Consolidation")
+            pm["status"] = PREMKT
+            self._json(pm)
         elif route == "watchlist":
             self._json(read_json(watchlist_f(), []))
         elif route == "trades":
@@ -846,6 +895,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(NEWS)
         elif route == "news":
             self._json(read_json(NEWS_F, {"computed_at": None, "sections": [], "ticker_news": {}}))
+        elif route == "themes":
+            self._json(read_json(THEMES_F, {}))
         elif route == "refresh-all":
             self._json(REFRESH)
         elif route == "docs" and len(parts) > 2:
@@ -948,6 +999,13 @@ class Handler(BaseHTTPRequestHandler):
                 if SUSPECT["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
                 threading.Thread(target=run_suspicious, daemon=True).start()
+            self._json({"ok": True})
+
+        elif route == "premarket" and len(parts) > 2 and parts[2] == "scan":
+            with _premkt_lock:
+                if PREMKT["running"]:
+                    self._json({"ok": False, "error": "already running"}, 409); return
+                threading.Thread(target=run_premarket, daemon=True).start()
             self._json({"ok": True})
 
         elif route == "refresh-all":

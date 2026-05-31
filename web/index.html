@@ -24,8 +24,12 @@
 
   <div class="flex h-screen overflow-hidden">
 
-    <!-- Sidebar -->
-    <aside class="w-64 shrink-0 bg-panel border-r border-line flex flex-col">
+    <!-- Mobile nav backdrop -->
+    <div x-show="mobileNav" @click="mobileNav=false" class="fixed inset-0 bg-black/50 z-30 md:hidden" x-cloak></div>
+
+    <!-- Sidebar (off-canvas drawer on mobile, static on md+) -->
+    <aside class="w-64 shrink-0 bg-panel border-r border-line flex flex-col fixed md:static inset-y-0 left-0 z-40 transition-transform duration-200 md:translate-x-0"
+      :class="mobileNav ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
       <div class="px-5 py-5 border-b border-line">
         <div class="text-xl font-extrabold tracking-tight brand">◆ Data Center</div>
       </div>
@@ -56,13 +60,16 @@
 
     <!-- Main -->
     <main class="flex-1 overflow-y-auto">
-      <header class="sticky top-0 z-10 bg-ink/90 backdrop-blur border-b border-line px-7 py-4 flex items-center justify-between">
-        <h1 class="text-xl font-semibold" x-text="nav.find(n=>n.id===view)?.label"></h1>
-        <div class="text-xs text-slate-500" x-show="suggestions.scanned_at">
+      <header class="sticky top-0 z-10 bg-ink/90 backdrop-blur border-b border-line px-4 sm:px-7 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <button class="md:hidden text-2xl leading-none text-slate-300 hover:text-white" @click="mobileNav=true" aria-label="Open menu">☰</button>
+          <h1 class="text-xl font-semibold truncate" x-text="nav.find(n=>n.id===view)?.label"></h1>
+        </div>
+        <div class="text-xs text-slate-500 hidden sm:block text-right" x-show="suggestions.scanned_at">
           Last scan: <span x-text="suggestions.scanned_at"></span> · <span x-text="suggestions.screener_name"></span>
         </div>
       </header>
-      <div class="p-7">
+      <div class="p-4 sm:p-7 overflow-x-hidden">
 
         <!-- ===== DASHBOARD ===== -->
         <section x-show="view==='dashboard'" x-transition.opacity.duration.250ms class="space-y-6">
@@ -74,7 +81,7 @@
               <span x-show="!(universe.status && universe.status.running)">🌐 Rebuild universe</span>
               <span x-show="universe.status && universe.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="universe.status.stage"></span> <span x-show="universe.status.total" x-text="'('+universe.status.done+'/'+universe.status.total+')'"></span></span>
             </button>
-            <button class="btn ml-auto" @click="refreshAll()" :disabled="refreshState.running">
+            <button class="btn w-full sm:w-auto sm:ml-auto" @click="refreshAll()" :disabled="refreshState.running">
               <span x-show="!refreshState.running">🔄 New day — refresh everything</span>
               <span x-show="refreshState.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="refreshState.stage"></span> (<span x-text="refreshState.done"></span>/<span x-text="refreshState.total"></span>)</span>
             </button>
@@ -87,7 +94,7 @@
 
           <!-- market regime: SPX / QQQ / IWM + blended posture -->
           <div class="card p-5" x-show="marketRegime.indexes && marketRegime.indexes.length">
-            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between flex-wrap gap-2">
               <span>📊 Market regime <span class="text-xs font-normal text-slate-500">— is the tape too extended, mid-correction, recovering?</span></span>
               <span class="text-xs font-bold px-2 py-1 rounded" :style="'color:'+postureColor(marketRegime.posture)+';border:1px solid '+postureColor(marketRegime.posture)+'55'">
                 <span x-text="marketRegime.label"></span> · posture <span x-text="marketRegime.posture"></span>/100
@@ -209,7 +216,7 @@
         <!-- ===== SUGGESTIONS ===== -->
         <section x-show="view==='suggestions'" x-transition.opacity.duration.250ms class="space-y-5">
           <div class="flex flex-wrap items-center gap-3">
-            <select x-model="scanScreener" class="input w-52">
+            <select x-model="scanScreener" class="input w-full sm:w-52">
               <template x-for="s in screeners" :key="s.id"><option :value="s.id" x-text="s.name"></option></template>
             </select>
             <button class="btn" @click="runScan()" :disabled="scan.running">
@@ -245,7 +252,7 @@
 
           <div class="flex items-center gap-3 flex-wrap text-sm">
             <span class="text-slate-500">Sector:</span>
-            <select x-model="sectorFilter" class="input py-1.5 pr-8 min-w-[200px]">
+            <select x-model="sectorFilter" class="input py-1.5 pr-8 w-full sm:w-auto sm:min-w-[200px]">
               <option value="All">All sectors</option>
               <template x-for="t in sectorOptions" :key="t"><option :value="t" x-text="t"></option></template>
             </select>
@@ -318,9 +325,50 @@
 
         <!-- ===== SCREENERS ===== -->
         <section x-show="view==='screeners'" x-transition.opacity.duration.250ms class="space-y-5">
-          <div class="flex gap-2">
+          <div class="flex gap-2 flex-wrap">
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='lists'?'btn':'btn-sm'" @click="screenTab='lists'">🗂️ Screener lists</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat()">🔥 Sector Heat</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='premarket'?'btn':'btn-sm'" @click="screenTab='premarket'; loadPremarket()">🌅 Pre-market</button>
+          </div>
+
+          <!-- pre-market movers -->
+          <div x-show="screenTab==='premarket'" class="space-y-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="scanPremarket()" :disabled="premarket.status && premarket.status.running">
+                <span x-show="!(premarket.status && premarket.status.running)">🌅 Scan pre-market movers</span>
+                <span x-show="premarket.status && premarket.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="premarket.status.current"></span> (<span x-text="premarket.status.done"></span>/<span x-text="premarket.status.total"></span>)</span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="premarket.scanned_at">Scanned <span x-text="premarket.scanned"></span> · <span x-text="premarket.scanned_at"></span></span>
+            </div>
+            <p class="text-xs text-slate-500 -mt-2">Biggest pre-market gaps vs the prior close — run during pre-market (4:00–9:30 ET). Ranked by gap; tap a card for the chart. Hot sector + a fresh catalyst + a known setup = the strongest swing/day candidates.</p>
+            <template x-if="!(premarket.movers||[]).length && !(premarket.status && premarket.status.running)">
+              <div class="card p-5 text-sm text-slate-500">No pre-market movers yet — run a scan during pre-market hours.</div>
+            </template>
+            <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              <template x-for="m in (premarket.movers||[])" :key="m.ticker">
+                <div class="card card-hover p-4 cursor-pointer" @click="showChart(m.ticker,{})">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-baseline gap-2 min-w-0">
+                      <span class="font-extrabold text-lg" x-text="m.ticker"></span>
+                      <span class="text-xs text-slate-500" x-text="'$'+m.price"></span>
+                    </div>
+                    <div class="text-xl font-extrabold shrink-0" :class="m.gap>=0?'text-up':'text-down'" x-text="(m.gap>=0?'+':'')+m.gap+'%'"></div>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span class="badge" x-show="m.theme" :class="m.theme_hot?'badge-hot':''"><span x-show="m.theme_hot" class="fire">🔥</span><span x-text="m.theme"></span></span>
+                    <span class="badge" x-show="m.theme_trend" :class="trendClass(m.theme_trend)"><span x-text="trendIcon(m.theme_trend)"></span> <span x-text="m.theme_trend"></span></span>
+                    <span class="badge" x-show="m.setup_type" :class="setupClass(m.setup_type)" x-text="m.setup_type"></span>
+                    <span class="badge" x-show="m.rs_pct!=null" title="relative-strength percentile (0–100)">RS <span x-text="m.rs_pct"></span></span>
+                    <span class="badge" x-show="m.pre_vol">vol <span x-text="fmtVol(m.pre_vol)"></span></span>
+                  </div>
+                  <a x-show="m.news_headline" :href="m.news_link" target="_blank" @click.stop class="block mt-2 text-xs leading-snug"
+                    :class="m.news_dir==='good'?'text-up':m.news_dir==='bad'?'text-down':'text-slate-400'">
+                    <span x-show="m.news_trump">🇺🇸 </span><span x-text="(m.news_dir==='good'?'📈 ':m.news_dir==='bad'?'📉 ':'📰 ')+m.news_headline"></span>
+                  </a>
+                  <div class="text-[11px] text-slate-500 mt-2">prev close $<span x-text="m.prev_close"></span> · tap for chart</div>
+                </div>
+              </template>
+            </div>
           </div>
 
           <!-- lists -->
@@ -353,22 +401,37 @@
                 <span x-show="sectorStatus.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="sectorStatus.current"></span> <span x-text="sectorStatus.done+'/'+sectorStatus.total"></span></span>
               </button>
               <span class="text-xs text-slate-500" x-show="sectorHeat.computed_at">Updated <span x-text="sectorHeat.computed_at"></span></span>
-              <div class="ml-auto flex items-center gap-2 text-xs">
-                <span class="text-slate-500">Sort:</span>
-                <template x-for="o in [['score','Heat'],['perf_1d','Today'],['perf_1w','Week'],['perf_1mo','Month'],['perf_6mo','6mo'],['streak','Streak']]" :key="o[0]">
-                  <button class="px-2.5 py-1 rounded-lg font-semibold" :class="sectorSort===o[0]?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="sectorSort=o[0]" x-text="o[1]"></button>
-                </template>
+              <div class="w-full sm:w-auto sm:ml-auto flex items-center gap-2">
+                <input x-model="sectorSearch" @input="runStockFinder()" type="text" placeholder="🔎 Find a stock (e.g. CRCL)…" class="input py-1.5 text-sm w-full sm:w-56">
+                <button x-show="sectorSearch" @click="sectorSearch=''; runStockFinder()" class="text-slate-500 hover:text-white text-sm" title="clear">✕</button>
               </div>
             </div>
-            <div class="card overflow-hidden">
-              <div class="grid grid-cols-12 px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-500 border-b border-line font-semibold">
+            <template x-if="sectorSearch.trim()">
+              <div class="text-sm flex items-center gap-2 flex-wrap">
+                <template x-if="stockGroups.length">
+                  <span class="text-slate-300"><b x-text="sectorSearch.trim().toUpperCase()"></b> is in:</span>
+                </template>
+                <template x-for="g in stockGroups" :key="g">
+                  <span class="badge badge-hot cursor-pointer" @click="secOpen[g]=true" x-text="g"></span>
+                </template>
+                <template x-if="!stockGroups.length && !sortedSectorsView.length">
+                  <span class="text-slate-500">No sector group lists “<span x-text="sectorSearch.trim().toUpperCase()"></span>”.</span>
+                </template>
+              </div>
+            </template>
+            <div class="card overflow-x-auto">
+              <div class="grid grid-cols-12 min-w-[52rem] px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-500 border-b border-line font-semibold select-none">
                 <div class="col-span-4">Sector</div>
                 <div class="col-span-2">Trend</div>
-                <div class="text-right">Today</div><div class="text-right">Week</div><div class="text-right">Month</div><div class="text-right">6mo</div>
-                <div class="text-right">Streak</div><div class="text-right">Heat</div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='perf_1d'?'text-white':''" @click="sectorSort='perf_1d'">Today<span x-show="sectorSort==='perf_1d'"> ▾</span></div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='perf_1w'?'text-white':''" @click="sectorSort='perf_1w'">Week<span x-show="sectorSort==='perf_1w'"> ▾</span></div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='perf_1mo'?'text-white':''" @click="sectorSort='perf_1mo'">Month<span x-show="sectorSort==='perf_1mo'"> ▾</span></div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='perf_6mo'?'text-white':''" @click="sectorSort='perf_6mo'">6mo<span x-show="sectorSort==='perf_6mo'"> ▾</span></div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='streak'?'text-white':''" @click="sectorSort='streak'">Streak<span x-show="sectorSort==='streak'"> ▾</span></div>
+                <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='score'?'text-white':''" @click="sectorSort='score'">Heat<span x-show="sectorSort==='score'"> ▾</span></div>
               </div>
-              <template x-for="s in sortedSectors" :key="s.sector">
-                <div class="border-b border-line">
+              <template x-for="s in sortedSectorsView" :key="s.sector">
+                <div class="border-b border-line min-w-[52rem]">
                   <div class="grid grid-cols-12 items-center px-4 py-3 text-sm hover:bg-white/5 transition cursor-pointer" @click="toggleSector(s.sector)">
                     <div class="col-span-4 font-semibold flex items-center gap-2">
                       <span class="text-slate-500 text-xs inline-block transition-transform" :class="secOpen[s.sector]?'rotate-90':''">▸</span>
@@ -387,7 +450,7 @@
                       <div class="col-span-4">Symbol (hottest first)</div><div class="text-right col-span-2">Last</div><div class="text-right col-span-2">Today</div><div class="text-right col-span-2">Week</div><div class="text-right col-span-2">Month</div>
                     </div>
                     <template x-for="(m,mi) in s.members" :key="m.ticker">
-                      <div class="grid grid-cols-12 items-center px-2 py-1.5 text-sm rounded hover:bg-white/5 cursor-pointer" @click="showChart(m.ticker, {})">
+                      <div class="grid grid-cols-12 items-center px-2 py-1.5 text-sm rounded hover:bg-white/5 cursor-pointer" :class="memberHit(m)?'ring-1 ring-accent bg-accent/10':''" @click="showChart(m.ticker, {})">
                         <div class="col-span-4 font-semibold flex items-center gap-2">
                           <span x-show="mi<3" x-text="['🥇','🥈','🥉'][mi]"></span>
                           <span x-text="m.ticker"></span>
@@ -549,7 +612,7 @@
                 <div class="card">
                   <div class="card-head" x-text="sec.name"></div>
                   <template x-if="!sec.items || sec.items.length===0"><div class="p-4 text-sm text-slate-500">No fresh catalysts.</div></template>
-                  <template x-for="(it,ii) in sec.items" :key="ii">
+                  <template x-for="(it,ii) in newsByDate(sec.items)" :key="ii">
                     <a :href="it.link" target="_blank" class="block px-5 py-3 border-t border-line hover:bg-white/5 transition">
                       <div class="text-sm font-medium" :class="(it.title||'').toLowerCase().includes('trump')?'text-pink-300':it.sentiment==='bad'?'text-down':it.sentiment==='good'?'text-up':''" x-text="(it.sentiment==='good'?'📈 ':it.sentiment==='bad'?'📉 ':'')+it.title"></div>
                       <div class="text-xs text-slate-500"><span x-text="it.source"></span> · <span x-text="it.published"></span></div>
@@ -562,7 +625,7 @@
             <div class="card lg:sticky lg:top-24">
               <div class="card-head">📈 Tickers worth watching</div>
               <template x-if="Object.keys(news.ticker_news||{}).length===0"><div class="p-4 text-sm text-slate-500">Refresh news to populate from your positions + top setups.</div></template>
-              <template x-for="row in Object.entries(news.ticker_news||{})" :key="row[0]">
+              <template x-for="row in newsTickerRows" :key="row[0]">
                 <div class="px-4 py-2.5 border-t border-line hover:bg-white/5 cursor-pointer transition" @click="showChart(row[0],{})">
                   <div class="flex items-center gap-2">
                     <span class="font-bold" x-text="row[0]"></span>
@@ -584,13 +647,19 @@
                 <span x-show="suspicious.status && suspicious.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="suspicious.status.current"></span> (<span x-text="suspicious.status.done"></span>/<span x-text="suspicious.status.total"></span>)</span>
               </button>
               <span class="text-xs text-slate-500" x-show="suspicious.scanned_at">Scanned <span x-text="suspicious.scanned"></span> · <span x-text="suspicious.scanned_at"></span></span>
-              <span class="ml-auto text-xs text-slate-500">Unusual end-of-day / after-hours volume + move — often an insider/institutional footprint.</span>
+              <div class="ml-auto flex items-center gap-2 text-xs">
+                <span class="text-slate-500">Sort:</span>
+                <template x-for="o in [['vol_mult','Volume'],['move','Move'],['strength','Strength']]" :key="o[0]">
+                  <button class="px-2.5 py-1 rounded-lg font-semibold" :class="suspSort===o[0]?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="suspSort=o[0]" x-text="o[1]"></button>
+                </template>
+              </div>
             </div>
+            <p class="text-xs text-slate-500 -mt-2">Unusual end-of-day / after-hours volume + move — often an insider/institutional footprint. Highest first.</p>
             <div class="grid md:grid-cols-2 gap-5 items-start">
-              <div class="card">
+              <div class="card overflow-x-auto">
                 <div class="card-head flex items-center justify-between"><span>🟢 Unusual buying</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.buying||[]).length+' names'"></span></div>
                 <template x-if="!(suspicious.buying||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
-                <template x-for="s in (suspicious.buying||[])" :key="'b'+s.ticker">
+                <template x-for="s in suspSorted(suspicious.buying)" :key="'b'+s.ticker">
                   <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
                     <span class="font-bold w-14" x-text="s.ticker"></span>
                     <span class="text-up font-bold w-16 text-right" x-text="(s.move>=0?'+':'')+s.move+'%'"></span>
@@ -600,10 +669,10 @@
                   </div>
                 </template>
               </div>
-              <div class="card">
+              <div class="card overflow-x-auto">
                 <div class="card-head flex items-center justify-between"><span>🔴 Unusual selling</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.selling||[]).length+' names'"></span></div>
                 <template x-if="!(suspicious.selling||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
-                <template x-for="s in (suspicious.selling||[])" :key="'s'+s.ticker">
+                <template x-for="s in suspSorted(suspicious.selling)" :key="'s'+s.ticker">
                   <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
                     <span class="font-bold w-14" x-text="s.ticker"></span>
                     <span class="text-down font-bold w-16 text-right" x-text="s.move+'%'"></span>
@@ -619,7 +688,7 @@
 
         <!-- ===== STATS ===== -->
         <section x-show="view==='stats'" class="space-y-5 max-w-3xl">
-          <div class="grid grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null?stats.win_rate+'%':'—'"></div></div>
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null?stats.avg_r+'R':'—'"></div></div>
             <div class="stat"><div class="stat-label">Closed</div><div class="stat-val" x-text="stats.closed??0"></div></div>
@@ -673,10 +742,14 @@
 
   <!-- ===== Chart modal ===== -->
   <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="closeChart()" x-cloak>
-    <div class="bg-panel border border-line rounded-lg w-[1340px] max-w-[97vw] p-4">
-      <div class="flex justify-between items-center mb-3">
+    <div class="bg-panel border border-line rounded-lg w-[1340px] max-w-[97vw] max-h-[95vh] overflow-y-auto p-3 sm:p-4">
+      <div class="flex justify-between items-center gap-2 mb-3 flex-wrap">
         <div class="font-bold text-xl" x-text="chartModal.ticker"></div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showEmas?'bg-accent text-white':'bg-panel2 text-slate-400'"
+            @click="chartModal.showEmas=!chartModal.showEmas; renderChart()" title="Show/hide the 9 / 21 / 50 EMAs">EMAs</button>
+          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showAvwap?'bg-accent text-white':'bg-panel2 text-slate-400'"
+            @click="chartModal.showAvwap=!chartModal.showAvwap; renderChart()" title="Show/hide the AVWAP lines (ATH & earnings)">AVWAP</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.logScale?'bg-accent text-white':'bg-panel2 text-slate-400'"
             @click="chartModal.logScale=!chartModal.logScale; renderChart()" title="Logarithmic price scale">Log</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showChannel?'bg-accent text-white':'bg-panel2 text-slate-400'"
@@ -684,7 +757,7 @@
           <button class="btn-ghost" @click="closeChart()">✕</button>
         </div>
       </div>
-      <div id="chartBox" class="w-full h-[72vh]"></div>
+      <div id="chartBox" class="w-full h-[60vh] sm:h-[72vh]"></div>
       <div class="text-xs text-slate-500 mt-2">
         <span class="text-up">Buy zone</span> = the band between the two green lines (buy anywhere inside it) · <span class="text-down">stop</span> red ·
         EMAs <span style="color:#eab308">9</span>/<span style="color:#f59e0b">21</span>/<span style="color:#5b8cff">50</span> ·
@@ -697,7 +770,7 @@
 
   <!-- ===== Take / Close modal ===== -->
   <div x-show="tradeModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="tradeModal.open=false" x-cloak>
-    <div class="bg-panel border border-line rounded-lg w-[420px] p-5 space-y-3">
+    <div class="bg-panel border border-line rounded-lg w-full max-w-[420px] mx-4 p-5 space-y-3">
       <div class="font-bold text-lg" x-text="(tradeModal.mode==='take'?'Took ':tradeModal.mode==='edit'?'Edit ':'Close ')+tradeModal.ticker"></div>
       <template x-if="tradeModal.mode==='edit'">
         <div class="space-y-2">

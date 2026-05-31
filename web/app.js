@@ -26,6 +26,7 @@ function dataCenter() {
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
     view: 'dashboard',
+    mobileNav: false,
     settings: { account_size: null, risk_pct: 1 },
     screeners: [],
     suggestions: { items: [] },
@@ -43,6 +44,7 @@ function dataCenter() {
     newsStatus: { running: false, done: 0, total: 0, current: '' },
     newsTab: 'news',
     suspicious: { buying: [], selling: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
+    premarket: { movers: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
     refreshState: { running: false, stage: '', done: 0, total: 4 },
     newScreener: { name: '', tickers: '' },
     newTrade: { ticker: '', setup_type: 'Breakout', entry: null, stop: null, shares: null, notes: '' },
@@ -68,17 +70,25 @@ function dataCenter() {
     sectorStatus: { running: false, done: 0, total: 0, current: '' },
     sectorSort: 'score',
     secOpen: {},
+    sectorSearch: '',
+    themesMap: {},
+    _stockHits: [],
+    suspSort: 'vol_mult',
     setupFilter: 'All',
     momFilter: 'All',
     sectorFilter: 'All',
     waitFilter: false,
     calcModal: { open: false, ticker: '' },
-    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, _data: null, _obj: null },
+    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, _data: null, _obj: null },
     tradeModal: { open: false, mode: 'take', ticker: '' },
     _pollTimer: null,
 
     // ---------- display scale ----------
-    applyScale() { document.documentElement.style.fontSize = (this.scalePct / 100 * 16) + 'px'; },
+    applyScale() {
+      // cap the zoom on phones so the 125% desktop default doesn't crush small screens
+      const eff = window.innerWidth < 760 ? Math.min(this.scalePct, 100) : this.scalePct;
+      document.documentElement.style.fontSize = (eff / 100 * 16) + 'px';
+    },
     incScale(d) {
       this.scalePct = Math.min(180, Math.max(85, this.scalePct + d));
       localStorage.setItem('dc_scale', this.scalePct);
@@ -114,6 +124,7 @@ function dataCenter() {
 
     // ---------- lifecycle ----------
     onResize() {
+      this.applyScale();               // re-apply the phone zoom cap on rotate/resize
       const box = document.getElementById('chartBox');
       if (this.chartModal._chart && box) { try { this.chartModal._chart.resize(box.clientWidth, box.clientHeight); } catch (e) {} }
       for (const k in this._wlCharts) {
@@ -127,7 +138,7 @@ function dataCenter() {
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(), this.loadDoc('lessons'),
-        this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse()]);
+        this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
       const def = this.screeners.find(s => s.is_default) || this.screeners[0];
       this.scanScreener = this.suggestions.screener_id || (def && def.id) || '';
       this.docEdit && (this.docEdit = this.docEdit);
@@ -220,12 +231,68 @@ function dataCenter() {
       if (this.waitFilter) items = items.filter(s => s.worth_waiting);
       return items;
     },
-    // sectors present in the current suggestions, ordered hottest-first (by sector heat)
+    // sector filter options: every category from the (updated) sector heater, plus any
+    // theme present in the current suggestions — ordered hottest-first by sector heat.
     get sectorOptions() {
-      const present = new Set((this.suggestions.items || []).map(s => s.theme).filter(Boolean));
       const heat = {};
       (this.sectorHeat.sectors || []).forEach(s => { heat[s.sector] = s.score; });
-      return [...present].sort((a, b) => (heat[b] ?? -999) - (heat[a] ?? -999) || a.localeCompare(b));
+      const names = new Set([
+        ...Object.keys(heat),
+        ...(this.suggestions.items || []).map(s => s.theme).filter(Boolean),
+      ]);
+      return [...names].sort((a, b) => (heat[b] ?? -999) - (heat[a] ?? -999) || a.localeCompare(b));
+    },
+
+    // ---------- news: newest first (used on the News tab AND the dashboard) ----------
+    _pubTime(p) { const t = p ? Date.parse(p) : NaN; return isNaN(t) ? 0 : t; },
+    newsByDate(items) { return [...(items || [])].sort((a, b) => this._pubTime(b.published) - this._pubTime(a.published)); },
+    get newsTickerRows() {
+      return Object.entries(this.news.ticker_news || {})
+        .sort((a, b) => this._pubTime(b[1].published) - this._pubTime(a[1].published));
+    },
+
+    // ---------- suspicious activity: sort the loaded list (default = volume spike) ----------
+    suspSorted(list) {
+      const k = this.suspSort;
+      return [...(list || [])].sort((a, b) =>
+        (k === 'move' ? Math.abs(b.move) - Math.abs(a.move) : (b[k] || 0) - (a[k] || 0)));
+    },
+
+    // ---------- sector heat: find a stock's group ----------
+    get sortedSectorsView() {                       // sortedSectors, narrowed when searching
+      const all = this.sortedSectors;
+      if (!(this.sectorSearch || '').trim()) return all;
+      const hits = new Set(this._stockHits || []);
+      return all.filter(s => hits.has(s.sector));
+    },
+    get stockGroups() {                             // authoritative: which group(s) hold this ticker
+      const q = (this.sectorSearch || '').trim().toUpperCase();
+      if (!q) return [];
+      const out = [];
+      for (const [grp, ts] of Object.entries(this.themesMap || {})) {
+        if ((ts || []).some(t => (t || '').toUpperCase() === q)) out.push(grp);
+      }
+      return out;
+    },
+    memberHit(m) {
+      const q = (this.sectorSearch || '').trim().toUpperCase();
+      return !!q && (m.ticker || '').toUpperCase().includes(q);
+    },
+    runStockFinder() {
+      const q = (this.sectorSearch || '').trim().toUpperCase();
+      this._stockHits = [];
+      if (!q) return;
+      // exact membership from themes.json (authoritative — works even for names with no chart yet)
+      for (const [grp, ts] of Object.entries(this.themesMap || {})) {
+        if ((ts || []).some(t => (t || '').toUpperCase() === q)) this._stockHits.push(grp);
+      }
+      // also catch partial ticker matches among computed members
+      (this.sectorHeat.sectors || []).forEach(s => {
+        if ((s.members || []).some(m => (m.ticker || '').toUpperCase().includes(q)) && !this._stockHits.includes(s.sector)) {
+          this._stockHits.push(s.sector);
+        }
+      });
+      this._stockHits.forEach(g => { this.secOpen[g] = true; });   // auto-expand matches
     },
     fmtDollarVol(v) {
       if (!v) return '—';
@@ -318,6 +385,7 @@ function dataCenter() {
     // ---------- view switching ----------
     selectView(id) {
       this.view = id;
+      this.mobileNav = false;          // close the mobile drawer after picking a view
       if (id === 'watchlist') this.loadWatchlistAnalysis();
       if (id === 'news') this.loadNews();
     },
@@ -338,6 +406,7 @@ function dataCenter() {
 
     // ---------- news ----------
     async loadNews() { this.news = await this.api('/news'); },
+    async loadThemes() { this.themesMap = await this.api('/themes'); },
     async refreshNews() {
       const r = await this.api('/news/refresh', 'POST');
       if (r.ok) { this.newsStatus.running = true; this.pollNews(); }
@@ -362,6 +431,19 @@ function dataCenter() {
         if (!this.suspicious.status?.running) clearInterval(this._sus);
       }, 1500);
     },
+    async loadPremarket() { this.premarket = await this.api('/premarket'); },
+    async scanPremarket() {
+      const r = await this.api('/premarket/scan', 'POST');
+      if (r.ok) { this.premarket.status = { running: true, done: 0, total: 0, current: 'starting…' }; this.pollPremarket(); }
+    },
+    pollPremarket() {
+      clearInterval(this._pm);
+      this._pm = setInterval(async () => {
+        await this.loadPremarket();
+        if (!this.premarket.status?.running) clearInterval(this._pm);
+      }, 1500);
+    },
+    fmtVol(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : ('' + (n || 0)); },
     // ---------- "new day" full refresh ----------
     async refreshAll() {
       const r = await this.api('/refresh-all', 'POST');
@@ -377,7 +459,7 @@ function dataCenter() {
     async reloadAll() {
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(), this.loadDoc('lessons'),
-        this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse()]);
+        this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
     },
     // ---------- market regime helpers ----------
     postureColor(p) {
@@ -526,31 +608,35 @@ function dataCenter() {
       });
       const bars = data.bars || [];
       series.setData(bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
-      // 9 / 21 / 50 EMA overlays
-      const emaCfg = [[9, '#eab308'], [21, '#f59e0b'], [50, '#5b8cff']];
-      for (const [p, color] of emaCfg) {
-        if (bars.length < p) continue;
-        const k = 2 / (p + 1); let prev = bars[0].close; const arr = [];
-        for (const b of bars) { prev = b.close * k + prev * (1 - k); arr.push({ time: b.time, value: +prev.toFixed(2) }); }
-        const ls = chart.addLineSeries({ color, lineWidth: p === 9 ? 2 : 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-        ls.setData(arr);
-      }
-      // AVWAP curves — anchored at all-time high (violet) and last earnings gap (cyan)
-      const avwap = (anchor) => {
-        let num = 0, den = 0; const a = [];
-        for (let i = anchor; i < bars.length; i++) {
-          const b = bars[i]; const tp = (b.high + b.low + b.close) / 3;
-          num += tp * b.volume; den += b.volume;
-          a.push({ time: b.time, value: den ? +(num / den).toFixed(2) : b.close });
+      // 9 / 21 / 50 EMA overlays (toggleable)
+      if (this.chartModal.showEmas) {
+        const emaCfg = [[9, '#eab308'], [21, '#f59e0b'], [50, '#5b8cff']];
+        for (const [p, color] of emaCfg) {
+          if (bars.length < p) continue;
+          const k = 2 / (p + 1); let prev = bars[0].close; const arr = [];
+          for (const b of bars) { prev = b.close * k + prev * (1 - k); arr.push({ time: b.time, value: +prev.toFixed(2) }); }
+          const ls = chart.addLineSeries({ color, lineWidth: p === 9 ? 2 : 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+          ls.setData(arr);
         }
-        return a;
-      };
-      if (bars.length) {
-        let athI = 0; for (let i = 1; i < bars.length; i++) if (bars[i].high > bars[athI].high) athI = i;
-        chart.addLineSeries({ color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(athI));
-        let eI = -1, eg = 0; const st0 = Math.max(1, bars.length - 75);
-        for (let i = st0; i < bars.length; i++) { const g = (bars[i].open / bars[i - 1].close - 1) * 100; if (g > eg) { eg = g; eI = i; } }
-        if (eg >= 6 && eI > 0) chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(eI));
+      }
+      // AVWAP curves — anchored at all-time high (violet) and last earnings gap (cyan) (toggleable)
+      if (this.chartModal.showAvwap) {
+        const avwap = (anchor) => {
+          let num = 0, den = 0; const a = [];
+          for (let i = anchor; i < bars.length; i++) {
+            const b = bars[i]; const tp = (b.high + b.low + b.close) / 3;
+            num += tp * b.volume; den += b.volume;
+            a.push({ time: b.time, value: den ? +(num / den).toFixed(2) : b.close });
+          }
+          return a;
+        };
+        if (bars.length) {
+          let athI = 0; for (let i = 1; i < bars.length; i++) if (bars[i].high > bars[athI].high) athI = i;
+          chart.addLineSeries({ color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(athI));
+          let eI = -1, eg = 0; const st0 = Math.max(1, bars.length - 75);
+          for (let i = st0; i < bars.length; i++) { const g = (bars[i].open / bars[i - 1].close - 1) * 100; if (g > eg) { eg = g; eI = i; } }
+          if (eg >= 6 && eI > 0) chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(eI));
+        }
       }
       // regression trend channel (the "tunnel") — toggleable
       if (this.chartModal.showChannel && data.channel) {

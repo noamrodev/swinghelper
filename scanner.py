@@ -586,6 +586,60 @@ def scan_suspicious(tickers, progress=None):
             "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
 
 
+def _premarket_one(sym):
+    """Most recent pre-market (4:00–9:30 ET) move vs the prior regular-session close.
+    Returns the gap %, last pre-market price, and pre-market volume — or None if there's
+    no pre-market activity (e.g. run outside pre-market hours) or the move is tiny."""
+    bars, gmt = _fetch_intraday(sym, rng="2d")
+    if not bars:
+        return None
+
+    def ethr(t):
+        return ((t + gmt) % 86400) / 3600          # hour-of-day in exchange tz
+
+    def eday(t):
+        return (t + gmt) // 86400                   # day index in exchange tz
+
+    last_day = eday(bars[-1]["t"])
+    pre = [b for b in bars if eday(b["t"]) == last_day and 4.0 <= ethr(b["t"]) < 9.5]
+    if not pre:
+        return None
+    # prior regular-session close: last regular bar before today's pre-market window
+    reg_prior = [b for b in bars if b["t"] < pre[0]["t"] and 9.5 <= ethr(b["t"]) < 16.0]
+    if not reg_prior:
+        return None
+    prev_close = reg_prior[-1]["c"]
+    last = pre[-1]["c"]
+    if not prev_close or not last:
+        return None
+    gap = (last / prev_close - 1) * 100
+    if abs(gap) < 2.0:                              # not a notable gap
+        return None
+    pre_vol = sum(b["v"] for b in pre)
+    return {"ticker": sym.upper(), "gap": round(gap, 1), "price": round(last, 2),
+            "prev_close": round(prev_close, 2), "pre_vol": int(pre_vol),
+            "dir": "up" if gap >= 0 else "down"}
+
+
+def scan_premarket(tickers, progress=None):
+    """Scan tickers for notable pre-market gaps; return movers ranked by gap (gainers first)."""
+    movers = []
+    total = len(tickers)
+    for i, t in enumerate(tickers, 1):
+        if progress:
+            progress(i, total, t)
+        try:
+            m = _premarket_one(t)
+        except Exception:
+            m = None
+        if m:
+            movers.append(m)
+        time.sleep(0.03)
+    movers.sort(key=lambda x: -x["gap"])            # biggest gainers at the top
+    return {"movers": movers[:60], "scanned": total,
+            "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+
+
 def sector_metrics(tickers):
     """Composite momentum metrics for a group of tickers (a sector/theme),
     plus per-member detail (sorted hottest-first) for the expandable view."""
