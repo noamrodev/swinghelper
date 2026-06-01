@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 (Spinning: 9 EMA + 2-green confirmation)
+- **Switched the spin line from the 10 EMA to the 9 EMA** (5-min) to match the chart.
+- **Confirmation:** a name now needs **2 closed green candles above the 9 EMA** (recent window) before
+  it counts as a spin — a single candle tagging the line no longer qualifies. The higher-lows
+  tolerance still applies *after* confirmation, so a confirmed name isn't dropped on one dip under the
+  line. Verified live: every returned spin has `green_above ≥ 2` (e.g. NXPI/HOOD confirmed then sitting
+  right on the line). UI relabeled 10EMA→9EMA throughout.
+
 ## 2026-06-01 (Spinning stocks screener)
 
 ### 🔄 Spinning stocks (Screeners → 🔄 Spinning)

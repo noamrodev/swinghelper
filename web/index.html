@@ -536,14 +536,14 @@
                 live · auto-updating
               </span>
             </div>
-            <p class="text-xs text-slate-500 -mt-2">Beaten-down stocks starting to rotate back up: a green 5-min candle reclaiming a turning-up 10 EMA, ranked by how much snap-back potential is left (early reclaim off a big flush, near the line, buyers stepping in). Tap a card for the chart. Not a buy signal — confirm the level and size to 1% risk.</p>
+            <p class="text-xs text-slate-500 -mt-2">Beaten-down stocks starting to rotate back up: 2 green 5-min candles closing above a turning-up 9 EMA, ranked by how much snap-back potential is left (early reclaim off a big flush, near the line, buyers stepping in). Tap a card for the chart. Not a buy signal — confirm the level and size to 1% risk.</p>
             <div class="flex items-center gap-2 flex-wrap">
               <button class="px-3 py-1.5 rounded-lg text-xs font-bold transition" :class="spinLeadersOnly?'btn':'btn-sm'" @click="spinLeadersOnly=!spinLeadersOnly">⚡ Leaders only</button>
               <button class="px-3 py-1.5 rounded-lg text-xs font-bold transition" :class="spinRisingOnly?'btn':'btn-sm'" @click="spinRisingOnly=!spinRisingOnly">🔥 Rising sectors only</button>
               <span class="text-xs text-slate-500" x-show="(spinning.spins||[]).length" x-text="spinFiltered().length+' of '+(spinning.spins||[]).length+' spins'"></span>
             </div>
             <template x-if="!(spinning.spins||[]).length && !(spinning.status && spinning.status.running)">
-              <div class="card p-5 text-sm text-slate-500">No spins yet — run a scan during market hours. Spins need beaten-down names actively reclaiming the 5-min 10 EMA.</div>
+              <div class="card p-5 text-sm text-slate-500">No spins yet — run a scan during market hours. Spins need beaten-down names confirming a reclaim of the 5-min 9 EMA (2 green closes above it).</div>
             </template>
             <template x-if="(spinning.spins||[]).length && !spinFiltered().length">
               <div class="card p-5 text-sm text-slate-500">No spins match the active filters.</div>
@@ -565,7 +565,7 @@
                     <span class="badge" x-show="s.fresh" style="color:#22e0a1">✦ fresh</span>
                     <span class="badge" title="how far it was beaten down off the recent high">📉 −<span x-text="s.drop"></span>%</span>
                     <span class="badge" title="bounce off the intraday low so far">↑ <span x-text="s.off_low"></span>% off low</span>
-                    <span class="badge" :class="Math.abs(s.dist_ma)<=1?'badge-hot':''" title="distance from the 5-min 10 EMA (at the line = earliest; a small minus is a shallow dip)"><span x-text="(s.dist_ma>=0?'+':'')+s.dist_ma"></span>% vs 10EMA</span>
+                    <span class="badge" :class="Math.abs(s.dist_ma)<=1?'badge-hot':''" title="distance from the 5-min 9 EMA (at the line = earliest; a small minus is a shallow dip)"><span x-text="(s.dist_ma>=0?'+':'')+s.dist_ma"></span>% vs 9EMA</span>
                     <span class="badge" x-show="s.higher_lows" style="color:#22e0a1" title="making higher lows on the 5-min — rising structure, kept even if a candle dips under the line">📈 higher lows</span>
                     <span class="badge" x-show="s.vol_ratio>=1.2" title="up-bar vs down-bar volume on the turn">🟢 vol <span x-text="s.vol_ratio"></span>×</span>
                   </div>
@@ -580,7 +580,7 @@
                     :class="s.news_dir==='good'?'text-up':s.news_dir==='bad'?'text-down':'text-slate-400'">
                     <span x-text="(s.news_dir==='good'?'📈 ':s.news_dir==='bad'?'📉 ':'📰 ')+s.news_headline"></span>
                   </a>
-                  <div class="text-[11px] text-slate-500 mt-2">stop idea: under intraday low $<span x-text="s.trough"></span> · 10EMA $<span x-text="s.ma"></span> · tap for chart</div>
+                  <div class="text-[11px] text-slate-500 mt-2">stop idea: under intraday low $<span x-text="s.trough"></span> · 9EMA $<span x-text="s.ma"></span> · tap for chart</div>
                 </div>
               </template>
             </div>

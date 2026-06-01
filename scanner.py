@@ -888,8 +888,8 @@ def spin_signal(sym, adr=None):
     o = [b["o"] for b in reg]
     v = [b["v"] for b in reg]
     n = len(c)
-    # 10-period EMA on the 5-min closes (the smooth turn line)
-    k = 2 / 11
+    # 9-period EMA on the 5-min closes (the smooth turn line — matches the chart's 9 EMA)
+    k = 2 / 10
     ma = [c[0]]
     for x in c[1:]:
         ma.append(x * k + ma[-1] * (1 - k))
@@ -905,7 +905,6 @@ def spin_signal(sym, adr=None):
     above = [c[i] > ma[i] for i in range(n)]
     green = [c[i] > o[i] for i in range(n)]
     ma_up = ma[-1] >= ma[-4]
-    cross_recent = any((not above[i - 1]) and above[i] for i in range(max(1, n - 4), n))
     n_above = 0                                      # consecutive bars closing above the MA
     for i in range(n - 1, -1, -1):
         if above[i]:
@@ -922,15 +921,19 @@ def spin_signal(sym, adr=None):
 
     higher_lows = _higher_lows(c, trough_i)
     recently_above = any(above[-3:])                 # reclaimed within the last ~15 min
-    tol = min(1.2, max(0.4, 0.2 * adr))              # how far under the 10 EMA still counts as "a little"
+    tol = min(1.2, max(0.4, 0.2 * adr))              # how far under the 9 EMA still counts as "a little"
+    # CONFIRMATION: at least 2 closed green candles have closed above the 9 EMA in the recent window.
+    # A single candle tagging the line isn't enough — wait for the reclaim to confirm with 2 green
+    # closes above it before the name counts as a spin.
+    green_above = sum(1 for i in range(max(0, n - 8), n) if green[i] and above[i])
+    confirmed = green_above >= 2
 
     # ----- gates (all must pass) -----
     beaten = drop >= max(4.0, 0.8 * adr)             # a real flush, scaled to volatility
-    # Reclaimed = closed back above the 10 EMA, OR it reclaimed recently and is only a LITTLE under
-    # the line while still making higher lows (a shallow dip in a rising 5-min structure — don't
-    # drop it, it can keep going). Far below the line or breaking structure still fails.
-    reclaimed = (above[-1] and (cross_recent or n_above <= 6)) \
-        or (recently_above and higher_lows and dist_ma >= -tol)
+    # Holding = still above the 9 EMA now, OR (after confirming) only a LITTLE under it while still
+    # making higher lows — a shallow dip in a rising 5-min structure isn't dropped, it can keep going.
+    holding = above[-1] or (recently_above and higher_lows and dist_ma >= -tol)
+    reclaimed = confirmed and holding
     turning = (ma_up or higher_lows) and off_low >= 0.5   # MA curling up OR higher-lows, off the low
     not_late = n_above <= 8 and dist_ma <= 2.2       # the spin hasn't already run away
     if not (beaten and reclaimed and turning and not_late):
@@ -950,7 +953,8 @@ def spin_signal(sym, adr=None):
         "ticker": sym.upper(), "score": score, "drop": round(drop, 1),
         "off_low": round(off_low, 1), "dist_ma": round(dist_ma, 2), "n_above": n_above,
         "vol_ratio": round(vol_ratio, 1), "green_last": green[-1], "ma_up": ma_up,
-        "higher_lows": higher_lows, "price": round(last, 2), "ma": round(ma[-1], 2),
+        "higher_lows": higher_lows, "green_above": green_above,
+        "price": round(last, 2), "ma": round(ma[-1], 2),
         "trough": round(trough, 2), "fresh": n_above <= 3,
     }
 
