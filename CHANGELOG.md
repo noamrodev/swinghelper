@@ -1,5 +1,96 @@
 # Changelog
 
+## 2026-06-01 (perf + groups polish)
+
+### Performance (no behavior change)
+- **Scans ~10× faster.** The scan slept `0.05s` per ticker unconditionally (~40s of pure sleep over
+  800 names) even when every bar was cached. `get_bars` now flags whether it hit the network
+  (`_DID_FETCH`); the scan only throttles on actual fetches. **Cached full scan: ~44s → ~4s** — makes
+  "New day", the 30-min auto-rescan, and group detection near-instant.
+- **Lighter DOM.** The Suggestions grid rendered all ~700 cards (a ~7MB DOM that slowed rendering and
+  the live merge). Now caps at the **top 120** by rating (accurate "showing top 120 of N · show all"),
+  so the page and live updates are snappier.
+- Backed up the full project to `backups/<timestamp>/` before the pass.
+
+### Detect-new-groups polish
+- Each group now **names its common thread** (preferred: the specific theme; fallback: a broad sector),
+  and groups with **no shared thread** (no tag shared by a majority of members) are **hidden** — no more
+  "Emerging / cross-sector" blobs. 🆕 marks a thread that isn't one of the 38 fixed themes. *(Note:
+  `sectors.json` is sparse, so some real clusters can't be named and are conservatively hidden.)*
+
+## 2026-06-01 (latest) — Detect new groups, live pre-market, P&L baseline
+
+### #6 Detect new groups (Screeners → 🧭 New groups)
+- `scanner.detect_groups()` finds **emerging groups**: takes the recent strong movers, z-scores their
+  last 15 daily returns, links any pair with correlation ≥ 0.86, and returns the connected components
+  (size 3–20). `GET /api/groups` + `POST /api/groups/detect` (background job); app tags each group's
+  dominant sector and flags 🆕 when it spans multiple/none of the 38 fixed themes (a genuinely new
+  group). New Screeners tab renders each cluster's members + avg 1-week move. (Found e.g. TEAM/NOW/
+  WDAY/IOT and QBTS/RGTI/INFQ moving together.)
+
+### #5 phase 2 — live pre-market movers
+- On the Pre-market tab during the PRE session: listed movers' price/gap update live from quotes
+  (pre-market overlay), and a full re-scan auto-fires every ~8 min to catch new gappers. Green
+  "live · auto-updating" badge.
+
+### Today's P&L baseline fix
+- Positions **entered today** now use your **entry** as the day baseline (you only owned it from the
+  fill), not yesterday's close — so a name you bought today shows only the gain since your fill.
+  (MP bought today: +$20, not the phantom +$127.)
+
+## 2026-06-01 (late) — Live updates + backtest validation
+
+### Live updates during market hours (roadmap #5, v1)
+- **Batched live quotes** — `scanner.fetch_quotes()` pulls Yahoo `v7/quote` (cookie+crumb), 50 symbols
+  per call, 30s shared cache, pre/post-market price overlay. Degrades gracefully.
+- **`GET /api/live?symbols=`** — returns live prices + `market_state` + a **live blended posture**
+  (regime recomputed with live index prices).
+- **Frontend live poller** — every ~45s while the market's open (5min when closed), gated by market
+  state. Merges live price into: open positions (live P&L/R + **hit-target / at-stop / now-under-9-EMA**
+  flags), suggestions (live price → live "buyable now" / stopped), and the market-regime card. A
+  **"● LIVE · OPEN · 8s"** header badge shows state + age with a pause toggle.
+- Scope: positions + suggestions + regime. Phase 2 (queued): live Sector Heat + pre-market.
+
+### Live refinements (same day)
+- **Live coach** — the position action now recomputes from the LIVE price (was stale EOD → e.g. CRWV
+  showed +5% *and* "EXIT below stop"). Intraday under the 9-EMA is now **WATCH** ("exit only if it
+  CLOSES under it"), not a hard EXIT.
+- **Setup-aware exits** — Deep Pullback / Consolidation are bought at the 50-EMA / in a base, so they
+  sit under the 9-EMA by design. Those setups now trail the **50-EMA** (not the 9), and a fresh entry
+  (≤2 sessions) holds to its **stop** instead of getting shaken out. Coach carries `e50`/`patient`/`young`;
+  patient match is case-insensitive.
+- **Live re-rank** — suggestions that pull into their buy zone float to the top as prices move.
+- **Auto-rescan** — optional (default on), every 30 min while the market's open, with **fresh bars**
+  (`scan ?fresh=1` → `max_age=0`) so new setups/grades appear intraday. Toggle on the Suggestions tab.
+- **Today's P&L** tile on the dashboard (live mark-to-market vs prior close).
+- Server now sends `Cache-Control: no-cache` on the app shell/scripts so a rebuild never looks
+  "stuck" behind a stale cached `app.js`.
+
+### Live coach correctness (round 2)
+- **"Armed" trailing exit** — the 9/50-EMA close-exit only applies once the position has *closed
+  above* its line since entry. Buying a dip BELOW the line is no longer treated as an exit; until it
+  reclaims the line, only the hard stop exits. (Generalizes the deep-pullback case to every setup.)
+- **Breakeven/raised stops fixed** — a stop at/above entry used to make risk ≈ 0, which broke the
+  coach (it fell back to a stale "EXIT below stop"). R is now recovered from the 2R target, and a
+  breakeven+ stop reads as a *locked-in* exit, not a panic. (Your CRWV: now HOLD, not EXIT.)
+- **Live no longer reverts on save** — `loadTrades()`/`loadSuggestions()` re-apply the live merge,
+  so saving a journal entry / editing a stop doesn't flip the page back to stale EOD data for ~45s.
+- **Live charts** — the chart modal now fetches fresh bars (today's forming candle shows, `/chart`
+  uses a 15-min cache) and the last candle **moves with the live price** each tick while open.
+- **Live Sector Heat** — `GET /api/sector-heat/live` recomputes each sector's & member's TODAY %
+  and the heat score/rank from live quotes (multi-day trend/streak kept from the EOD compute).
+  Polls ~60s while you're on the Sector Heat tab; green "live" badge shows the time. Read-only —
+  never overwrites the stored EOD heat.
+
+### Backtest validation of the grader
+- Built `backtest.py` (replay grade as-of past dates → simulate forward with real exits). Found the
+  A/A+ grade is positive but context-dependent; shipped six tuning changes (regime gate, Rising>Hot,
+  PREF, anti-chase, wider stop, trim dry-vol) → `scoring.md` v4.2.
+- **Out-of-sample check** (fresh dates): edge holds but in-sample was ~3× optimistic (≈+0.26R/36%
+  generalizable). **Forward/paper test** wired (`/api/forward`, Stats tab) — logs live A/A+ daily,
+  scores as they mature; true OOS, no survivorship bias.
+- Hosted: hid Journal / Watchlist / Strategy (no persistence on the free host) via `/api/env`.
+
 ## 2026-06-01 — Earnings, volume, position coach, daily gameplan, prediction
 
 Built roadmap items 4 → 3 → 2 → 1 → 7 in one session.

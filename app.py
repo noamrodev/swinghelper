@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, unquote, quote
+from urllib.parse import urlparse, unquote, quote, parse_qs
 
 import scanner
 import universe
@@ -50,6 +50,8 @@ MARKET_F = DATA / "market.json"
 UNIVERSE_F = DATA / "universe.json"
 SUSPICIOUS_F = DATA / "suspicious.json"
 PREMARKET_F = DATA / "premarket.json"
+FORWARD_F = DATA / "forward_log.json"      # live A/A+ picks snapshotted each scan (forward/paper test)
+GROUPS_F = DATA / "groups.json"            # detected emerging groups (correlated movers)
 
 DOCS = {
     "qullamaggie": BASE / "strategy" / "qullamaggie.md",
@@ -195,6 +197,8 @@ SUSPECT = {"running": False, "done": 0, "total": 0, "current": ""}
 _suspect_lock = threading.Lock()
 PREMKT = {"running": False, "done": 0, "total": 0, "current": ""}
 _premkt_lock = threading.Lock()
+GROUPS = {"running": False, "done": 0, "total": 0, "current": ""}
+_groups_lock = threading.Lock()
 
 
 def fetch_rss(query, n=8):
@@ -386,6 +390,47 @@ def run_premarket():
     PREMKT.update(running=False, current="")
 
 
+def run_detect_groups():
+    """Detect emerging groups (correlated recent movers) over the default screener universe."""
+    screeners = read_json(SCREENERS_F, [])
+    default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
+    tickers = default.get("tickers", []) if default else []
+    GROUPS.update(running=True, done=0, total=len(tickers) or 1, current="")
+
+    def prog(done, total, t):
+        GROUPS.update(done=done, total=total, current=t)
+    try:
+        groups = scanner.detect_groups(tickers, progress=prog)
+        smap = read_json(SECTORS_F, {})
+        rev = reverse_themes()
+        theme_keys = set(read_json(THEMES_F, {}).keys())
+        kept = []
+        for g in groups:
+            theme_tally, sector_tally = {}, {}
+            for m in g["members"]:
+                sec = smap.get(m["ticker"], "Other"); m["sector"] = sec
+                th = rev.get(m["ticker"]); m["theme"] = th
+                if th:
+                    theme_tally[th] = theme_tally.get(th, 0) + 1
+                if sec and sec != "Other":
+                    sector_tally[sec] = sector_tally.get(sec, 0) + 1
+            need = max(2, g["size"] // 2 + 1)          # a real majority must share the thread
+            t_best = max(theme_tally.items(), key=lambda x: x[1], default=(None, 0))
+            s_best = max(sector_tally.items(), key=lambda x: x[1], default=(None, 0))
+            if t_best[1] >= need:                       # prefer the specific thematic group
+                g["common"], g["common_count"], g["novel"] = t_best[0], t_best[1], False
+            elif s_best[1] >= need:                     # fall back to a broad sector (likely a NEW group)
+                g["common"], g["common_count"] = s_best[0], s_best[1]
+                g["novel"] = s_best[0] not in theme_keys
+            else:
+                continue                                 # no discernible common thread → don't show it
+            kept.append(g)
+        write_json(GROUPS_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "groups": kept})
+    except Exception as e:
+        GROUPS.update(current="error: " + str(e))
+    GROUPS.update(running=False, current="")
+
+
 def run_market_regime():
     """Classify SPX / QQQ / IWM into a blended market posture; store for the dashboard + grade."""
     try:
@@ -529,15 +574,47 @@ def position_coach(t, bars, settings, news_map):
     if len(c) < 50:
         return None
     last = c[-1]
-    e9, e21, s50 = scanner._ema(c, 9), scanner._ema(c, 21), scanner._sma(c, 50)
+    e9, e21, e50 = scanner._ema(c, 9), scanner._ema(c, 21), scanner._ema(c, 50)
     adr = _mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0], 1.0) or 1.0
     entry = t.get("entry") or t.get("planned_entry")
     stop = t.get("stop")
+    target = t.get("target")
+    # original 1R: entry−stop normally, but once the stop is raised to/above entry (breakeven+),
+    # recover it from the 2R target so R keeps working instead of dividing by ~zero.
     risk = (entry - stop) if (entry and stop and entry > stop) else None
-    r_mult = ((last - entry) / risk) if (risk and entry) else None
+    risk_r = risk or (((target - entry) / 2) if (target and entry and target > entry) else None)
+    r_mult = ((last - entry) / risk_r) if (risk_r and entry) else None
+    breakeven_plus = bool(entry and stop and stop >= entry)   # stop locked at/above entry = house money
     ext9 = (last / e9 - 1) * 100
     ext9_adr = ext9 / adr
     under_9 = last < e9
+    # ----- which line is the trailing exit for THIS setup? -----
+    # Deep Pullback / Consolidation are bought AT the 50 EMA / inside a base — by design they sit
+    # BELOW the 9 EMA at entry, so "under the 9 EMA" is normal and NOT an exit. Their invalidation
+    # is a close under the 50 EMA (or the stop). Momentum/breakout/pullback setups trail the 9 EMA.
+    setup = (t.get("setup_type") or "").strip().lower()
+    patient = setup in ("deep pullback", "consolidation")
+    trail_n = 50 if patient else 9
+    trail_label = "50 EMA" if patient else "9 EMA"
+
+    def _ema_ser(arr, n):
+        k = 2 / (n + 1); ev = arr[0]; out = [ev]
+        for x in arr[1:]:
+            ev = x * k + ev * (1 - k); out.append(ev)
+        return out
+    trail_ser = _ema_ser(c, trail_n)
+    trail = trail_ser[-1]
+    under_trail = last < trail
+    ti = None                                            # entry index (first session on/after entry)
+    if t.get("taken_at"):
+        ti = next((i for i, b in enumerate(bars) if b["time"] >= t["taken_at"]), None)
+    if ti is None:
+        ti = max(0, len(c) - 10)
+    # "armed": has the position CLOSED above its trailing line since you got in? The 9/50-EMA
+    # close-exit only applies once you're riding ABOVE the line. If you bought a dip BELOW it, it's
+    # NOT an exit until price reclaims the line and then closes back under it — the hard stop is the
+    # only exit until then.
+    armed = any(c[j] >= trail_ser[j] for j in range(ti, len(c)))
     # earnings + news context
     e = None
     try:
@@ -552,13 +629,25 @@ def position_coach(t, bars, settings, news_map):
     reasons = []
     rtxt = (f"+{r_mult:.1f}R" if (r_mult is not None and r_mult >= 0)
             else (f"{r_mult:.1f}R" if r_mult is not None else "—"))
-    # priority ladder: stop → 9-EMA exit → earnings → trim extended → breakeven → news → hold
+    # priority ladder: stop → trail-EMA close → earnings → trim extended → breakeven → news → hold
     if stop and last < stop:
+        if breakeven_plus:
+            action, tone = "EXIT", "warn"
+            reasons.append(f"stop ${stop} is your locked-in (breakeven+) exit — {rtxt}, take it if it closes here")
+        else:
+            action, tone = "EXIT", "danger"
+            reasons.append(f"price ${round(last,2)} is below your stop ${stop} — you should already be out")
+    elif under_trail and not armed:
+        action, tone = "HOLD", "good"
+        reasons.append(f"below the {trail_label} (${round(trail,2)}) but it hasn't reclaimed the line since entry "
+                       f"— not an exit yet; your stop (${stop}) is the only exit until it closes back above it")
+    elif under_trail:
         action, tone = "EXIT", "danger"
-        reasons.append(f"price ${round(last,2)} is below your stop ${stop} — you should already be out")
-    elif under_9:
-        action, tone = "EXIT", "danger"
-        reasons.append(f"closed under the 9 EMA (${round(e9,2)}) — your default trailing exit")
+        reasons.append(f"closed back under the {trail_label} (${round(trail,2)}) after riding above it — your trailing exit")
+    elif patient and under_9:
+        action, tone = "HOLD", "good"
+        reasons.append(f"under the 9 EMA but holding the 50 EMA (${round(e50,2)}) — that's the deep-pullback/base "
+                       f"plan; exit only on a close under the 50")
     elif earn_soon and r_mult is not None and r_mult >= 0.5:
         action, tone = "TRIM", "warn"
         reasons.append(f"earnings in {edays}d — trim to lock {rtxt} before the binary print")
@@ -573,18 +662,19 @@ def position_coach(t, bars, settings, news_map):
         reasons.append(f"{rtxt} locked-in zone — raise the stop to breakeven (${entry}) so the trade can't turn red")
     elif bad_news:
         action, tone = "WATCH", "warn"
-        reasons.append("a negative headline is out — watch the 9-EMA close")
+        reasons.append(f"a negative headline is out — watch the {trail_label} close")
     else:
         action, tone = "HOLD", "good"
-        reasons.append(f"trend intact above the 9 EMA ({rtxt}) — hold; exit on a daily close under it")
+        reasons.append(f"trend intact above the {trail_label} ({rtxt}) — hold; exit on a daily close under it")
     # optional add-on note (never the primary action; respects total-risk rules)
-    if action in ("HOLD", "RAISE STOP") and ext9_adr < 1.0 and last > e21 > s50 \
+    if action in ("HOLD", "RAISE STOP") and ext9_adr < 1.0 and last > e21 > e50 \
             and r_mult is not None and 0 <= r_mult < 2 and not earn_soon:
         reasons.append("near rising support & not extended — could add on a push to new highs (optional, keep total risk within rules)")
     if e and edays is not None and not earn_soon and 0 <= edays <= 21:
         reasons.append(f"earnings {e['date']} ({edays}d out){' · est.' if e.get('estimate') else ''}")
 
-    return {"action": action, "tone": tone, "reasons": reasons,
+    return {"action": action, "tone": tone, "reasons": reasons, "e9": round(e9, 2),
+            "e50": round(e50, 2), "trail_label": trail_label, "patient": patient, "armed": armed,
             "r_mult": round(r_mult, 2) if r_mult is not None else None,
             "ext9": round(ext9, 1), "ext9_adr": round(ext9_adr, 1),
             "ext21": round((last / e21 - 1) * 100, 1), "under_9ema": under_9,
@@ -762,6 +852,90 @@ def grade_suggestions(items, settings):
 
 
 # --------------------------------------------------------------------------- #
+# Forward (paper) test — snapshot the live A/A+ picks each scan, score them as they
+# mature. This is the honest out-of-sample check: the REAL current universe, no
+# survivorship bias, and it seeds the learning loop. Shared market data (owner settings).
+# --------------------------------------------------------------------------- #
+def _ema_series(closes, n):
+    k = 2 / (n + 1)
+    e = closes[0]
+    out = [e]
+    for x in closes[1:]:
+        e = x * k + e * (1 - k)
+        out.append(e)
+    return out
+
+
+def log_forward_picks():
+    """Append today's A/A+ suggestions (as graded live) to the forward log, one snapshot per date."""
+    items = read_json(SUGGEST_F, {}).get("items", [])
+    if not items:
+        return
+    graded = grade_suggestions(items, read_json(SETTINGS_F, {}))
+    picks = [{"ticker": s["ticker"], "grade": s["grade"], "rating": s["rating"],
+              "setup_type": s.get("setup_type"), "entry": s.get("entry"), "stop": s.get("stop"),
+              "target": s.get("target"), "entry_type": s.get("entry_type"),
+              "buyable_now": bool(s.get("buyable_now")), "theme": s.get("theme"),
+              "theme_trend": s.get("theme_trend"), "close_at_signal": s.get("close")}
+             for s in graded if s.get("grade") in ("A+", "A")]
+    log = read_json(FORWARD_F, {"snapshots": {}})
+    log.setdefault("snapshots", {})[now_date()] = {
+        "posture": read_json(MARKET_F, {}).get("posture"), "picks": picks}
+    write_json(FORWARD_F, log)
+
+
+def _sim_forward(bars, sig_date, stop):
+    """Enter at the first open AFTER sig_date; exit on close<9-EMA or hard stop; 60-day cap."""
+    closes = [b["close"] for b in bars]
+    ei = next((i for i, b in enumerate(bars) if b["time"] > sig_date), None)
+    if ei is None or ei >= len(bars) or not stop:
+        return None
+    entry = bars[ei]["open"]
+    if entry <= stop:
+        return None
+    risk = entry - stop
+    e9 = _ema_series(closes, 9)
+    end = min(len(bars) - 1, ei + 60)
+    for j in range(ei, end + 1):
+        b = bars[j]
+        if b["low"] <= stop:
+            px = b["open"] if b["open"] < stop else stop
+            return {"R": round((px - entry) / risk, 2), "matured": True, "exit": "stop"}
+        if b["close"] < e9[j] and j > ei:
+            return {"R": round((b["close"] - entry) / risk, 2), "matured": True, "exit": "9ema"}
+    return {"R": round((bars[end]["close"] - entry) / risk, 2),
+            "matured": (end - ei) >= 7, "exit": "open"}
+
+
+def score_forward():
+    """Evaluate logged A/A+ picks that have enough forward data; aggregate win rate / avg R."""
+    log = read_json(FORWARD_F, {"snapshots": {}})
+    snaps = log.get("snapshots", {})
+    scored, pending = [], 0
+    for date, snap in snaps.items():
+        for p in snap.get("picks", []):
+            bars = scanner.get_bars(p["ticker"])
+            r = _sim_forward(bars, date, p.get("stop")) if bars else None
+            if r and r["matured"]:
+                scored.append({**p, "date": date, "R": r["R"], "win": r["R"] > 0, "exit": r["exit"]})
+            else:
+                pending += 1
+    agg = None
+    if scored:
+        rs = [t["R"] for t in scored]
+        wins = [x for x in rs if x > 0]
+        agg = {"n": len(scored), "win_rate": round(100 * len(wins) / len(rs), 1),
+               "avg_r": round(sum(rs) / len(rs), 2),
+               "pct_gt1R": round(100 * sum(1 for x in rs if x >= 1) / len(rs), 1)}
+    days = len(snaps)
+    total_logged = sum(len(s.get("picks", [])) for s in snaps.values())
+    recent = sorted(scored, key=lambda x: x["date"], reverse=True)[:20]
+    return {"days_logged": days, "total_picks": total_logged, "matured": len(scored),
+            "pending": pending, "aggregate": agg, "recent": recent,
+            "first_date": min(snaps) if snaps else None, "last_date": max(snaps) if snaps else None}
+
+
+# --------------------------------------------------------------------------- #
 # Markdown regeneration (so the chat-side coach sees current data)
 # --------------------------------------------------------------------------- #
 def regen_watchlist():
@@ -818,7 +992,7 @@ def update_rules_account(acct):
 # --------------------------------------------------------------------------- #
 # Background scan
 # --------------------------------------------------------------------------- #
-def run_scan(screener_id):
+def run_scan(screener_id, max_age=12):
     global SCAN
     screeners = read_json(SCREENERS_F, [])
     sc = next((s for s in screeners if s["id"] == screener_id), None)
@@ -833,7 +1007,7 @@ def run_scan(screener_id):
     def prog(done, total, t):
         SCAN.update(done=done, total=total, current=t)
 
-    out = scanner.scan(tickers, settings, prog)
+    out = scanner.scan(tickers, settings, prog, max_age=max_age)
     prev = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
     items = []
     for r in out["results"]:
@@ -862,6 +1036,10 @@ def run_scan(screener_id):
     write_json(SUGGEST_F, {"scanned_at": out["scanned_at"], "screener_id": screener_id,
                            "screener_name": sc["name"], "failed": out["failed"],
                            "hot_sectors": hot, "items": items})
+    try:
+        log_forward_picks()          # snapshot today's A/A+ for the forward/paper test
+    except Exception:
+        pass
     SCAN.update(running=False, finished_at=out["scanned_at"], current="")
 
 
@@ -1090,6 +1268,78 @@ def compute_prediction():
             "note": "Probabilistic read from the data on hand — not a prediction you should trade blindly. The market does what it wants."}
 
 
+def _regime_label(avg):
+    if avg >= 80:
+        return "Risk-on - uptrend"
+    if avg >= 60:
+        return "Constructive"
+    if avg >= 45:
+        return "Mixed / pullback"
+    if avg >= 25:
+        return "Caution - correction"
+    return "Risk-off - deep correction"
+
+
+def live_posture(quotes):
+    """Recompute the blended market posture using LIVE index prices (overwrite today's close)."""
+    idx = []
+    for name, sym in scanner.INDEXES:
+        bars = scanner.get_bars(sym)
+        if not bars or len(bars) < 60:
+            continue
+        q = quotes.get(sym.upper())
+        if q and q.get("price"):
+            bars = bars[:-1] + [dict(bars[-1])]
+            lp = q["price"]
+            bars[-1]["close"] = lp
+            bars[-1]["high"] = max(bars[-1]["high"], lp)
+            bars[-1]["low"] = min(bars[-1]["low"], lp)
+        try:
+            idx.append(scanner._regime_one(name, bars))
+        except Exception:
+            pass
+    if not idx:
+        return None
+    avg = sum(i["posture"] for i in idx) / len(idx)
+    return {"posture": round(avg), "label": _regime_label(avg), "indexes": idx}
+
+
+def live_sector_heat():
+    """Re-rate Sector Heat with LIVE prices: recompute each member's & sector's TODAY % (perf_1d)
+    and the heat score/rank from live quotes, keeping the multi-day trend/streak/breadth from the
+    last EOD compute (those don't move intraday). Read-only — never overwrites the stored heat."""
+    data = read_json(SECTOR_HEAT_F, {"sectors": []})
+    sectors = data.get("sectors", [])
+    if not sectors:
+        return data
+    syms = []
+    for s in sectors:
+        for m in s.get("members", []):
+            syms.append(m["ticker"])
+    quotes = scanner.fetch_quotes(list(dict.fromkeys(syms)))   # batched, 30s-cached, shared
+    for s in sectors:
+        day = []
+        for m in s.get("members", []):
+            q = quotes.get(m["ticker"].upper())
+            if q and q.get("price") and q.get("prev_close"):
+                m["perf_1d"] = round((q["price"] / q["prev_close"] - 1) * 100, 2)
+                m["close"] = q["price"]
+                day.append(m["perf_1d"])
+        if day:
+            s["perf_1d"] = round(sum(day) / len(day), 2)
+            s["score"] = round(s.get("perf_1w", 0) * 0.4 + s.get("perf_1mo", 0) * 0.3
+                               + s["perf_1d"] * 0.2 + (s.get("breadth", 50) - 50) * 0.05, 2)
+    sectors.sort(key=lambda r: r["score"], reverse=True)
+    n = len(sectors)
+    for i, s in enumerate(sectors):
+        s["rank"] = i + 1
+        s["tier"] = "Hot" if s["rank"] <= max(1, n // 3) else ("Warm" if s["rank"] <= 2 * n // 3 else "Cool")
+    data["sectors"] = sectors
+    data["live"] = True
+    data["live_at"] = time.strftime("%H:%M:%S")
+    return data
+
+
 # --------------------------------------------------------------------------- #
 # HTTP handler
 # --------------------------------------------------------------------------- #
@@ -1106,9 +1356,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _bytes(self, data, ctype, code=200):
+    def _bytes(self, data, ctype, code=200, no_cache=False):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if no_cache:                       # always serve fresh app code after a restart/rebuild
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -1142,7 +1394,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
             return
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        self._bytes(target.read_bytes(), ctype)
+        # don't let the browser cache the app shell/scripts — otherwise a rebuild looks like
+        # "nothing changed" until a hard refresh. (Uploaded images can still cache.)
+        no_cache = not relpath.startswith(("uploads/", "data/uploads/"))
+        self._bytes(target.read_bytes(), ctype, no_cache=no_cache)
 
     # ---- routing ----
     def do_GET(self):
@@ -1225,7 +1480,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(SCAN)
         elif route == "chart" and len(parts) > 2:
             t = parts[2].upper()
-            bars = scanner.get_bars(t)
+            bars = scanner.get_bars(t, max_age_hours=0.25)   # fresh-ish so today's forming candle shows
             channel = scanner.regression_channel(bars) if bars else None
             earn = None
             try:
@@ -1239,6 +1494,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json(compute_gameplan())
         elif route == "prediction":
             self._json(compute_prediction())
+        elif route == "forward":
+            self._json(score_forward())
+        elif route == "live":
+            params = parse_qs(urlparse(self.path).query)
+            req = (params.get("symbols", [""])[0] or "").split(",")
+            idxsyms = [sym for _, sym in scanner.INDEXES]
+            allsyms = list(dict.fromkeys([s.strip().upper() for s in req if s.strip()] + idxsyms))[:120]
+            quotes = scanner.fetch_quotes(allsyms)
+            ms = next((quotes[s.upper()]["market_state"] for _, s in scanner.INDEXES
+                       if quotes.get(s.upper())), None)
+            prices = {k: {kk: v[kk] for kk in ("price", "prev_close", "change_pct", "market_state")}
+                      for k, v in quotes.items()}
+            self._json({"updated_at": time.strftime("%H:%M:%S"), "market_state": ms,
+                        "prices": prices, "posture": live_posture(quotes)})
         elif route == "analyze" and len(parts) > 2:
             t = parts[2].upper()
             bars = scanner.get_bars(t)
@@ -1249,8 +1518,16 @@ class Handler(BaseHTTPRequestHandler):
             a["sector"] = read_json(SECTORS_F, {}).get(t, "Other")
             a["sector_hot"] = a["sector"] in read_json(SUGGEST_F, {}).get("hot_sectors", [])
             self._json({"analysis": a, "bars": bars})
+        elif route == "groups" and len(parts) > 2 and parts[2] == "status":
+            self._json(GROUPS)
+        elif route == "groups":
+            g = read_json(GROUPS_F, {"computed_at": None, "groups": []})
+            g["status"] = GROUPS
+            self._json(g)
         elif route == "sector-heat" and len(parts) > 2 and parts[2] == "status":
             self._json(SECTORH)
+        elif route == "sector-heat" and len(parts) > 2 and parts[2] == "live":
+            self._json(live_sector_heat())
         elif route == "sector-heat":
             self._json(read_json(SECTOR_HEAT_F, {"computed_at": None, "sectors": []}))
         elif route == "news" and len(parts) > 2 and parts[2] == "status":
@@ -1296,10 +1573,11 @@ class Handler(BaseHTTPRequestHandler):
 
         elif route == "scan" and len(parts) > 2:
             sid = parts[2]
+            fresh = parse_qs(urlparse(self.path).query).get("fresh", ["0"])[0] == "1"
             with _scan_lock:
                 if SCAN["running"]:
                     self._json({"ok": False, "error": "scan already running"}, 409); return
-                threading.Thread(target=run_scan, args=(sid,), daemon=True).start()
+                threading.Thread(target=run_scan, args=(sid,), kwargs={"max_age": 0 if fresh else 12}, daemon=True).start()
             self._json({"ok": True})
 
         elif route == "suggestions" and len(parts) > 3:
@@ -1368,6 +1646,13 @@ class Handler(BaseHTTPRequestHandler):
                 if PREMKT["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
                 threading.Thread(target=run_premarket, daemon=True).start()
+            self._json({"ok": True})
+
+        elif route == "groups" and len(parts) > 2 and parts[2] == "detect":
+            with _groups_lock:
+                if GROUPS["running"]:
+                    self._json({"ok": False, "error": "already running"}, 409); return
+                threading.Thread(target=run_detect_groups, daemon=True).start()
             self._json({"ok": True})
 
         elif route == "refresh-all":

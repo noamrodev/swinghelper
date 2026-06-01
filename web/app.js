@@ -51,6 +51,13 @@ function dataCenter() {
     refreshState: { running: false, stage: '', done: 0, total: 4 },
     gameplan: null,
     gameplanOpen: true,
+    forward: null,
+    live: { prices: {}, market_state: null, updated_at: null, posture: null },
+    liveOn: true,
+    liveAgeSec: 0,
+    _liveAt: 0,
+    autoScan: true,
+    _lastAutoScan: 0,
     prediction: null,
     predictionLoading: false,
     newScreener: { name: '', tickers: '' },
@@ -75,6 +82,7 @@ function dataCenter() {
     screenTab: 'lists',
     sectorHeat: { computed_at: null, sectors: [] },
     sectorStatus: { running: false, done: 0, total: 0, current: '' },
+    groups: { computed_at: null, groups: [], status: { running: false, done: 0, total: 0, current: '' } },
     sectorSort: 'score',
     secOpen: {},
     sectorSearch: '',
@@ -87,6 +95,7 @@ function dataCenter() {
     waitFilter: false,
     leaderFilter: false,
     risingFilter: false,
+    showAllSug: false,
     calcModal: { open: false, ticker: '' },
     chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null },
     tradeModal: { open: false, mode: 'take', ticker: '' },
@@ -155,6 +164,163 @@ function dataCenter() {
       this.scanScreener = this.suggestions.screener_id || (def && def.id) || '';
       this.docEdit && (this.docEdit = this.docEdit);
       this.loadDoc(this.docTab);
+      this.startLive();
+      setInterval(() => { if (this.live.updated_at) this.liveAgeSec = Math.round((Date.now() - this._liveAt) / 1000); }, 1000);
+    },
+
+    // ---------- live updates (free Yahoo quotes, polled while the market is open) ----------
+    get marketOpen() { return ['PRE', 'PREPRE', 'REGULAR', 'POST', 'POSTPOST'].includes(this.live.market_state); },
+    get liveLabel() {
+      if (!this.liveOn) return 'LIVE off';
+      if (!this.live.market_state) return 'LIVE…';
+      const m = { REGULAR: 'OPEN', PRE: 'PRE', PREPRE: 'PRE', POST: 'AFTER', POSTPOST: 'AFTER', CLOSED: 'CLOSED' }[this.live.market_state] || this.live.market_state;
+      return 'LIVE · ' + m + (this.live.updated_at ? ' · ' + this.liveAgeSec + 's' : '');
+    },
+    liveSymbols() {
+      const a = new Set();
+      this.trades.forEach(t => { if (t.status === 'open') a.add(t.ticker); });
+      (this.watchlist || []).forEach(r => a.add(r.ticker));
+      (this.suggestions.items || []).slice(0, 40).forEach(s => a.add(s.ticker));
+      if (this.chartModal.open && this.chartModal.ticker) a.add(this.chartModal.ticker);
+      if (this.view === 'screeners' && this.screenTab === 'premarket') (this.premarket.movers || []).forEach(m => a.add(m.ticker));
+      return [...a];
+    },
+    // move today's candle on the open chart with the live price
+    updateChartLive() {
+      const cm = this.chartModal;
+      if (!cm.open || !cm._series || !cm._bars || !cm._bars.length) return;
+      const q = (this.live.prices || {})[cm.ticker];
+      if (!q || q.price == null) return;
+      const lb = cm._bars[cm._bars.length - 1];
+      try { cm._series.update({ time: lb.time, open: lb.open, high: Math.max(lb.high, q.price), low: Math.min(lb.low, q.price), close: q.price }); } catch (e) {}
+    },
+    async tickLive() {
+      if (!this.liveOn) return;
+      const syms = this.liveSymbols();
+      try {
+        const r = await this.api('/live?symbols=' + encodeURIComponent(syms.join(',')));
+        this.live = { prices: r.prices || {}, market_state: r.market_state, updated_at: r.updated_at, posture: r.posture };
+        this._liveAt = Date.now(); this.liveAgeSec = 0;
+        this.mergeLive();
+        // live Sector Heat — only while viewing that tab (it fetches all member quotes), throttled ~60s
+        if (this.view === 'screeners' && this.screenTab === 'heat' && this.marketOpen
+            && (!this._lastHeatLive || Date.now() - this._lastHeatLive > 60000)) {
+          this.loadSectorHeatLive();
+        }
+        // auto re-scan pre-market movers every ~8 min during the pre-market session (finds NEW gappers)
+        if (this.view === 'screeners' && this.screenTab === 'premarket' && ['PRE', 'PREPRE'].includes(this.live.market_state)
+            && !(this.premarket.status && this.premarket.status.running)
+            && (!this._lastPmScan || Date.now() - this._lastPmScan > 8 * 60 * 1000)) {
+          this._lastPmScan = Date.now(); this.scanPremarket();
+        }
+      } catch (e) {}
+    },
+    _scheduleLive(delay) {
+      clearTimeout(this._liveTimer);
+      this._liveTimer = setTimeout(async () => {
+        await this.tickLive();
+        this.maybeAutoScan();
+        this._scheduleLive(this.marketOpen ? 45000 : 300000);   // 45s when open, 5min when closed
+      }, delay);
+    },
+    startLive() { this.liveOn = true; if (!this._lastAutoScan) this._lastAutoScan = Date.now(); this._scheduleLive(0); },
+    stopLive() { this.liveOn = false; clearTimeout(this._liveTimer); },
+    toggleLive() { this.liveOn ? this.stopLive() : this.startLive(); },
+    // Recompute the position coach from the LIVE price so the action never contradicts the live
+    // P&L. Mirrors the backend ladder, with one intraday nuance: dipping under the 9-EMA mid-session
+    // is a "watch" (the exit rule is a daily CLOSE under it), not a hard EXIT.
+    liveCoach(t, price) {
+      const e = t.entry || t.planned_entry, stop = t.stop;
+      if (!e || !stop || price == null) return null;
+      // original 1R: entry−stop, or recovered from the 2R target once the stop is at/above entry
+      const risk0 = (e > stop) ? (e - stop) : null;
+      const tgt = t.target;
+      const risk = risk0 || (tgt && tgt > e ? (tgt - e) / 2 : null);
+      const r = risk ? (price - e) / risk : null;
+      const bePlus = stop >= e;                              // breakeven+ stop = house money
+      const c = t.coach || {};
+      const e9 = c.e9 != null ? c.e9 : null, e50 = c.e50 != null ? c.e50 : null;
+      const patient = !!c.patient, armed = c.armed !== false;  // armed = has CLOSED above its line since entry
+      const trail = patient ? e50 : e9, trailLabel = patient ? '50 EMA' : '9 EMA';
+      const adr = (c.ext9_adr ? Math.abs(c.ext9 / c.ext9_adr) : null);
+      const ext9 = e9 ? (price / e9 - 1) * 100 : null;
+      const ext9_adr = (ext9 != null && adr) ? ext9 / adr : null;
+      const edays = c.earnings_days, earnSoon = edays != null && edays >= 0 && edays <= 7;
+      const rtxt = r != null ? ((r >= 0 ? '+' : '') + r.toFixed(1) + 'R') : '';
+      const rsuffix = rtxt ? ' (' + rtxt + ')' : '';
+      let action, tone, reason;
+      if (price <= stop) {
+        if (bePlus) { action = 'EXIT'; tone = 'warn'; reason = `stop $${stop} is your locked-in (breakeven+) exit${rtxt ? ' — ' + rtxt : ''}`; }
+        else { action = 'EXIT'; tone = 'danger'; reason = `price $${price} is at/below your stop $${stop} — should be out`; }
+      }
+      else if (trail != null && price < trail && !armed) { action = 'HOLD'; tone = 'good'; reason = `below the ${trailLabel} ($${trail}) but it hasn't reclaimed the line yet — not an exit; only your stop $${stop} exits until it closes back above`; }
+      else if (trail != null && price < trail) { action = 'WATCH'; tone = 'warn'; reason = `back under the ${trailLabel} ($${trail}) intraday — exit only if it CLOSES under it`; }
+      else if (patient && e9 != null && price < e9) { action = 'HOLD'; tone = 'good'; reason = `under the 9 EMA but holding the 50 EMA ($${e50}) — that's the deep-pullback/base plan`; }
+      else if (earnSoon && r != null && r >= 0.5) { action = 'TRIM'; tone = 'warn'; reason = `earnings in ${edays}d — trim to lock ${rtxt} before the print`; }
+      else if (r != null && r >= 3 && ext9_adr != null && ext9_adr > 2.2) { action = 'TRIM'; tone = 'warn'; reason = `${rtxt} & ${ext9_adr.toFixed(1)}× ADR over the 9-EMA — trim into strength`; }
+      else if (r != null && r >= 1 && stop < e) { action = 'RAISE STOP'; tone = 'good'; reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`; }
+      else { action = 'HOLD'; tone = 'good'; reason = `trend intact above the ${trailLabel}${rsuffix} — hold; exit on a daily close under it`; }
+      return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
+    },
+    mergeLive() {
+      const px = this.live.prices || {};
+      this.trades.forEach(t => {
+        if (t.status !== 'open') return;
+        const q = px[t.ticker]; if (!q || q.price == null) return;
+        t.last = q.price;
+        const e = t.entry || t.planned_entry;
+        if (e && t.shares) { t.pnl = +((q.price - e) * t.shares).toFixed(2); t.pnl_pct = +(((q.price / e) - 1) * 100).toFixed(2); }
+        t._live = true;
+        t._liveCoach = this.liveCoach(t, q.price);
+        t._hitTarget = t.target != null ? q.price >= t.target : false;
+      });
+      (this.suggestions.items || []).forEach(s => {
+        const q = px[s.ticker]; if (!q || q.price == null) return;
+        s.close = q.price; s._livechg = q.change_pct;
+        if (s.zone_bottom != null && s.zone_top != null) s.buyable_now = (q.price >= s.zone_bottom && q.price <= s.zone_top);
+        s._liveStopped = s.stop != null && q.price <= s.stop;
+      });
+      if (this.live.posture) {
+        this.marketRegime.posture = this.live.posture.posture;
+        this.marketRegime.label = this.live.posture.label;
+        if (this.live.posture.indexes) this.marketRegime.indexes = this.live.posture.indexes;
+      }
+      // live re-rank: names that have pulled INTO their buy zone float to the top
+      if (this.suggestions.items) {
+        this.suggestions.items.sort((a, b) => (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0) || (b.rating || 0) - (a.rating || 0));
+      }
+      this.updateChartLive();
+      // live pre-market movers (during the pre-market session, on that tab)
+      if (this.view === 'screeners' && this.screenTab === 'premarket'
+          && ['PRE', 'PREPRE'].includes(this.live.market_state) && this.premarket.movers) {
+        this.premarket.movers.forEach(m => { const q = px[m.ticker]; if (q && q.price != null) { m.price = q.price; if (q.change_pct != null) m.gap = q.change_pct; } });
+        this.premarket.movers.sort((a, b) => b.gap - a.gap);
+      }
+    },
+    // auto-rescan: every 30 min while the market's open, pull FRESH bars (today's candle) so new
+    // setups/grades appear intraday. Guarded so it never overlaps a running scan.
+    maybeAutoScan() {
+      if (!this.liveOn || !this.autoScan || !this.marketOpen || this.scan.running) return;
+      const now = Date.now();
+      if (this._lastAutoScan && now - this._lastAutoScan < 30 * 60 * 1000) return;
+      const def = this.screeners.find(s => s.is_default) || this.screeners[0];
+      if (!def) return;
+      this._lastAutoScan = now;
+      this.api('/scan/' + def.id + '?fresh=1', 'POST').then(r => { if (r && r.ok) { this.scan.running = true; this.poll(); } });
+    },
+    todayStr() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
+    // today's mark-to-market on open positions. Baseline = your ENTRY for positions opened today
+    // (you only owned it from the fill), else yesterday's close for overnight holds.
+    get dailyPnl() {
+      const px = this.live.prices || {}, today = this.todayStr(); let s = 0, have = false;
+      this.trades.forEach(t => {
+        if (t.status !== 'open' || !t.shares) return;
+        const q = px[t.ticker]; if (!q || q.price == null) return;
+        const base = (t.taken_at === today) ? (t.entry || t.planned_entry) : q.prev_close;
+        if (base == null) return;
+        s += (q.price - base) * t.shares; have = true;
+      });
+      return have ? s : null;
     },
     async api(path, method = 'GET', body) {
       const opt = { method, headers: { 'Content-Type': 'application/json', 'X-Workspace': workspaceId() } };
@@ -166,12 +332,13 @@ function dataCenter() {
     // ---------- loaders ----------
     async loadSettings() { this.settings = await this.api('/settings'); },
     async loadScreeners() { this.screeners = await this.api('/screeners'); },
-    async loadSuggestions() { this.suggestions = await this.api('/suggestions'); },
-    async loadTrades() { this.trades = await this.api('/trades'); },
+    async loadSuggestions() { this.suggestions = await this.api('/suggestions'); this.mergeLive(); },
+    async loadTrades() { this.trades = await this.api('/trades'); this.mergeLive(); },
     async loadWatchlist() { this.watchlist = await this.api('/watchlist'); },
     async loadStats() { this.stats = await this.api('/stats'); },
     async loadMarket() { this.marketRegime = await this.api('/market'); },
     async loadGameplan() { try { this.gameplan = await this.api('/gameplan'); } catch (e) {} },
+    async loadForward() { try { this.forward = await this.api('/forward'); } catch (e) {} },
     async loadPrediction() {
       this.predictionLoading = true;
       try { this.prediction = await this.api('/prediction'); } catch (e) {}
@@ -252,6 +419,8 @@ function dataCenter() {
       if (this.risingFilter) items = items.filter(s => s.theme_trend === 'Rising');
       return items;
     },
+    // cap how many cards actually render (top by rating) — keeps the DOM light & the live merge fast
+    get displayedSuggestions() { const f = this.filteredSuggestions; return this.showAllSug ? f : f.slice(0, 120); },
     // sector filter options: every category from the (updated) sector heater, plus any
     // theme present in the current suggestions — ordered hottest-first by sector heat.
     get sectorOptions() {
@@ -410,10 +579,25 @@ function dataCenter() {
       if (id === 'watchlist') this.loadWatchlistAnalysis();
       if (id === 'news') this.loadNews();
       if (id === 'dashboard' && !this.gameplan) this.loadGameplan();
+      if (id === 'stats') this.loadForward();
     },
 
     // ---------- sector heat ----------
     async loadSectorHeat() { this.sectorHeat = await this.api('/sector-heat'); },
+    async loadSectorHeatLive() { try { this.sectorHeat = await this.api('/sector-heat/live'); this._lastHeatLive = Date.now(); } catch (e) {} },
+    async loadGroups() { this.groups = await this.api('/groups'); },
+    async detectGroups() {
+      const r = await this.api('/groups/detect', 'POST');
+      if (r.ok) { this.groups.status = { running: true, done: 0, total: 0, current: 'starting…' }; this.pollGroups(); }
+    },
+    pollGroups() {
+      clearInterval(this._gt);
+      this._gt = setInterval(async () => {
+        const st = await this.api('/groups/status');
+        this.groups.status = st;
+        if (!st.running) { clearInterval(this._gt); await this.loadGroups(); }
+      }, 1500);
+    },
     async refreshSectorHeat() {
       const r = await this.api('/sector-heat/refresh', 'POST');
       if (r.ok) { this.sectorStatus.running = true; this.pollSector(); }
@@ -634,6 +818,7 @@ function dataCenter() {
       await this.$nextTick();
       this.chartModal._data = await this.api('/chart/' + ticker);
       this.renderChart();
+      if (this.liveOn && this.marketOpen) this.tickLive();   // pull this symbol's live price now
     },
     renderChart() {
       const box = document.getElementById('chartBox');
@@ -659,6 +844,8 @@ function dataCenter() {
       });
       const bars = data.bars || [];
       series.setData(bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+      this.chartModal._series = series;          // kept so the live tick can move today's candle
+      this.chartModal._bars = bars;
       // volume pane (histogram, pinned to the bottom ~20% on its own hidden scale)
       if (this.chartModal.showVolume) {
         series.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.24 } });
@@ -721,6 +908,7 @@ function dataCenter() {
     closeChart() {
       if (this.chartModal._ro) { try { this.chartModal._ro.disconnect(); } catch (e) {} this.chartModal._ro = null; }
       if (this.chartModal._chart) { this.chartModal._chart.remove(); this.chartModal._chart = null; }
+      this.chartModal._series = null; this.chartModal._bars = null;
       this.chartModal.open = false;
     },
   };

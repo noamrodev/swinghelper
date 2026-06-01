@@ -65,8 +65,19 @@
           <button class="md:hidden text-2xl leading-none text-slate-300 hover:text-white" @click="mobileNav=true" aria-label="Open menu">☰</button>
           <h1 class="text-xl font-semibold truncate" x-text="nav.find(n=>n.id===view)?.label"></h1>
         </div>
-        <div class="text-xs text-slate-500 hidden sm:block text-right" x-show="suggestions.scanned_at">
-          Last scan: <span x-text="suggestions.scanned_at"></span> · <span x-text="suggestions.screener_name"></span>
+        <div class="flex items-center gap-3 shrink-0">
+          <button @click="toggleLive()" :title="liveOn?'Live updates on — click to pause':'Live updates paused — click to resume'"
+            class="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border transition"
+            :style="(liveOn&&marketOpen)?'color:#22e0a1;border-color:rgba(34,224,161,.5);background:rgba(34,224,161,.08)':'color:#93a1b8;border-color:#222c3c'">
+            <span class="relative flex h-2 w-2">
+              <span x-show="liveOn&&marketOpen" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:#22e0a1"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2" :style="'background:'+((liveOn&&marketOpen)?'#22e0a1':'#64748b')"></span>
+            </span>
+            <span x-text="liveLabel"></span>
+          </button>
+          <div class="text-xs text-slate-500 hidden md:block text-right" x-show="suggestions.scanned_at">
+            Last scan: <span x-text="suggestions.scanned_at"></span>
+          </div>
         </div>
       </header>
       <div class="p-4 sm:p-7 overflow-x-hidden">
@@ -229,8 +240,12 @@
               </template>
             </div>
           </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="stat"><div class="stat-label">Open P&L (unrealized)</div><div class="stat-val" :class="openPnl>=0?'text-up':'text-down'" x-text="(openPnl>=0?'+':'-')+'$'+Math.abs(Math.round(openPnl)).toLocaleString()"></div></div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div class="stat" title="Today's move on your open positions: (current price − yesterday's close) × shares. Can exceed Open P&L when positions were red coming into today and rallied.">
+              <div class="stat-label flex items-center gap-1">Today's P&L <span x-show="dailyPnl!=null && marketOpen" class="text-up text-[8px]" title="live">●</span></div>
+              <div class="stat-val" :class="(dailyPnl||0)>=0?'text-up':'text-down'" x-text="dailyPnl!=null ? ((dailyPnl>=0?'+':'-')+'$'+Math.abs(Math.round(dailyPnl)).toLocaleString()) : '—'"></div>
+            </div>
+            <div class="stat" title="Total profit since you entered: (current price − your entry) × shares, summed across open positions."><div class="stat-label">Open P&L (unrealized)</div><div class="stat-val" :class="openPnl>=0?'text-up':'text-down'" x-text="(openPnl>=0?'+':'-')+'$'+Math.abs(Math.round(openPnl)).toLocaleString()"></div></div>
             <div class="stat"><div class="stat-label">Realized P&L</div><div class="stat-val" :class="realizedPnl>=0?'text-up':'text-down'" x-text="(realizedPnl>=0?'+':'-')+'$'+Math.abs(Math.round(realizedPnl)).toLocaleString()"></div></div>
             <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null ? stats.win_rate+'%' : '—'"></div></div>
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null ? stats.avg_r+'R' : '—'"></div></div>
@@ -268,19 +283,25 @@
                   <div class="w-40"><span class="font-semibold" x-text="t.ticker"></span>
                     <span class="badge ml-2" x-text="t.setup_type"></span></div>
                   <div class="flex-1 text-sm text-slate-400 min-w-[140px]">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span> · <span x-text="t.shares||'?'"></span> sh</div>
-                  <div class="w-28 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></div>
+                  <div class="w-28 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'">
+                    <span x-show="t._live" class="text-up text-[9px] align-middle mr-0.5" title="live price">●</span><span x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></span>
+                  </div>
                   <div class="flex gap-2">
                     <button class="btn-sm" @click="showChart(t.ticker, t)">📈</button>
                     <button class="btn-sm" @click="openEdit(t)">✏️ Edit</button>
                     <button class="btn-sm bg-accent/40" @click="openClose(t)">Close</button>
                   </div>
                 </div>
+                <div x-show="t._hitTarget" class="text-xs">
+                  <span class="badge font-bold" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">🎯 hit target ($<span x-text="t.target"></span>) — trim / trail the rest</span>
+                </div>
                 <template x-if="t.coach">
                   <div class="flex items-start gap-2 flex-wrap text-xs">
-                    <span class="badge font-extrabold shrink-0" :style="actionStyle(t.coach.tone)" x-text="t.coach.action"></span>
-                    <span class="text-slate-400 flex-1 min-w-[180px]" x-text="(t.coach.reasons&&t.coach.reasons[0])||''"></span>
-                    <span class="text-slate-500 shrink-0" x-show="t.coach.r_mult!=null" x-text="(t.coach.r_mult>=0?'+':'')+t.coach.r_mult+'R'"></span>
-                    <span class="text-slate-500 shrink-0" x-show="t.coach.ext9_adr!=null" :title="'extension above the 9 EMA in ADR units'">· <span x-text="t.coach.ext9_adr"></span>× ADR vs 9EMA</span>
+                    <span class="badge font-extrabold shrink-0" :style="actionStyle((t._liveCoach||t.coach).tone)" x-text="(t._liveCoach||t.coach).action"></span>
+                    <span x-show="t._live" class="text-up text-[9px] shrink-0" title="live">●</span>
+                    <span class="text-slate-400 flex-1 min-w-[180px]" x-text="(t._liveCoach&&t._liveCoach.reason) || (t.coach.reasons&&t.coach.reasons[0])||''"></span>
+                    <span class="text-slate-500 shrink-0" x-show="(t._liveCoach||t.coach).r_mult!=null" x-text="(((t._liveCoach||t.coach).r_mult)>=0?'+':'')+(t._liveCoach||t.coach).r_mult+'R'"></span>
+                    <span class="text-slate-500 shrink-0" x-show="(t._liveCoach||t.coach).ext9_adr!=null" :title="'extension above the 9 EMA in ADR units'">· <span x-text="(t._liveCoach||t.coach).ext9_adr"></span>× ADR vs 9EMA</span>
                     <span class="shrink-0" x-show="t.coach.earnings_days!=null && t.coach.earnings_days>=0 && t.coach.earnings_days<=21" :class="t.coach.earnings_days<=7?'text-down font-bold':'text-warn'">· 🗓 <span x-text="t.coach.earnings_days"></span>d</span>
                   </div>
                 </template>
@@ -329,6 +350,11 @@
             <div x-show="scan.running" class="flex-1 max-w-xs h-2 bg-panel2 rounded overflow-hidden">
               <div class="h-full bg-accent transition-all" :style="`width:${scan.total?Math.round(scan.done/scan.total*100):0}%`"></div>
             </div>
+            <button class="btn-sm" @click="autoScan=!autoScan"
+              :class="autoScan?'bg-accent/30 border-accent/50':''"
+              title="Auto-rescan the universe every 30 min while the market is open (fresh intraday data) so new setups appear on their own">
+              ⟳ Auto-rescan <span x-text="autoScan?'on':'off'"></span>
+            </button>
             <div class="ml-auto flex gap-2 text-sm">
               <template x-for="f in filters" :key="f">
                 <button @click="filter=f" class="px-3 py-1 rounded"
@@ -379,7 +405,7 @@
           </div>
 
           <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            <template x-for="(s,i) in filteredSuggestions" :key="s.ticker">
+            <template x-for="(s,i) in displayedSuggestions" :key="s.ticker">
               <div class="card card-hover anim-in p-4 space-y-3" :style="`animation-delay:${Math.min(i*40,400)}ms`" :class="s.extended?'ring-1 ring-amber-500/40':''">
                 <div class="flex items-start justify-between">
                   <div>
@@ -410,6 +436,9 @@
                   <div class="text-right">
                     <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
                     <div class="text-[10px] text-slate-500" x-text="s.rating+'/100 · ADR '+s.adr+'%'"></div>
+                    <div class="text-xs font-bold" x-show="s._livechg!=null" :class="s._livechg>=0?'text-up':'text-down'">
+                      <span class="text-up text-[9px]">●</span> $<span x-text="s.close"></span> <span x-text="(s._livechg>=0?'+':'')+s._livechg+'%'"></span>
+                    </div>
                     <span class="badge mt-1" :class="statusClass(s.status)" x-text="s.status"></span>
                   </div>
                 </div>
@@ -434,6 +463,9 @@
               </div>
             </template>
           </div>
+          <div x-show="!showAllSug && filteredSuggestions.length>120" class="text-center text-xs text-slate-500 pt-1">
+            Showing the top <b class="text-slate-300">120</b> of <b class="text-slate-300" x-text="filteredSuggestions.length"></b> — <button class="text-accent hover:underline font-semibold" @click="showAllSug=true">show all</button> (or refine the filters)
+          </div>
           <div x-show="suggestions.items && suggestions.items.length===0" class="text-sm text-slate-500">No suggestions yet — run a scan.</div>
         </section>
 
@@ -441,8 +473,9 @@
         <section x-show="view==='screeners'" x-transition.opacity.duration.250ms class="space-y-5">
           <div class="flex gap-2 flex-wrap">
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='lists'?'btn':'btn-sm'" @click="screenTab='lists'">🗂️ Screener lists</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat()">🔥 Sector Heat</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat(); if(marketOpen) loadSectorHeatLive()">🔥 Sector Heat</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='premarket'?'btn':'btn-sm'" @click="screenTab='premarket'; loadPremarket()">🌅 Pre-market</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='groups'?'btn':'btn-sm'" @click="screenTab='groups'; loadGroups()">🧭 New groups</button>
           </div>
 
           <!-- pre-market movers -->
@@ -453,6 +486,10 @@
                 <span x-show="premarket.status && premarket.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="premarket.status.current"></span> (<span x-text="premarket.status.done"></span>/<span x-text="premarket.status.total"></span>)</span>
               </button>
               <span class="text-xs text-slate-500" x-show="premarket.scanned_at">Scanned <span x-text="premarket.scanned"></span> · <span x-text="premarket.scanned_at"></span></span>
+              <span x-show="['PRE','PREPRE'].includes(live.market_state)" class="text-xs font-bold flex items-center gap-1.5" style="color:#22e0a1">
+                <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:#22e0a1"></span><span class="relative inline-flex rounded-full h-2 w-2" style="background:#22e0a1"></span></span>
+                live · auto-updating
+              </span>
             </div>
             <p class="text-xs text-slate-500 -mt-2">Biggest pre-market gaps vs the prior close — run during pre-market (4:00–9:30 ET). Ranked by gap; tap a card for the chart. Hot sector + a fresh catalyst + a known setup = the strongest swing/day candidates.</p>
             <template x-if="!(premarket.movers||[]).length && !(premarket.status && premarket.status.running)">
@@ -480,6 +517,46 @@
                     <span x-show="m.news_trump">🇺🇸 </span><span x-text="(m.news_dir==='good'?'📈 ':m.news_dir==='bad'?'📉 ':'📰 ')+m.news_headline"></span>
                   </a>
                   <div class="text-[11px] text-slate-500 mt-2">prev close $<span x-text="m.prev_close"></span> · tap for chart</div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- detect new groups -->
+          <div x-show="screenTab==='groups'" class="space-y-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="detectGroups()" :disabled="groups.status && groups.status.running">
+                <span x-show="!(groups.status && groups.status.running)">🧭 Detect groups</span>
+                <span x-show="groups.status && groups.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="groups.status.current"></span> (<span x-text="groups.status.done"></span>/<span x-text="groups.status.total"></span>)</span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="groups.computed_at">Updated <span x-text="groups.computed_at"></span></span>
+            </div>
+            <p class="text-xs text-slate-500 -mt-2">Stocks whose <b>daily moves are highly correlated</b> and are <b>running together</b> right now, with the <b>common thread named</b> on each card. Groups with no discernible shared thread are hidden. 🆕 = the thread isn't one of the 38 fixed themes (a genuinely new group). Tap a ticker for its chart.</p>
+            <template x-if="!(groups.groups||[]).length && !(groups.status && groups.status.running)">
+              <div class="card p-5 text-sm text-slate-500" x-text="groups.computed_at ? 'No tightly-correlated groups with a clear shared thread right now — today\'s movers are broadly correlated without a single common thread to name. Check again as new groups start to rotate.' : 'Click Detect groups to scan for emerging correlated clusters.'"></div>
+            </template>
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <template x-for="(g,gi) in (groups.groups||[])" :key="gi">
+                <div class="card p-4 space-y-3" :class="g.novel?'ring-1 ring-accent/40':''">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="badge" :class="g.novel?'badge-hot':''" x-text="(g.novel?'🆕 ':'')+g.common"></span>
+                      <span class="text-xs text-slate-500" x-text="g.size+' names'"></span>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-lg font-extrabold" :class="g.avg_1w>=0?'text-up':'text-down'" x-text="(g.avg_1w>=0?'+':'')+g.avg_1w+'%'"></div>
+                      <div class="text-[10px] text-slate-500">avg 1-week</div>
+                    </div>
+                  </div>
+                  <div class="space-y-1">
+                    <template x-for="m in g.members" :key="m.ticker">
+                      <div class="flex items-center gap-2 text-sm px-1 py-1 rounded hover:bg-white/5 cursor-pointer" @click="showChart(m.ticker,{})">
+                        <span class="font-bold w-16 shrink-0" x-text="m.ticker"></span>
+                        <span class="text-[11px] text-slate-500 flex-1 truncate" x-text="m.sector"></span>
+                        <span class="font-semibold shrink-0" :class="m.perf_1w>=0?'text-up':'text-down'" x-text="(m.perf_1w>=0?'+':'')+m.perf_1w+'% 1w'"></span>
+                      </div>
+                    </template>
+                  </div>
                 </div>
               </template>
             </div>
@@ -515,6 +592,10 @@
                 <span x-show="sectorStatus.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="sectorStatus.current"></span> <span x-text="sectorStatus.done+'/'+sectorStatus.total"></span></span>
               </button>
               <span class="text-xs text-slate-500" x-show="sectorHeat.computed_at">Updated <span x-text="sectorHeat.computed_at"></span></span>
+              <span x-show="sectorHeat.live" class="text-xs font-bold flex items-center gap-1.5" style="color:#22e0a1">
+                <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:#22e0a1"></span><span class="relative inline-flex rounded-full h-2 w-2" style="background:#22e0a1"></span></span>
+                live · today's % <span x-text="sectorHeat.live_at"></span>
+              </span>
               <div class="w-full sm:w-auto sm:ml-auto flex items-center gap-2">
                 <input x-model="sectorSearch" @input="runStockFinder()" type="text" placeholder="🔎 Find a stock (e.g. CRCL)…" class="input py-1.5 text-sm w-full sm:w-56">
                 <button x-show="sectorSearch" @click="sectorSearch=''; runStockFinder()" class="text-slate-500 hover:text-white text-sm" title="clear">✕</button>
@@ -852,6 +933,53 @@
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null?stats.avg_r+'R':'—'"></div></div>
             <div class="stat"><div class="stat-label">Closed</div><div class="stat-val" x-text="stats.closed??0"></div></div>
           </div>
+          <!-- Forward (paper) test: live A/A+ picks tracked day-by-day -->
+          <div class="card p-5" x-show="forward">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
+              <span>🔬 Forward test <span class="text-xs font-normal text-slate-500">— every A/A+ pick, tracked live (no hindsight)</span></span>
+              <button class="btn-sm" @click="loadForward()">↻</button>
+            </div>
+            <template x-if="forward && !forward.days_logged">
+              <div class="text-sm text-slate-500">No picks logged yet — they're snapshotted automatically on each scan / “New day”. Check back as the days accumulate.</div>
+            </template>
+            <template x-if="forward && forward.days_logged">
+              <div class="space-y-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                  <div class="lvl"><div class="lvl-l">Days logged</div><div class="font-bold" x-text="forward.days_logged"></div></div>
+                  <div class="lvl"><div class="lvl-l">Picks tracked</div><div class="font-bold" x-text="forward.total_picks"></div></div>
+                  <div class="lvl"><div class="lvl-l">Matured</div><div class="font-bold" x-text="forward.matured"></div></div>
+                  <div class="lvl"><div class="lvl-l">Still open</div><div class="font-bold text-slate-400" x-text="forward.pending"></div></div>
+                </div>
+                <template x-if="forward.aggregate">
+                  <div class="grid grid-cols-3 gap-3 text-center">
+                    <div class="lvl"><div class="lvl-l">Win rate</div><div class="text-xl font-extrabold" x-text="forward.aggregate.win_rate+'%'"></div></div>
+                    <div class="lvl"><div class="lvl-l">Avg R</div><div class="text-xl font-extrabold" :class="forward.aggregate.avg_r>=0?'text-up':'text-down'" x-text="(forward.aggregate.avg_r>=0?'+':'')+forward.aggregate.avg_r+'R'"></div></div>
+                    <div class="lvl"><div class="lvl-l">&gt;1R</div><div class="text-xl font-extrabold" x-text="forward.aggregate.pct_gt1R+'%'"></div></div>
+                  </div>
+                </template>
+                <div class="text-xs text-slate-500" x-show="!forward.aggregate">Picks logged — none matured yet (each needs ~7 sessions of forward data). The win rate / avg R appear here once they do.</div>
+                <template x-if="forward.recent && forward.recent.length">
+                  <div>
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">Recent matured picks</div>
+                    <div class="space-y-1">
+                      <template x-for="(p,pi) in forward.recent" :key="pi">
+                        <div class="flex items-center gap-2 text-sm">
+                          <span class="text-slate-500 w-20 shrink-0 text-xs" x-text="p.date"></span>
+                          <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(p.grade)" x-text="p.grade"></span>
+                          <span class="font-bold w-16 shrink-0" x-text="p.ticker"></span>
+                          <span class="text-slate-500 text-xs flex-1 truncate" x-text="p.setup_type"></span>
+                          <span class="font-bold shrink-0 w-16 text-right" :class="p.R>=0?'text-up':'text-down'" x-text="(p.R>=0?'+':'')+p.R+'R'"></span>
+                          <span class="text-[10px] text-slate-500 shrink-0 w-12" x-text="p.exit"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <div class="text-[11px] text-slate-500">True out-of-sample: the real current universe, scored with the same exit rules (9-EMA close / stop). This is the honest verdict on the grade — it grows every day you scan.</div>
+              </div>
+            </template>
+          </div>
+
           <div class="card">
             <div class="card-head">By setup type</div>
             <template x-if="!stats.by_setup || Object.keys(stats.by_setup).length===0"><div class="p-5 text-sm text-slate-500">Close some trades to see stats by setup.</div></template>

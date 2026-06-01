@@ -78,7 +78,12 @@ def _fetch_raw(sym):
     return None
 
 
+_DID_FETCH = False              # set by get_bars: True when the last call hit the network (cache miss)
+
+
 def get_bars(sym, max_age_hours=12):
+    global _DID_FETCH
+    _DID_FETCH = False
     sym = sym.strip().upper()
     CACHE.mkdir(parents=True, exist_ok=True)
     f = CACHE / f"{sym}.json"
@@ -91,6 +96,7 @@ def get_bars(sym, max_age_hours=12):
         except Exception:
             pass
     bars = _fetch_raw(sym)
+    _DID_FETCH = True
     if bars:
         try:
             f.write_text(json.dumps({"sym": sym, "bars": bars}))
@@ -150,6 +156,54 @@ def _fetch_earnings(sym):
     except Exception:
         _YF["opener"] = _YF["crumb"] = None   # crumb may have expired — re-auth next call
         return None
+
+
+_QUOTE_CACHE = {}                       # sym -> {price, prev_close, change_pct, market_state, _t}
+
+
+def fetch_quotes(symbols, max_age=30):
+    """Batched live quotes from Yahoo's v7/quote (cookie+crumb), ~30s cached so rapid polls /
+    multiple users don't hammer Yahoo. Returns {SYM: {price, prev_close, change_pct, market_state}}.
+    During pre/post-market the active session price is used so the page shows what's moving now."""
+    syms = [s.strip().upper() for s in symbols if s and s.strip()]
+    now = time.time()
+    out, missing = {}, []
+    for s in syms:
+        c = _QUOTE_CACHE.get(s)
+        if c and now - c["_t"] < max_age:
+            out[s] = c
+        else:
+            missing.append(s)
+    if missing:
+        op, crumb = _yahoo_session()
+        if op and crumb:
+            for i in range(0, len(missing), 50):
+                chunk = missing[i:i + 50]
+                url = ("https://query1.finance.yahoo.com/v7/finance/quote?symbols="
+                       + urllib.parse.quote(",".join(chunk)) + "&crumb=" + urllib.parse.quote(crumb))
+                try:
+                    with op.open(url, timeout=12) as r:
+                        d = json.load(r)
+                    for q in d.get("quoteResponse", {}).get("result", []):
+                        sym = q.get("symbol")
+                        if not sym:
+                            continue
+                        price = q.get("regularMarketPrice")
+                        chg = q.get("regularMarketChangePercent", 0)
+                        ms = q.get("marketState")
+                        if ms in ("PRE", "PREPRE") and q.get("preMarketPrice"):
+                            price, chg = q["preMarketPrice"], q.get("preMarketChangePercent", chg)
+                        elif ms in ("POST", "POSTPOST", "CLOSED") and q.get("postMarketPrice"):
+                            price, chg = q["postMarketPrice"], q.get("postMarketChangePercent", chg)
+                        rec = {"price": round(price, 2) if price is not None else None,
+                               "prev_close": q.get("regularMarketPreviousClose"),
+                               "change_pct": round(chg, 2) if chg is not None else None,
+                               "market_state": ms, "_t": now}
+                        _QUOTE_CACHE[sym] = rec
+                        out[sym] = rec
+                except Exception:
+                    _YF["opener"] = _YF["crumb"] = None     # crumb may have expired
+    return out
 
 
 def get_earnings(sym, max_age_hours=24):
@@ -949,21 +1003,87 @@ def _attach_rs(results):
         r["rs_score"] = round(0.5 * pct[i] + 0.5 * op_score)
 
 
-def scan(tickers, settings=None, progress=None):
+def detect_groups(tickers, lookback=15, min_move=8.0, corr_thr=0.86, max_cand=120, progress=None):
+    """Find EMERGING groups: strong recent movers whose DAILY returns are highly correlated move
+    together — often a fresh theme before it's an official sector. Take the recent leaders, z-score
+    their last `lookback` daily returns, link any pair with correlation >= corr_thr, and return the
+    connected components (size 3-20). Pure stdlib; bars are cached so this is cheap."""
+    data = []
+    total = len(tickers)
+    for i, t in enumerate(tickers, 1):
+        if progress:
+            progress(i, total, t)
+        bars = get_bars(t)
+        if not bars or len(bars) < lookback + 6:
+            continue
+        c = [b["close"] for b in bars]
+        if c[-6] <= 0 or c[-1] <= 0:
+            continue
+        p1w = (c[-1] / c[-6] - 1) * 100
+        p1m = (c[-1] / c[-21] - 1) * 100 if len(c) > 21 else p1w
+        rets = [(c[k] / c[k - 1] - 1) for k in range(-lookback, 0)]
+        data.append({"t": t, "p1w": p1w, "p1m": p1m, "rets": rets})
+    cand = [d for d in data if d["p1w"] >= min_move or d["p1m"] >= 20.0]
+    cand.sort(key=lambda d: max(d["p1w"], d["p1m"] / 2), reverse=True)
+    cand = cand[:max_cand]
+    n = len(cand)
+    if n < 3:
+        return []
+    for d in cand:                                            # z-score so mean(zi*zj) == Pearson r
+        r = d["rets"]; m = sum(r) / len(r)
+        sd = (sum((x - m) ** 2 for x in r) / len(r)) ** 0.5 or 1e-9
+        d["z"] = [(x - m) / sd for x in r]
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+    L = len(cand[0]["z"])
+    for i in range(n):
+        zi = cand[i]["z"]
+        for j in range(i + 1, n):
+            zj = cand[j]["z"]
+            corr = sum(zi[k] * zj[k] for k in range(L)) / L
+            if corr >= corr_thr:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[ri] = rj
+    comp = {}
+    for i in range(n):
+        comp.setdefault(find(i), []).append(i)
+    groups = []
+    for idxs in comp.values():
+        if not (3 <= len(idxs) <= 20):
+            continue
+        members = [{"ticker": cand[i]["t"], "perf_1w": round(cand[i]["p1w"], 1),
+                    "perf_1mo": round(cand[i]["p1m"], 1)} for i in idxs]
+        members.sort(key=lambda m: m["perf_1w"], reverse=True)
+        groups.append({"members": members, "size": len(members),
+                       "avg_1w": round(sum(m["perf_1w"] for m in members) / len(members), 1)})
+    groups.sort(key=lambda g: g["avg_1w"], reverse=True)
+    return groups
+
+
+def scan(tickers, settings=None, progress=None, max_age=12):
     results, fails = [], []
     total = len(tickers)
     for i, t in enumerate(tickers, 1):
-        bars = get_bars(t)
+        bars = get_bars(t, max_age_hours=max_age)
         if progress:
             progress(i, total, t)
+        fetched = _DID_FETCH
         if not bars:
             fails.append(t)
+            if fetched:
+                time.sleep(0.05)
             continue
         try:
             results.append(analyze(t, bars, settings))
         except Exception:
             fails.append(t)
-        time.sleep(0.05)
+        if fetched:                 # only throttle when we actually hit Yahoo (cache miss)
+            time.sleep(0.05)
     _attach_rs(results)
     results.sort(key=lambda r: r["score"], reverse=True)
     return {"results": results, "failed": fails,
