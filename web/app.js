@@ -387,6 +387,13 @@ function dataCenter() {
         : 'background:rgba(255,181,61,.12);border-color:rgba(255,181,61,.5)';
     },
     gradeColor(g) { return (g === 'A+' || g === 'A') ? '#22e0a1' : g === 'B' ? '#6a8dff' : g === 'C' ? '#ffb53d' : '#93a1b8'; },
+    gradeLetter(r) { return r >= 82 ? 'A+' : r >= 73 ? 'A' : r >= 63 ? 'B' : r >= 52 ? 'C' : 'D'; },
+    entryGradeStats(list) {
+      const g = (list || []).filter(t => t.entry_rating != null);
+      if (!g.length) return null;
+      const avg = Math.round(g.reduce((a, t) => a + t.entry_rating, 0) / g.length);
+      return { n: g.length, avg, letter: this.gradeLetter(avg), low: g.filter(t => t.low_grade).length };
+    },
     alertDate(a) {
       if (!a.published) return '';
       const d = new Date(a.published); if (isNaN(d)) return '';
@@ -546,6 +553,14 @@ function dataCenter() {
     openClose(t) {
       this.tradeModal = { open: true, mode: 'close', ticker: t.ticker, _trade: t,
         exit: null, result_r: null, rules_followed: 'yes', lesson: '', notes: '' };
+    },
+    closeRPreview() {
+      const m = this.tradeModal, t = m && m._trade;
+      if (!t || m.exit == null) return null;
+      const istop = t.initial_stop != null ? t.initial_stop : t.stop;
+      const risk = t.entry - istop;
+      if (!risk || risk <= 0) return null;
+      return Math.round((m.exit - t.entry) / risk * 100) / 100;
     },
     openEdit(t) {
       this.tradeModal = { open: true, mode: 'edit', ticker: t.ticker, _trade: t,

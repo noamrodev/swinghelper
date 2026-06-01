@@ -1,0 +1,58 @@
+{
+  "computed_at": "2026-06-01 14:00 UTC",
+  "posture": 57,
+  "label": "Mixed / pullback",
+  "indexes": [
+    {
+      "name": "SPX",
+      "state": "Extended",
+      "posture": 49,
+      "close": 7580.06,
+      "ext10": 1.2,
+      "off_high": 0.3,
+      "above": 3,
+      "adr": 0.79,
+      "p1m": 5.1,
+      "p3m": 10.1,
+      "gain_50": 7.4,
+      "atr_mult_50": 9.4,
+      "gain_20": 2.5,
+      "atr_mult_20": 3.1,
+      "stretched_50": true
+    },
+    {
+      "name": "QQQ",
+      "state": "Extended",
+      "posture": 48,
+      "close": 738.31,
+      "ext10": 2.2,
+      "off_high": 0.4,
+      "above": 3,
+      "adr": 1.29,
+      "p1m": 10.6,
+      "p3m": 21.4,
+      "gain_50": 13.1,
+      "atr_mult_50": 10.1,
+      "gain_20": 4.4,
+      "atr_mult_20": 3.4,
+      "stretched_50": true
+    },
+    {
+      "name": "IWM",
+      "state": "Extended",
+      "posture": 74,
+      "close": 290.43,
+      "ext10": 1.4,
+      "off_high": 0.8,
+      "above": 3,
+      "adr": 1.45,
+      "p1m": 4.5,
+      "p3m": 10.1,
+      "gain_50": 7.6,
+      "atr_mult_50": 5.2,
+      "gain_20": 2.7,
+      "atr_mult_20": 1.9,
+      "stretched_50": true
+    }
+  ]
+}

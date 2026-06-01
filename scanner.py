@@ -691,6 +691,38 @@ def analyze(sym, bars, settings=None):
     }
 
 
+def analyze_at(sym, date, settings=None):
+    """Run analyze() on daily bars SLICED to a past date (a trade's entry date) so a setup can be
+    graded AS OF when it was taken. Also attaches an RS-outperformance proxy vs the equal-blend
+    SPX/QQQ/IWM sliced to the same date. Price-based only — market regime / sector heat / news
+    can't be reconstructed for a past date. Returns the analyze dict (+ rs_score, asof) or None."""
+    bars = get_bars(sym)
+    if not bars:
+        return None
+    sl = [b for b in bars if b["time"] <= date]            # bars up to and incl. the entry date
+    if len(sl) < 60:
+        return None
+    try:
+        a = analyze(sym, sl, settings)
+    except Exception:
+        return None
+    b1, b3 = [], []
+    for _, isym in INDEXES:
+        ib = get_bars(isym)
+        isl = [b for b in ib if b["time"] <= date] if ib else None
+        if not isl or len(isl) < 63:
+            continue
+        ic = [b["close"] for b in isl]
+        b1.append((ic[-1] / ic[-21] - 1) * 100)
+        b3.append((ic[-1] / ic[-63] - 1) * 100)
+    bb1 = st.mean(b1) if b1 else 0.0
+    bb3 = st.mean(b3) if b3 else 0.0
+    outperf = 0.5 * (a.get("p1m", 0) - bb1) + 0.5 * (a.get("p3m", 0) - bb3)
+    a["rs_score"] = round(max(0.0, min(100.0, 50.0 + outperf * 2.0)))
+    a["asof"] = sl[-1]["time"]
+    return a
+
+
 def _fetch_intraday(sym, rng="2d"):
     """5-minute bars incl. pre/post-market for the last ~2 sessions. Returns (bars, gmtoffset)."""
     sym = sym.strip().upper()

@@ -275,14 +275,29 @@
           </div>
 
           <div class="card">
-            <div class="card-head">Open positions <span class="text-xs font-normal text-slate-500">— suggested action from profit, extension, earnings &amp; news</span></div>
+            <div class="card-head flex items-center justify-between gap-2 flex-wrap">
+              <span>Open positions <span class="text-xs font-normal text-slate-500">— suggested action from profit, extension, earnings &amp; news</span></span>
+              <template x-if="entryGradeStats(openTrades)">
+                <span class="text-xs font-normal flex items-center gap-1.5" :title="'Average system grade of your entries, as of each entry date. Below B = worth reviewing.'">
+                  <span class="text-slate-500">your entries avg</span>
+                  <b :style="'color:'+gradeColor(entryGradeStats(openTrades).letter)" x-text="entryGradeStats(openTrades).letter"></b>
+                  <span class="text-slate-500" x-text="'('+entryGradeStats(openTrades).avg+')'"></span>
+                  <span x-show="entryGradeStats(openTrades).low" style="color:#ffb53d" x-text="'· '+entryGradeStats(openTrades).low+' below B'"></span>
+                </span>
+              </template>
+            </div>
             <template x-if="openTrades.length===0"><div class="p-5 text-sm text-slate-500">No open positions.</div></template>
             <template x-for="t in openTrades" :key="t.id">
               <div class="px-5 py-3 border-t border-line space-y-2">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
-                  <div class="w-40"><span class="font-semibold" x-text="t.ticker"></span>
-                    <span class="badge ml-2" x-text="t.setup_type"></span></div>
-                  <div class="flex-1 text-sm text-slate-400 min-w-[140px]">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span> · <span x-text="t.shares||'?'"></span> sh</div>
+                  <div class="flex items-center gap-1.5 flex-wrap" style="min-width:10rem">
+                    <span class="font-semibold" x-text="t.ticker"></span>
+                    <span class="badge" x-text="t.setup_type"></span>
+                    <span class="badge font-extrabold" x-show="t.entry_grade" :style="'color:'+gradeColor(t.entry_grade)"
+                      :title="'System grade of this setup at entry ('+(t.taken_at||'')+') — '+(t.grade_note||'')+(t.graded_setup&&t.graded_setup!==t.setup_type?'. Engine read the setup as '+t.graded_setup+'.':'')">grade <span x-text="t.entry_grade"></span></span>
+                    <span class="badge" x-show="t.low_grade" style="color:#ffb53d;border-color:rgba(255,181,61,.5)" title="Below B at entry — worth reviewing why you took it">⚠ low</span>
+                  </div>
+                  <div class="flex-1 text-sm text-slate-400 min-w-[140px]">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span><span x-show="t.initial_stop!=null" class="text-slate-500" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh</div>
                   <div class="w-28 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'">
                     <span x-show="t._live" class="text-up text-[9px] align-middle mr-0.5" title="live price">●</span><span x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></span>
                   </div>
@@ -793,11 +808,14 @@
             <template x-for="t in activeTrades" :key="t.id">
               <div class="card card-hover anim-in p-4 space-y-2">
                 <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2"><span class="font-extrabold text-lg" x-text="t.ticker"></span>
-                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span></div>
+                  <div class="flex items-center gap-2 flex-wrap"><span class="font-extrabold text-lg" x-text="t.ticker"></span>
+                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span>
+                    <span class="badge font-extrabold" x-show="t.entry_grade" :style="'color:'+gradeColor(t.entry_grade)"
+                      :title="'System grade of this setup at entry — '+(t.grade_note||'')+(t.graded_setup&&t.graded_setup!==t.setup_type?'. Engine read the setup as '+t.graded_setup+'.':'')">grade <span x-text="t.entry_grade"></span></span>
+                    <span class="badge" x-show="t.low_grade" style="color:#ffb53d;border-color:rgba(255,181,61,.5)" title="Below B at entry — worth reviewing">⚠ low</span></div>
                   <div class="text-xs text-slate-500" x-text="t.taken_at"></div>
                 </div>
-                <div class="text-sm text-slate-400">entry <b class="text-slate-200" x-text="t.entry||t.planned_entry||'?'"></b> · stop <b class="text-down" x-text="t.stop"></b> · <span x-text="t.shares||'?'"></span> sh</div>
+                <div class="text-sm text-slate-400">entry <b class="text-slate-200" x-text="t.entry||t.planned_entry||'?'"></b> · stop <b class="text-down" x-text="t.stop"></b><span x-show="t.initial_stop!=null" class="text-slate-500" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh<span x-show="t.r_open!=null" class="ml-1" :class="t.r_open>=0?'text-up':'text-down'" :title="'unrealized R off the initial stop'"> · <span x-text="(t.r_open>=0?'+':'')+t.r_open+'R'"></span></span></div>
                 <div class="text-sm" x-show="t.pnl!=null">P&L <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></b> <span class="text-xs text-slate-500">@ <span x-text="t.last"></span></span></div>
                 <div class="text-xs text-slate-500" x-show="t.notes" x-text="t.notes"></div>
                 <div class="flex gap-2 flex-wrap" x-show="t.screenshots && t.screenshots.length">
@@ -820,8 +838,10 @@
             <template x-for="t in closedTrades" :key="t.id">
               <div class="card anim-in p-4 space-y-2 opacity-90">
                 <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2"><span class="font-bold text-lg" x-text="t.ticker"></span>
-                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span></div>
+                  <div class="flex items-center gap-2 flex-wrap"><span class="font-bold text-lg" x-text="t.ticker"></span>
+                    <span class="badge" :class="setupClass(t.setup_type)" x-text="t.setup_type"></span>
+                    <span class="badge font-extrabold" x-show="t.entry_grade" :style="'color:'+gradeColor(t.entry_grade)"
+                      :title="'System grade of this setup at entry — '+(t.grade_note||'')">grade <span x-text="t.entry_grade"></span></span></div>
                   <b :class="t.result_r>=0?'text-up':'text-down'" x-text="(t.result_r>0?'+':'')+(t.result_r!=null?t.result_r+'R':'—')"></b>
                 </div>
                 <div class="text-sm text-slate-400">entry <span x-text="t.entry||'?'"></span> → exit <span x-text="t.exit||'?'"></span>
@@ -1152,7 +1172,10 @@
       <template x-if="tradeModal.mode==='close'">
         <div class="space-y-2">
           <label class="text-sm block">Exit price <input class="input w-full" type="number" x-model.number="tradeModal.exit"></label>
-          <label class="text-sm block">Result (R) <input class="input w-full" type="number" step="0.1" x-model.number="tradeModal.result_r"></label>
+          <template x-if="tradeModal.exit!=null && closeRPreview()!=null">
+            <div class="text-xs text-slate-400 -mt-1">= <b :class="closeRPreview()>=0?'text-up':'text-down'" x-text="(closeRPreview()>=0?'+':'')+closeRPreview()+'R'"></b> off the initial stop $<span x-text="(tradeModal._trade.initial_stop!=null?tradeModal._trade.initial_stop:tradeModal._trade.stop)"></span> <span class="text-slate-500">(auto-recorded — leave Result blank to use this)</span></div>
+          </template>
+          <label class="text-sm block">Result (R) <span class="text-slate-500 text-xs">— optional, auto-computed from exit</span><input class="input w-full" type="number" step="0.1" x-model.number="tradeModal.result_r"></label>
           <label class="text-sm block">Followed rules?
             <select class="input w-full" x-model="tradeModal.rules_followed"><option value="yes">yes</option><option value="no">no</option></select></label>
           <label class="text-sm block">Lesson (optional → saved to lessons.md)

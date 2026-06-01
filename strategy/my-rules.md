@@ -6,7 +6,9 @@ here to match how you actually trade.
 ## Account & risk
 - **Account size:** _not set_ (set yours in the app)
 - **Risk per trade:** **1%** of account.
-- **Max single position:** 20% of account. **Max overnight exposure:** ~30%.
+- **Max single position:** 10% of account (tightened from 20% on 2026-06-01 â€” keep risk small while
+  still learning). **Max overnight exposure:** ~30%. *(Some earlier positions were taken at ~15â€“20%
+  before this change â€” grandfathered, not re-flagged.)*
 - **Stop:** never wider than **1Ã— ADR**, always at a real structural level.
 
 ## What I trade

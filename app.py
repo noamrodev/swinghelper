@@ -602,9 +602,10 @@ def position_coach(t, bars, settings, news_map):
     entry = t.get("entry") or t.get("planned_entry")
     stop = t.get("stop")
     target = t.get("target")
-    # original 1R: entry−stop normally, but once the stop is raised to/above entry (breakeven+),
-    # recover it from the 2R target so R keeps working instead of dividing by ~zero.
-    risk = (entry - stop) if (entry and stop and entry > stop) else None
+    # 1R = the ORIGINAL risk taken at entry. Use initial_stop (the stop you took, never overwritten);
+    # fall back to the live stop, then to the 2R target if the stop was raised to breakeven.
+    istop = t.get("initial_stop") if t.get("initial_stop") is not None else stop
+    risk = (entry - istop) if (entry and istop and entry > istop) else None
     risk_r = risk or (((target - entry) / 2) if (target and entry and target > entry) else None)
     r_mult = ((last - entry) / risk_r) if (risk_r and entry) else None
     breakeven_plus = bool(entry and stop and stop >= entry)   # stop locked at/above entry = house money
@@ -706,14 +707,67 @@ def position_coach(t, bars, settings, news_map):
             "last": round(last, 2)}
 
 
+def _grade_letter(r):
+    return "A+" if r >= 82 else "A" if r >= 73 else "B" if r >= 63 else "C" if r >= 52 else "D"
+
+
+def entry_grade_for(ticker, date, settings):
+    """Grade a setup AS OF its entry date — the reconstructable, price-based factors: setup quality,
+    entry location (chased vs tight), relative strength, liquidity. Market regime / sector heat / news
+    can't be reconstructed for a past date, so they're held NEUTRAL (55). Same weights + letter
+    thresholds as the live grade (strategy/scoring.md) so the letter is comparable. This is the mirror
+    on the trader's OWN entries — taking C/D setups is a fair lesson, separate from the system's calls.
+    Returns {rating, grade, setup_type, entry_quality, ext10, asof, note} or None."""
+    a = scanner.analyze_at(ticker, date, settings)
+    if not a:
+        return None
+    setup = max(0, min(100, (a.get("score", 0) - 4) / 16 * 100))
+    rs = a.get("rs_score", 50)
+    entry_loc = a.get("entry_quality", 60)
+    liq = a.get("liq_score", 50)
+    neutral = 55                                            # regime/sector/timing/news unknown for a past date
+    r = (0.28 * setup + 0.14 * rs + 0.14 * neutral + 0.14 * entry_loc
+         + 0.08 * liq + 0.10 * neutral + 0.06 * neutral + 0.06 * neutral)
+    if a.get("extended"):
+        r -= 8
+    if a.get("distribution_today"):
+        r = min(r, 62)
+    r = round(max(0, min(99, r)))
+    return {"rating": r, "grade": _grade_letter(r), "setup_type": a.get("setup_type"),
+            "entry_quality": a.get("entry_quality"), "ext10": a.get("ext10"), "asof": a.get("asof"),
+            "note": "setup + entry location + relative strength + liquidity at entry; market context neutral"}
+
+
 def enrich_trades(trades):
-    """Add current price + P&L to each trade, and a coaching action for open positions."""
+    """Add current price + P&L to each trade, a coaching action for open positions, and the
+    system grade of the setup as of the entry date (so the trader can see if they're taking weak setups)."""
     settings = read_json(settings_f(), {})
     news_map = read_json(NEWS_F, {}).get("ticker_news", {})
     for t in trades:
         e, sh = t.get("entry"), t.get("shares")
         t["last"] = t["pnl"] = t["pnl_pct"] = None
         t["coach"] = None
+        # the risk basis is the INITIAL stop (the one taken at entry); default to the live stop for
+        # older trades that predate the field. R is always measured off this, never the raised stop.
+        if t.get("initial_stop") is None:
+            t["initial_stop"] = t.get("stop")
+        istop = t.get("initial_stop")
+        t["risk_ps"] = round(e - istop, 4) if (e and istop is not None and e > istop) else None
+        t["r_open"] = None
+        # grade the setup as of the entry date (price-based; market context neutral)
+        t["entry_grade"] = t["entry_rating"] = t["graded_setup"] = t["grade_note"] = None
+        t["low_grade"] = False
+        if t.get("ticker") and t.get("taken_at"):
+            try:
+                eg = entry_grade_for(t["ticker"], t["taken_at"], settings)
+            except Exception:
+                eg = None
+            if eg:
+                t["entry_grade"] = eg["grade"]
+                t["entry_rating"] = eg["rating"]
+                t["graded_setup"] = eg["setup_type"]
+                t["grade_note"] = eg["note"]
+                t["low_grade"] = eg["rating"] < 63          # below B = a setup worth questioning
         if t.get("status") == "open" and t.get("ticker"):
             bars = scanner.get_bars(t["ticker"])
             last = bars[-1]["close"] if bars else None
@@ -723,6 +777,8 @@ def enrich_trades(trades):
                 t["pnl_pct"] = round((last / e - 1) * 100, 2)
             else:
                 t["pnl"] = t["pnl_pct"] = None
+            if t.get("risk_ps") and last:                 # unrealized R off the initial stop
+                t["r_open"] = round((last - e) / t["risk_ps"], 2)
             if bars:
                 try:
                     t["coach"] = position_coach(t, bars, settings, news_map)
@@ -865,12 +921,9 @@ def grade_suggestions(items, settings):
             r = min(r, 72)
         return round(max(0, min(99, r)))
 
-    def _grade(r):
-        return "A+" if r >= 82 else "A" if r >= 73 else "B" if r >= 63 else "C" if r >= 52 else "D"
-
     for it in items:
         it["rating"] = _rating(it)
-        it["grade"] = _grade(it["rating"])
+        it["grade"] = _grade_letter(it["rating"])
     return sorted(items, key=lambda x: x.get("rating", 0), reverse=True)
 
 
@@ -1761,6 +1814,12 @@ class Handler(BaseHTTPRequestHandler):
             t = next((x for x in trades if x["id"] == parts[2]), None)
             if not t:
                 self._json({"error": "not found"}, 404); return
+            # freeze the risk basis: the FIRST time the stop is edited (e.g. raised to breakeven),
+            # remember the original stop as initial_stop so R stays measured off the real risk.
+            if "stop" in body and t.get("initial_stop") is None:
+                t["initial_stop"] = t.get("stop")
+            if "initial_stop" in body:                 # allow an explicit correction
+                t["initial_stop"] = body["initial_stop"]
             for k in ("setup_type", "entry", "stop", "target", "shares", "notes", "status"):
                 if k in body:
                     t[k] = body[k]
@@ -1792,6 +1851,7 @@ class Handler(BaseHTTPRequestHandler):
             "ticker": sug["ticker"], "setup_type": sug.get("setup_type", "Breakout"),
             "status": "open", "planned_entry": sug.get("entry"), "entry": entry,
             "stop": body.get("stop") or sug.get("stop"),
+            "initial_stop": body.get("stop") or sug.get("stop"),   # risk basis — frozen at entry
             "target": body.get("target") or sug.get("target"),
             "shares": body.get("shares"), "taken_at": now_date(),
             "exit": None, "result_r": None, "result_pct": None, "rules_followed": None,
@@ -1806,6 +1866,8 @@ class Handler(BaseHTTPRequestHandler):
         body.setdefault("status", "open")
         body.setdefault("taken_at", now_date())
         body.setdefault("screenshots", [])
+        if body.get("initial_stop") is None:           # freeze the risk basis at entry
+            body["initial_stop"] = body.get("stop")
         trades.append(body)
         write_json(trades_f(), trades)
         regen_trades_md()
@@ -1817,11 +1879,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         t["status"] = "closed"
         t["exit"] = body.get("exit")
-        t["result_r"] = body.get("result_r")
         t["result_pct"] = body.get("result_pct")
         t["rules_followed"] = body.get("rules_followed")
         # realized P&L flows into the account balance
         e, sh, x = t.get("entry"), t.get("shares"), body.get("exit")
+        # realized R measured off the INITIAL stop (the real risk taken), not a raised/breakeven stop
+        istop = t.get("initial_stop") if t.get("initial_stop") is not None else t.get("stop")
+        if e and x and istop is not None and e > istop:
+            t["result_r"] = round((x - e) / (e - istop), 2)
+        else:
+            t["result_r"] = body.get("result_r")
         if e and sh and x:
             pnl = (x - e) * sh
             t["realized_pnl"] = round(pnl, 2)

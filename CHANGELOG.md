@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-06-01 (Initial-stop / risk basis — R survives a breakeven raise)
+- Trades now carry **`initial_stop`** (the stop taken at entry) separate from the editable live
+  **`stop`**. Raising the stop to breakeven no longer destroys the trade's R: **all R is measured off
+  `initial_stop`** — `position_coach` r_mult, the new unrealized **`r_open`** in `enrich_trades`, and
+  **`result_r` on close (now computed server-side**, not trusted from the client). Set at creation,
+  the original is captured the first time the stop is edited, and older trades default it to the
+  current stop on read. UI shows "(init $X)" beside the live stop, the live R on journal cards, and a
+  live R preview in the close modal — all off the initial stop. Fixes MSFT/DOCN (live stop = breakeven)
+  which were showing broken/zero R; they now read +1.3R / +1.1R. Unblocks the ±8 win/loss-by-setup
+  learning loop for trades managed with a trailed stop.
+
+## 2026-06-01 (Entry grade on trades — grade your own setups)
+- Every trade now carries the **system grade of its setup as of the entry date**, derived
+  automatically from `taken_at` — no manual entry. `scanner.analyze_at(sym, date)` slices the cached
+  daily bars to the entry date, runs `analyze()`, and attaches an RS-outperformance proxy from the
+  indexes sliced to the same date; `app.entry_grade_for()` rates it on the **reconstructable price
+  factors** (setup quality, entry location, relative strength, liquidity) with market
+  regime/sector/news held **neutral** (they can't be time-traveled) — same weights + letter
+  thresholds as the live grade (`_grade_letter`, shared now).
+- `enrich_trades` adds `entry_grade` / `entry_rating` / `graded_setup` / `low_grade` (<B) to every
+  trade. Shown as a colored **grade badge** on dashboard Open Positions and both Journal lists, with a
+  dashboard header summary ("your entries avg C (62) · 5 below B"). The engine's own setup read is in
+  the tooltip when it differs from what was logged (e.g. DOCN logged AVWAP → engine saw Consolidation/A).
+- Purpose: a mirror on the trader's **own** entries (taking C/D setups is a fair, self-sourced lesson),
+  separate from the system's picks. *Limitation: price-based only — historical regime/sector/news
+  aren't reconstructed, so the entry grade isn't identical to a live grade on the same name.*
+
 ## 2026-06-01 (Spinning: 9 EMA + 2-green confirmation)
 - **Switched the spin line from the 10 EMA to the 9 EMA** (5-min) to match the chart.
 - **Confirmation:** a name now needs **2 closed green candles above the 9 EMA** (recent window) before
