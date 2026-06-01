@@ -14,6 +14,8 @@ import json
 import math
 import os
 import urllib.request
+import urllib.parse
+import http.cookiejar
 import time
 import statistics as st
 from pathlib import Path
@@ -25,15 +27,17 @@ CACHE = (Path(os.environ["DATA_DIR"]) if os.environ.get("DATA_DIR") else BASE / 
 
 # how strongly each setup type is preferred (added to the score).
 # Pullbacks/AVWAP get a slight edge, but breakouts & EPs still rank competitively.
+# Weights reflect the 2026-06-01 backtest: AVWAP-anchored pullbacks & Consolidations were the
+# profitable setups; the generic "Pullback" (not at AVWAP) was the weakest — so it's nudged down.
 PREF = {
     "Pullback @ AVWAP": 4,
-    "Pullback": 3,
+    "Pullback": 2,
     "AVWAP reclaim (ATH)": 3,
     "AVWAP reclaim (earnings)": 2.5,
     "Episodic Pivot": 2,
     "Breakout": 1.5,
     "Deep Pullback": 3,
-    "Consolidation": 3,
+    "Consolidation": 4,
 }
 
 # Benchmarks for market regime + relative strength (equal-blend, per user choice).
@@ -93,6 +97,84 @@ def get_bars(sym, max_age_hours=12):
         except Exception:
             pass
     return bars
+
+
+# --------------------------------------------------------------------------- #
+# Earnings dates (Yahoo quoteSummary — needs a cookie + crumb, cached daily)
+# --------------------------------------------------------------------------- #
+# Yahoo's quoteSummary endpoint requires an auth crumb tied to a session cookie.
+# We grab both once and reuse them; the calendarEvents module then gives the NEXT
+# (confirmed or estimated) earnings date — used to warn off setups/positions with a
+# binary print coming up. Degrades gracefully to None on any failure (the UI just
+# hides the warning), so a Yahoo change can never break the scan.
+_YF = {"opener": None, "crumb": None}
+
+
+def _yahoo_session():
+    if _YF["opener"] and _YF["crumb"]:
+        return _YF["opener"], _YF["crumb"]
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    op.addheaders = [("User-Agent", "Mozilla/5.0")]
+    try:                                    # seed the consent/session cookie
+        op.open("https://fc.yahoo.com", timeout=10)
+    except Exception:
+        pass                                # a 404 here is fine — the cookie still sets
+    try:
+        with op.open("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10) as r:
+            crumb = r.read().decode().strip()
+    except Exception:
+        return None, None
+    if not crumb or "<" in crumb or len(crumb) > 32:
+        return None, None
+    _YF["opener"], _YF["crumb"] = op, crumb
+    return op, crumb
+
+
+def _fetch_earnings(sym):
+    op, crumb = _yahoo_session()
+    if not op:
+        return None
+    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{sym}"
+           f"?modules=calendarEvents&crumb={urllib.parse.quote(crumb)}")
+    try:
+        with op.open(url, timeout=12) as r:
+            d = json.load(r)
+        earn = (d["quoteSummary"]["result"][0].get("calendarEvents", {}) or {}).get("earnings", {}) or {}
+        dates = earn.get("earningsDate") or []
+        ts = dates[0].get("raw") if dates else None
+        if not ts:
+            return None
+        return {"date": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d"),
+                "ts": ts, "estimate": bool(earn.get("isEarningsDateEstimate"))}
+    except Exception:
+        _YF["opener"] = _YF["crumb"] = None   # crumb may have expired — re-auth next call
+        return None
+
+
+def get_earnings(sym, max_age_hours=24):
+    """Next earnings date for `sym` ({date, ts, estimate}) or None. Disk-cached daily."""
+    sym = sym.strip().upper()
+    CACHE.mkdir(parents=True, exist_ok=True)
+    f = CACHE / f"{sym}.earn.json"
+    if f.exists():
+        try:
+            age = (time.time() - f.stat().st_mtime) / 3600
+            obj = json.loads(f.read_text())
+            # cache hits last a day; a cached miss (None) is only trusted ~6h so a transient
+            # Yahoo hiccup doesn't suppress the date all day.
+            if obj.get("earnings") is not None and age < max_age_hours:
+                return obj["earnings"]
+            if obj.get("earnings") is None and age < 6:
+                return None
+        except Exception:
+            pass
+    e = _fetch_earnings(sym)
+    try:
+        f.write_text(json.dumps({"sym": sym, "earnings": e}))
+    except Exception:
+        pass
+    return e
 
 
 # --------------------------------------------------------------------------- #
@@ -304,6 +386,54 @@ def analyze(sym, bars, settings=None):
     pullback_like = setup_type in ("Pullback", "Pullback @ AVWAP",
                                    "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
 
+    # ----- volume character: who is in control of the recent action? -----
+    # Read volume on up-closes vs down-closes over the last ~10 sessions, plus whether the
+    # most recent 3 days are expanding vs the 10-day norm. On a PULLBACK, heavy/rising volume
+    # on the down days = distribution (the pullback may not be over). On an ADVANCE, heavy/
+    # rising volume on the up days = accumulation (momentum still with us). Drying-up volume
+    # into a pullback is the classic healthy contraction.
+    vol_signal = vol_note = None
+    vol_adj = 0.0
+    nv = min(10, len(c) - 1)
+    if nv >= 4:
+        up_v = [v[k] for k in range(-nv, 0) if c[k] >= c[k - 1]]
+        dn_v = [v[k] for k in range(-nv, 0) if c[k] < c[k - 1]]
+        uv = st.mean(up_v) if up_v else 0.0
+        dv = st.mean(dn_v) if dn_v else 0.0
+        base_v = st.mean(v[-nv:]) or 1
+        expanding = st.mean(v[-3:]) / base_v          # >1 = recent volume picking up
+        if pullback_like or deep or consol:
+            if dv > uv * 1.3 and expanding >= 1.1:
+                vol_signal, vol_adj = "distribution", -2.0
+                vol_note = "selling volume rising on the dip — pullback may not be over"
+            elif dv and uv and dv < uv * 0.85:
+                vol_signal, vol_adj = "dry", 0.5     # trimmed from 1.5 — didn't add edge in the backtest
+                vol_note = "pullback on drying volume — sellers exhausting"
+        else:                                          # breakout / EP — an advance
+            if uv > dv * 1.3 and expanding >= 1.1:
+                vol_signal, vol_adj = "accumulation", 2.0
+                vol_note = "rising volume on up days — buyers in control"
+            elif uv and dv and uv < dv * 0.85:
+                vol_signal, vol_adj = "weak", -1.5
+                vol_note = "advance on light volume — momentum thin"
+
+    # climax / reversal bar: TODAY is a heavy-volume rejection off a recent high — the crowd
+    # distributing into strength after a run. This is the ASTS tell: a setup that just printed a
+    # big red bar on the highest volume around isn't a "buy now," no matter how strong the name.
+    climax_rev = False
+    if len(c) >= 21:
+        rng = h[-1] - l[-1]
+        close_pos = (c[-1] - l[-1]) / rng if rng > 0 else 0.5
+        avg20 = st.mean(v[-20:]) or 1
+        rejected = (max(h[-10:]) / c[-1] - 1) * 100 >= 0.5 * adr_safe   # pulled back off a recent high
+        climax_rev = (c[-1] < o[-1] and close_pos < 0.45
+                      and v[-1] >= 1.3 * avg20 and rejected)
+    distribution_today = climax_rev or vol_signal == "distribution"
+    if climax_rev:
+        vol_signal = "distribution"
+        vol_adj = min(vol_adj, -2.5)
+        vol_note = "heavy-volume reversal off the highs — let it settle, don't buy the drop"
+
     # ----- score -----
     score = above * 1.5 + PREF.get(setup_type, 0)
     if adr >= 4:
@@ -329,6 +459,7 @@ def analyze(sym, bars, settings=None):
         score -= 2
     if volc and volc < 0.85:
         score += 1
+    score += vol_adj                                       # volume character (accumulation/distribution)
 
     # ----- trade levels -----
     swing_low = min(l[-7:])
@@ -395,7 +526,7 @@ def analyze(sym, bars, settings=None):
         recent_low = min(l[-5:])
         adr_px = entry * adr / 100
         wide_floor = entry - 1.2 * adr_px
-        tight_cap = entry - 0.35 * adr_px
+        tight_cap = entry - 0.45 * adr_px        # min 0.45x ADR (backtest: 0.35 got wicked out by noise)
         struct = recent_low - 0.15 * adr_px
         reclaimed = [p for _, p in _swing_highs(h) if p < entry - 0.02 * adr_px]
         sh_stop = (max(reclaimed) - 0.10 * adr_px) if reclaimed else None
@@ -437,6 +568,10 @@ def analyze(sym, bars, settings=None):
         zone_bottom = round(entry, 2)
     buf = 0.3 * adr_px                                    # a little tolerance — just-above the zone still counts
     buyable_now = (zone_bottom - buf) <= close <= (zone_top + buf)
+    # don't call it "buyable now" if today is a distribution/reversal bar or the stock is
+    # stretched — wait for it to come back to the line instead of buying into the move.
+    if distribution_today or extended:
+        buyable_now = False
     # "worth waiting" = patient entries you watch and buy at support: a STRONG leader correcting
     # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
     # (the SNDK base). NOT shallow pullbacks near the highs that are still moving up.
@@ -473,6 +608,8 @@ def analyze(sym, bars, settings=None):
         why.append(f"gap {max_day:.0f}%, {dist_hi:.1f}% to trigger")
     if volc and volc < 0.85:
         why.append(f"vol drying {volc:.2f}")
+    if vol_note:
+        why.append(("🟢 " if vol_adj > 0 else "🔴 ") + vol_note)
     if extended:
         why.append("EXTENDED - don't chase")
 
@@ -495,6 +632,8 @@ def analyze(sym, bars, settings=None):
         "entry_quality": entry_quality, "worth_waiting": worth_waiting,
         "zone_top": zone_top, "zone_bottom": zone_bottom, "buyable_now": buyable_now,
         "recent_gap": recent_gap, "news_move": news_move,
+        "vol_signal": vol_signal, "vol_note": vol_note,
+        "distribution_today": distribution_today,
     }
 
 

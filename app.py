@@ -19,6 +19,7 @@ import webbrowser
 import mimetypes
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, quote
@@ -469,6 +470,18 @@ def now_date():
     return time.strftime("%Y-%m-%d")
 
 
+def days_until(date_str):
+    """Whole calendar days from today to a 'YYYY-MM-DD' string (negative if past), or None."""
+    if not date_str:
+        return None
+    try:
+        from datetime import date
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return (d - date.today()).days
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # Position sizing (recomputed live from current settings)
 # --------------------------------------------------------------------------- #
@@ -501,11 +514,93 @@ def apply_sizing(item, settings):
     return item
 
 
+def _mean(xs, default=0.0):
+    xs = [x for x in xs if x is not None]
+    return sum(xs) / len(xs) if xs else default
+
+
+def position_coach(t, bars, settings, news_map):
+    """Suggest the next action on an OPEN position from profit (R), extension above the 9/21
+    EMA, an upcoming earnings print, and news. Mirrors my-rules: the default exit is a daily
+    close under the 9 EMA; trim into strength / before binary events; raise the stop once +1R."""
+    c = [b["close"] for b in bars]
+    h = [b["high"] for b in bars]
+    l = [b["low"] for b in bars]
+    if len(c) < 50:
+        return None
+    last = c[-1]
+    e9, e21, s50 = scanner._ema(c, 9), scanner._ema(c, 21), scanner._sma(c, 50)
+    adr = _mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0], 1.0) or 1.0
+    entry = t.get("entry") or t.get("planned_entry")
+    stop = t.get("stop")
+    risk = (entry - stop) if (entry and stop and entry > stop) else None
+    r_mult = ((last - entry) / risk) if (risk and entry) else None
+    ext9 = (last / e9 - 1) * 100
+    ext9_adr = ext9 / adr
+    under_9 = last < e9
+    # earnings + news context
+    e = None
+    try:
+        e = scanner.get_earnings(t["ticker"])
+    except Exception:
+        e = None
+    edays = days_until(e["date"]) if e else None
+    earn_soon = edays is not None and 0 <= edays <= 7
+    nm = news_map.get(t.get("ticker"))
+    bad_news = bool(nm and nm.get("sentiment") == "bad")
+
+    reasons = []
+    rtxt = (f"+{r_mult:.1f}R" if (r_mult is not None and r_mult >= 0)
+            else (f"{r_mult:.1f}R" if r_mult is not None else "—"))
+    # priority ladder: stop → 9-EMA exit → earnings → trim extended → breakeven → news → hold
+    if stop and last < stop:
+        action, tone = "EXIT", "danger"
+        reasons.append(f"price ${round(last,2)} is below your stop ${stop} — you should already be out")
+    elif under_9:
+        action, tone = "EXIT", "danger"
+        reasons.append(f"closed under the 9 EMA (${round(e9,2)}) — your default trailing exit")
+    elif earn_soon and r_mult is not None and r_mult >= 0.5:
+        action, tone = "TRIM", "warn"
+        reasons.append(f"earnings in {edays}d — trim to lock {rtxt} before the binary print")
+    elif earn_soon:
+        action, tone = "WATCH", "warn"
+        reasons.append(f"earnings in {edays}d with no real cushion ({rtxt}) — consider closing to skip the gamble")
+    elif r_mult is not None and r_mult >= 3 and ext9_adr > 2.2:
+        action, tone = "TRIM", "warn"
+        reasons.append(f"{rtxt} and {ext9_adr:.1f}× ADR above the 9 EMA — trim into strength, trail the 10/20-MA")
+    elif r_mult is not None and r_mult >= 1 and stop and entry and stop < entry:
+        action, tone = "RAISE STOP", "good"
+        reasons.append(f"{rtxt} locked-in zone — raise the stop to breakeven (${entry}) so the trade can't turn red")
+    elif bad_news:
+        action, tone = "WATCH", "warn"
+        reasons.append("a negative headline is out — watch the 9-EMA close")
+    else:
+        action, tone = "HOLD", "good"
+        reasons.append(f"trend intact above the 9 EMA ({rtxt}) — hold; exit on a daily close under it")
+    # optional add-on note (never the primary action; respects total-risk rules)
+    if action in ("HOLD", "RAISE STOP") and ext9_adr < 1.0 and last > e21 > s50 \
+            and r_mult is not None and 0 <= r_mult < 2 and not earn_soon:
+        reasons.append("near rising support & not extended — could add on a push to new highs (optional, keep total risk within rules)")
+    if e and edays is not None and not earn_soon and 0 <= edays <= 21:
+        reasons.append(f"earnings {e['date']} ({edays}d out){' · est.' if e.get('estimate') else ''}")
+
+    return {"action": action, "tone": tone, "reasons": reasons,
+            "r_mult": round(r_mult, 2) if r_mult is not None else None,
+            "ext9": round(ext9, 1), "ext9_adr": round(ext9_adr, 1),
+            "ext21": round((last / e21 - 1) * 100, 1), "under_9ema": under_9,
+            "earnings_days": edays, "earnings_date": e["date"] if e else None,
+            "earnings_estimate": bool(e.get("estimate")) if e else False,
+            "last": round(last, 2)}
+
+
 def enrich_trades(trades):
-    """Add current price + P&L to each trade."""
+    """Add current price + P&L to each trade, and a coaching action for open positions."""
+    settings = read_json(settings_f(), {})
+    news_map = read_json(NEWS_F, {}).get("ticker_news", {})
     for t in trades:
         e, sh = t.get("entry"), t.get("shares")
         t["last"] = t["pnl"] = t["pnl_pct"] = None
+        t["coach"] = None
         if t.get("status") == "open" and t.get("ticker"):
             bars = scanner.get_bars(t["ticker"])
             last = bars[-1]["close"] if bars else None
@@ -515,6 +610,11 @@ def enrich_trades(trades):
                 t["pnl_pct"] = round((last / e - 1) * 100, 2)
             else:
                 t["pnl"] = t["pnl_pct"] = None
+            if bars:
+                try:
+                    t["coach"] = position_coach(t, bars, settings, news_map)
+                except Exception:
+                    t["coach"] = None
         elif t.get("status") == "closed":
             x = t.get("exit")
             if e and sh and x:
@@ -543,6 +643,122 @@ def compute_hot_sectors(items):
     ranked = sorted(means.items(), key=lambda x: x[1], reverse=True)
     cut = max(1, len(ranked) // 3)
     return [s for s, _ in ranked[:cut]]
+
+
+def grade_suggestions(items, settings):
+    """Enrich scan items with sizing, theme/heat, news, earnings proximity, group leadership,
+    and the composite 0-100 rating + letter grade. Mutates items in place and returns them
+    sorted best-first. Canonical rubric: strategy/scoring.md (keep weights in sync)."""
+    rev = reverse_themes()
+    heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
+    news_data = read_json(NEWS_F, {})
+    news_map = news_data.get("ticker_news", {})
+    theme_news = news_data.get("theme_news", {})
+    for it in items:
+        apply_sizing(it, settings)
+        it["worth_waiting"] = it.get("setup_type") in ("Deep Pullback", "Consolidation")
+        # earnings proximity — a binary print within ~1 week is a reason to skip a fresh entry
+        ed = days_until(it.get("earnings_date"))
+        it["earnings_days"] = ed
+        it["earnings_soon"] = ed is not None and 0 <= ed <= 7
+        it["earnings_near"] = ed is not None and 8 <= ed <= 14
+        th = rev.get(it["ticker"])
+        it["theme"] = th
+        hr = heat.get(th)
+        if hr:
+            it["theme_trend"] = hr.get("trend")
+            it["theme_streak"] = hr.get("streak")
+            it["theme_tier"] = hr.get("tier")
+            it["theme_perf_1mo"] = hr.get("perf_1mo")
+            it["theme_hot"] = hr.get("tier") == "Hot" or hr.get("trend") == "Rising"
+        else:
+            it["theme_trend"] = it["theme_tier"] = None
+            it["theme_hot"] = False
+        nm = news_map.get(it["ticker"])
+        tn = theme_news.get(th)
+        if nm:
+            it["news_headline"] = nm["title"]; it["news_link"] = nm["link"]
+            it["news_dir"] = nm.get("sentiment"); it["news_trump"] = bool(nm.get("trump")); it["news_scope"] = "stock"
+        elif tn:
+            it["news_headline"] = tn["title"]; it["news_link"] = tn["link"]
+            it["news_dir"] = tn.get("sentiment"); it["news_trump"] = "trump" in tn["title"].lower(); it["news_scope"] = "sector"
+        else:
+            it["news_headline"] = it["news_link"] = it["news_dir"] = it["news_scope"] = None
+            it["news_trump"] = False
+        it["news_flag"] = bool(nm or tn or it.get("recent_gap", 0) >= 12)
+    # ---- leader-in-group: within each theme, rank names by relative strength so the
+    # strongest stock of a hot group gets a 🥇 mark (like the Sector Heat awards) ----
+    groups = {}
+    for it in items:
+        th = it.get("theme")
+        if th:
+            groups.setdefault(th, []).append(it)
+    for members in groups.values():
+        # leadership = relative strength + liquidity (an illiquid spike isn't a leader)
+        members.sort(key=lambda x: (0.6 * x.get("rs_score", 0) + 0.4 * x.get("liq_score", 0),
+                                    x.get("score", 0)), reverse=True)
+        n = len(members)
+        for rank, it in enumerate(members, 1):
+            it["group_size"] = n
+            it["group_rank"] = rank
+            it["group_leader"] = rank == 1 and n >= 2
+
+    # ---- composite grade: rate every name best->worst using ALL the data ----
+    bysetup = compute_stats().get("by_setup", {})
+    posture = read_json(MARKET_F, {}).get("posture", 55)               # 0-100 market regime
+    pullback_setups = ("Pullback", "Pullback @ AVWAP",
+                       "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+
+    def _rating(it):
+        setup = max(0, min(100, (it.get("score", 0) - 4) / 16 * 100))   # technical setup quality
+        rs = it.get("rs_score", 50)                                     # relative strength
+        # market regime: breakouts/EPs are demoted harder than pullbacks in weak tape
+        regime = posture if it.get("setup_type") in pullback_setups else (
+            posture if posture >= 55 else posture * 0.6)
+        entry_loc = it.get("entry_quality", 60)                         # don't-chase / tight-stop
+        liq = it.get("liq_score", 50)                                    # liquidity -> institutional interest
+        tr, tier = it.get("theme_trend"), it.get("theme_tier")
+        # backtest: a RISING sector beat a backward-looking "Hot" tier (Hot is often already extended),
+        # so Rising now outranks Hot.
+        sector = 100 if tr == "Rising" else (85 if tier == "Hot" else 25 if tr == "Slowing"
+                                             else 12 if tr == "Falling" else 55)
+        # actionable now still helps, but only a little — the backtest showed buying in-zone NOW
+        # underperformed waiting for the pullback to the line, so don't over-reward chasing.
+        timing = 75 if it.get("buyable_now") else 55
+        nd = it.get("news_dir")
+        news = 100 if nd == "good" else (8 if nd == "bad" else (75 if it.get("news_flag") else 55))
+        r = (0.28 * setup + 0.14 * rs + 0.14 * regime + 0.14 * entry_loc
+             + 0.08 * liq + 0.10 * sector + 0.06 * timing + 0.06 * news)
+        hist = bysetup.get(it.get("setup_type"))                        # learns from realized results
+        if hist and hist.get("n", 0) >= 5:
+            r += max(-8, min(8, hist.get("avg_r", 0) * 3))
+        # earnings overhang: a print inside a week is a hard demote (don't open binary risk);
+        # 8-14 days out is a lighter caution.
+        if it.get("earnings_soon"):
+            r -= 18
+        elif it.get("earnings_near"):
+            r -= 6
+        # distribution / climax-reversal day: cap the grade regardless of how strong RS/sector
+        # look — a heavy-volume rejection off the highs is a "wait", never a "get in now". (RS and
+        # a hot sector are exactly what make a blow-off look buyable, so the cap overrides them.)
+        if it.get("distribution_today"):
+            r = min(r, 62)                                  # cap at C — don't buy the reversal
+        # REGIME GATE (backtest's biggest lesson): A/A+ taken with blended posture < ~65 LOST money
+        # (the 55-69 "constructive but not strong" band was −0.5R). Below 65 we cap at B (still
+        # visible, not "get in now"); a weak/correcting tape (<50) caps at C.
+        if posture < 50:
+            r = min(r, 52)
+        elif posture < 65:
+            r = min(r, 72)
+        return round(max(0, min(99, r)))
+
+    def _grade(r):
+        return "A+" if r >= 82 else "A" if r >= 73 else "B" if r >= 63 else "C" if r >= 52 else "D"
+
+    for it in items:
+        it["rating"] = _rating(it)
+        it["grade"] = _grade(it["rating"])
+    return sorted(items, key=lambda x: x.get("rating", 0), reverse=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -632,6 +848,17 @@ def run_scan(screener_id):
         if it["sector_hot"]:
             it["score"] = round(it["score"] + 1.5, 1)
     items.sort(key=lambda r: r["score"], reverse=True)
+    # earnings dates for the most actionable names (top of the list). Cached daily, so
+    # repeat scans are cheap; we cap the count to keep the scan fast and Yahoo-friendly.
+    SCAN.update(current="earnings dates…")
+    for it in items[:70]:
+        try:
+            e = scanner.get_earnings(it["ticker"])
+        except Exception:
+            e = None
+        if e:
+            it["earnings_date"] = e["date"]
+            it["earnings_estimate"] = e.get("estimate", False)
     write_json(SUGGEST_F, {"scanned_at": out["scanned_at"], "screener_id": screener_id,
                            "screener_name": sc["name"], "failed": out["failed"],
                            "hot_sectors": hot, "items": items})
@@ -659,6 +886,208 @@ def compute_stats():
                                     "win_rate": round(100 * len(w) / len(grp), 1),
                                     "avg_r": round(sum(grp) / len(grp), 2)}
     return out
+
+
+def _top_lessons(n=3):
+    """First few real lessons from lessons.md (skips the empty placeholder)."""
+    try:
+        txt = DOCS["lessons"].read_text(encoding="utf-8")
+    except Exception:
+        return []
+    out = []
+    for line in txt.splitlines():
+        line = line.strip()
+        if line.startswith("- ") and "empty for now" not in line.lower():
+            out.append(re.sub(r"\*\*", "", line[2:]).strip())
+    return out[:n]
+
+
+def _sug_compact(s):
+    return {"ticker": s["ticker"], "grade": s.get("grade"), "setup_type": s.get("setup_type"),
+            "theme": s.get("theme"), "entry": s.get("entry"), "entry_type": s.get("entry_type"),
+            "zone_bottom": s.get("zone_bottom"), "zone_top": s.get("zone_top"),
+            "close": s.get("close"), "earnings_days": s.get("earnings_days"),
+            "rating": s.get("rating"), "why": s.get("why")}
+
+
+# --------------------------------------------------------------------------- #
+# Daily Gameplan — one synthesized plan from positions + cash + regime + setups + news
+# --------------------------------------------------------------------------- #
+def compute_gameplan():
+    settings = read_json(settings_f(), {})
+    acct = settings.get("account_size")
+    trades = enrich_trades(read_json(trades_f(), []))
+    open_pos = [t for t in trades if t.get("status") == "open"]
+    held = {t.get("ticker") for t in open_pos}
+
+    market = read_json(MARKET_F, {})
+    posture = market.get("posture", 55)
+    label = market.get("label", "")
+    indexes = market.get("indexes", [])
+    stretched = [i["name"] for i in indexes if i.get("stretched_50")]
+
+    sug_items = read_json(SUGGEST_F, {}).get("items", [])
+    graded = grade_suggestions(sug_items, settings) if sug_items else []
+    good_grades = ("A+", "A")
+    buy_now = [_sug_compact(s) for s in graded
+               if s.get("buyable_now") and s.get("grade") in good_grades
+               and not s.get("earnings_soon") and s["ticker"] not in held][:5]
+    watch = [_sug_compact(s) for s in graded
+             if not s.get("buyable_now") and s.get("grade") in good_grades
+             and not s.get("earnings_soon") and s["ticker"] not in held][:5]
+    avoid = [{"ticker": s["ticker"], "reason": f"earnings in {s.get('earnings_days')}d — skip new entries"}
+             for s in graded[:40] if s.get("earnings_soon")][:5]
+
+    # exposure / free cash
+    cost = sum((t.get("entry") or 0) * (t.get("shares") or 0) for t in open_pos)
+    open_risk = 0.0
+    for t in open_pos:
+        e, stp, sh = t.get("entry"), t.get("stop"), t.get("shares")
+        if e and stp and sh and stp < e:
+            open_risk += (e - stp) * sh
+    exposure = {"account": acct, "positions": len(open_pos),
+                "invested": round(cost, 2),
+                "invested_pct": round(cost / acct * 100, 1) if acct else None,
+                "free_cash": round(acct - cost, 2) if acct else None,
+                "open_risk": round(open_risk, 2),
+                "open_risk_pct": round(open_risk / acct * 100, 2) if acct else None}
+
+    # stance from the tape
+    if posture >= 70:
+        stance = "Press — healthy uptrend, full size on A+ setups"
+    elif posture >= 55:
+        stance = "Selective — constructive tape, pick your spots"
+    elif posture >= 45:
+        stance = "Cautious — mixed tape; half size or wait for clean buys"
+    else:
+        stance = "Defense — weak tape, protect capital, mostly cash"
+    if stretched:
+        stance += f" · {', '.join(stretched)} extended above the 50-MA — don't chase, let setups pull in"
+
+    manage = []
+    for t in open_pos:
+        co = t.get("coach") or {}
+        manage.append({"ticker": t["ticker"], "action": co.get("action", "HOLD"),
+                       "tone": co.get("tone", "good"),
+                       "reason": (co.get("reasons") or [""])[0], "pnl_pct": t.get("pnl_pct")})
+    todo = [m for m in manage if m["action"] in ("EXIT", "TRIM", "RAISE STOP")]
+
+    # bottom line — honest, "do nothing" is allowed
+    if not open_pos and not buy_now:
+        if watch:
+            bottom = ("No positions and nothing in a buy zone yet — the plan is patience. "
+                      "Watching: " + ", ".join(s["ticker"] for s in watch) + ".")
+        else:
+            bottom = "No positions, no buyable A/A+ setups, tape " + (label or "unclear") + " — doing nothing is the right move today."
+    elif todo:
+        acts = ", ".join(f"{m['ticker']} ({m['action']})" for m in todo)
+        tail = (" Then consider " + ", ".join(s["ticker"] for s in buy_now) + "."
+                if buy_now else " No new entries needed.")
+        bottom = f"Handle your positions first: {acts}." + tail
+    elif buy_now:
+        bottom = "Positions are fine to hold. Best buyable now: " + \
+                 ", ".join(f"{s['ticker']} ({s['grade']})" for s in buy_now) + "."
+    else:
+        bottom = "Hold what you've got; nothing new is in its buy zone. Be patient."
+
+    return {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "date": now_date(),
+            "posture": posture, "label": label, "stance": stance, "stretched": stretched,
+            "exposure": exposure, "manage": manage, "buy_now": buy_now, "watch": watch,
+            "avoid": avoid, "alerts": read_json(NEWS_F, {}).get("alerts", [])[:4],
+            "lessons": _top_lessons(3), "bottom_line": bottom}
+
+
+# --------------------------------------------------------------------------- #
+# Prediction — a probabilistic forward read from all the data we have (NOT advice)
+# --------------------------------------------------------------------------- #
+def compute_prediction():
+    market = read_json(MARKET_F, {})
+    posture = market.get("posture", 55)
+    label = market.get("label", "")
+    indexes = market.get("indexes", [])
+    stretched = [i["name"] for i in indexes if i.get("stretched_50")]
+
+    heat = read_json(SECTOR_HEAT_F, {}).get("sectors", [])
+    rising = [s["sector"] for s in heat if s.get("trend") == "Rising"]
+    slowing = [s["sector"] for s in heat if s.get("trend") == "Slowing"]
+    falling = [s["sector"] for s in heat if s.get("trend") == "Falling"]
+    breadth = round(_mean([s.get("breadth", 50) for s in heat])) if heat else None
+
+    news = read_json(NEWS_F, {})
+    alerts = news.get("alerts", [])
+    a_good = len([a for a in alerts if a.get("dir") == "buy"])
+    a_bad = len([a for a in alerts if a.get("dir") == "avoid"])
+    tn = news.get("ticker_news", {})
+    t_good = len([1 for v in tn.values() if v.get("sentiment") == "good"])
+    t_bad = len([1 for v in tn.values() if v.get("sentiment") == "bad"])
+
+    susp = read_json(SUSPICIOUS_F, {})
+    buys, sells = len(susp.get("buying", [])), len(susp.get("selling", []))
+    pm = read_json(PREMARKET_F, {}).get("movers", [])
+    pm_up = len([m for m in pm if m.get("gap", 0) >= 0])
+    pm_dn = len(pm) - pm_up
+
+    drivers = []
+    score = (posture - 55) / 10.0
+    drivers.append({"text": f"Market regime: {label or 'n/a'} (posture {posture}/100)",
+                    "dir": "pos" if posture >= 60 else "neg" if posture < 45 else "neutral"})
+    if breadth is not None:
+        score += (breadth - 50) / 15.0
+        drivers.append({"text": f"Sector breadth {breadth}% of names above their 20-day MA",
+                        "dir": "pos" if breadth >= 55 else "neg" if breadth < 40 else "neutral"})
+    score += (len(rising) - len(slowing) - 2 * len(falling)) * 0.12
+    if rising:
+        drivers.append({"text": f"Money rotating INTO: {', '.join(rising[:5])}", "dir": "pos"})
+    if slowing or falling:
+        drivers.append({"text": f"Cooling / rolling over: {', '.join((falling + slowing)[:5])}",
+                        "dir": "neg"})
+    score += (a_good - a_bad) * 0.4 + (t_good - t_bad) * 0.12
+    if alerts or tn:
+        drivers.append({"text": f"News tone: {a_good + t_good} positive vs {a_bad + t_bad} negative catalysts",
+                        "dir": "pos" if (a_good + t_good) > (a_bad + t_bad) else "neg" if (a_bad + t_bad) > (a_good + t_good) else "neutral"})
+    if buys or sells:
+        score += (buys - sells) * 0.04
+        drivers.append({"text": f"End-of-day footprint: {buys} unusual-buying vs {sells} unusual-selling names",
+                        "dir": "pos" if buys > sells else "neg" if sells > buys else "neutral"})
+    if pm:
+        drivers.append({"text": f"Pre-market: {pm_up} gapping up vs {pm_dn} down",
+                        "dir": "pos" if pm_up > pm_dn else "neg" if pm_dn > pm_up else "neutral"})
+    if len(stretched) >= 2:
+        score -= 1.5
+        drivers.append({"text": f"{', '.join(stretched)} stretched above the 50-MA — pullback/digestion risk",
+                        "dir": "neg"})
+
+    if score >= 2:
+        lean = "Bullish"
+    elif score >= 0.7:
+        lean = "Constructive"
+    elif score > -0.7:
+        lean = "Neutral / chop"
+    elif score > -2:
+        lean = "Cautious"
+    else:
+        lean = "Risk-off"
+    confidence = "moderate" if abs(score) >= 2 and len(drivers) >= 4 else "low"
+
+    parts = [f"The tape reads <b>{label or 'unclear'}</b> (posture {posture}/100)."]
+    if stretched:
+        parts.append(f"{', '.join(stretched)} sit stretched above the 50-MA, so indices are vulnerable to a near-term pullback or sideways digestion rather than a clean leg up.")
+    elif posture >= 65:
+        parts.append("Trend and breadth are healthy — dips are likely buyable while leaders hold their lines.")
+    if rising:
+        parts.append(f"Leadership is rotating into {', '.join(rising[:4])}; that's where fresh setups should cluster.")
+    if falling or slowing:
+        parts.append(f"Avoid fading strength into the cooling groups ({', '.join((falling + slowing)[:4])}).")
+    if (a_bad + t_bad) > (a_good + t_good):
+        parts.append("Headline tone skews negative — keep size honest.")
+    outlook = " ".join(parts)
+
+    return {"computed_at": time.strftime("%Y-%m-%d %H:%M"),
+            "lean": lean, "confidence": confidence, "score": round(score, 2),
+            "outlook": outlook, "drivers": drivers,
+            "rising": rising[:8], "slowing": slowing[:8], "falling": falling[:8],
+            "posture": posture, "label": label, "breadth": breadth,
+            "note": "Probabilistic read from the data on hand — not a prediction you should trade blindly. The market does what it wants."}
 
 
 # --------------------------------------------------------------------------- #
@@ -728,6 +1157,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "settings":
             self._json(settings)
+        elif route == "env":
+            # lets the frontend hide write-heavy pages (journal/strategy/watchlist) on the hosted
+            # free service, where per-user data doesn't persist across the dyno sleeping.
+            self._json({"hosted": HOSTED})
         elif route == "screeners":
             self._json(read_json(SCREENERS_F, []))
         elif route == "suggestions":
@@ -743,90 +1176,7 @@ class Handler(BaseHTTPRequestHandler):
                         it["reject_reason"] = o["reject_reason"]
                     if o.get("catalyst") is not None:
                         it["catalyst"] = o["catalyst"]
-            rev = reverse_themes()
-            heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
-            news_data = read_json(NEWS_F, {})
-            news_map = news_data.get("ticker_news", {})
-            theme_news = news_data.get("theme_news", {})
-            for it in s.get("items", []):
-                apply_sizing(it, settings)
-                it["worth_waiting"] = it.get("setup_type") in ("Deep Pullback", "Consolidation")
-                th = rev.get(it["ticker"])
-                it["theme"] = th
-                hr = heat.get(th)
-                if hr:
-                    it["theme_trend"] = hr.get("trend")
-                    it["theme_streak"] = hr.get("streak")
-                    it["theme_tier"] = hr.get("tier")
-                    it["theme_perf_1mo"] = hr.get("perf_1mo")
-                    it["theme_hot"] = hr.get("tier") == "Hot" or hr.get("trend") == "Rising"
-                else:
-                    it["theme_trend"] = it["theme_tier"] = None
-                    it["theme_hot"] = False
-                nm = news_map.get(it["ticker"])
-                tn = theme_news.get(th)
-                if nm:
-                    it["news_headline"] = nm["title"]; it["news_link"] = nm["link"]
-                    it["news_dir"] = nm.get("sentiment"); it["news_trump"] = bool(nm.get("trump")); it["news_scope"] = "stock"
-                elif tn:
-                    it["news_headline"] = tn["title"]; it["news_link"] = tn["link"]
-                    it["news_dir"] = tn.get("sentiment"); it["news_trump"] = "trump" in tn["title"].lower(); it["news_scope"] = "sector"
-                else:
-                    it["news_headline"] = it["news_link"] = it["news_dir"] = it["news_scope"] = None
-                    it["news_trump"] = False
-                it["news_flag"] = bool(nm or tn or it.get("recent_gap", 0) >= 12)
-            # ---- leader-in-group: within each theme, rank names by relative strength so the
-            # strongest stock of a hot group gets a 🥇 mark (like the Sector Heat awards) ----
-            groups = {}
-            for it in s.get("items", []):
-                th = it.get("theme")
-                if th:
-                    groups.setdefault(th, []).append(it)
-            for members in groups.values():
-                # leadership = relative strength + liquidity (an illiquid spike isn't a leader)
-                members.sort(key=lambda x: (0.6 * x.get("rs_score", 0) + 0.4 * x.get("liq_score", 0),
-                                            x.get("score", 0)), reverse=True)
-                n = len(members)
-                for rank, it in enumerate(members, 1):
-                    it["group_size"] = n
-                    it["group_rank"] = rank
-                    it["group_leader"] = rank == 1 and n >= 2
-
-            # ---- composite grade: rate every name best->worst using ALL the data ----
-            # See strategy/scoring.md for the canonical rubric (keep weights in sync).
-            bysetup = compute_stats().get("by_setup", {})
-            posture = read_json(MARKET_F, {}).get("posture", 55)               # 0-100 market regime
-            pullback_setups = ("Pullback", "Pullback @ AVWAP",
-                               "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
-
-            def _rating(it):
-                setup = max(0, min(100, (it.get("score", 0) - 4) / 16 * 100))   # technical setup quality
-                rs = it.get("rs_score", 50)                                     # relative strength
-                # market regime: breakouts/EPs are demoted harder than pullbacks in weak tape
-                regime = posture if it.get("setup_type") in pullback_setups else (
-                    posture if posture >= 55 else posture * 0.6)
-                entry_loc = it.get("entry_quality", 60)                         # don't-chase / tight-stop
-                liq = it.get("liq_score", 50)                                    # liquidity -> institutional interest
-                tr, tier = it.get("theme_trend"), it.get("theme_tier")
-                sector = 100 if tier == "Hot" else (85 if tr == "Rising" else 25 if tr == "Slowing"
-                                                     else 12 if tr == "Falling" else 55)
-                timing = 100 if it.get("buyable_now") else 45                   # actionable right now?
-                nd = it.get("news_dir")
-                news = 100 if nd == "good" else (8 if nd == "bad" else (75 if it.get("news_flag") else 55))
-                r = (0.28 * setup + 0.14 * rs + 0.14 * regime + 0.14 * entry_loc
-                     + 0.08 * liq + 0.10 * sector + 0.06 * timing + 0.06 * news)
-                hist = bysetup.get(it.get("setup_type"))                        # learns from realized results
-                if hist and hist.get("n", 0) >= 5:
-                    r += max(-8, min(8, hist.get("avg_r", 0) * 3))
-                return round(max(0, min(99, r)))
-
-            def _grade(r):
-                return "A+" if r >= 82 else "A" if r >= 73 else "B" if r >= 63 else "C" if r >= 52 else "D"
-
-            for it in s.get("items", []):
-                it["rating"] = _rating(it)
-                it["grade"] = _grade(it["rating"])
-            s["items"] = sorted(s.get("items", []), key=lambda x: x.get("rating", 0), reverse=True)
+            s["items"] = grade_suggestions(s.get("items", []), settings)
             self._json(s)
         elif route == "market":
             self._json(read_json(MARKET_F, {}))
@@ -874,9 +1224,21 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "scan" and len(parts) > 2 and parts[2] == "status":
             self._json(SCAN)
         elif route == "chart" and len(parts) > 2:
-            bars = scanner.get_bars(parts[2])
+            t = parts[2].upper()
+            bars = scanner.get_bars(t)
             channel = scanner.regression_channel(bars) if bars else None
-            self._json({"ticker": parts[2].upper(), "bars": bars or [], "channel": channel})
+            earn = None
+            try:
+                e = scanner.get_earnings(t)
+                if e:
+                    earn = {**e, "days": days_until(e["date"])}
+            except Exception:
+                earn = None
+            self._json({"ticker": t, "bars": bars or [], "channel": channel, "earnings": earn})
+        elif route == "gameplan":
+            self._json(compute_gameplan())
+        elif route == "prediction":
+            self._json(compute_prediction())
         elif route == "analyze" and len(parts) > 2:
             t = parts[2].upper()
             bars = scanner.get_bars(t)

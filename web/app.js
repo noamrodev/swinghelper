@@ -27,6 +27,9 @@ function dataCenter() {
     ],
     view: 'dashboard',
     mobileNav: false,
+    hosted: false,
+    // pages hidden on the hosted free service (no persistent storage there, so they can't save)
+    hostedHidden: ['journal', 'watchlist', 'strategy'],
     settings: { account_size: null, risk_pct: 1 },
     screeners: [],
     suggestions: { items: [] },
@@ -46,6 +49,10 @@ function dataCenter() {
     suspicious: { buying: [], selling: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
     premarket: { movers: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
     refreshState: { running: false, stage: '', done: 0, total: 4 },
+    gameplan: null,
+    gameplanOpen: true,
+    prediction: null,
+    predictionLoading: false,
     newScreener: { name: '', tickers: '' },
     newTrade: { ticker: '', setup_type: 'Breakout', entry: null, stop: null, shares: null, notes: '' },
     docTabs: [
@@ -78,8 +85,10 @@ function dataCenter() {
     momFilter: 'All',
     sectorFilter: 'All',
     waitFilter: false,
+    leaderFilter: false,
+    risingFilter: false,
     calcModal: { open: false, ticker: '' },
-    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, _data: null, _obj: null },
+    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null },
     tradeModal: { open: false, mode: 'take', ticker: '' },
     _pollTimer: null,
 
@@ -136,9 +145,12 @@ function dataCenter() {
       this.scalePct = parseInt(localStorage.getItem('dc_scale')) || 125;
       this.applyScale();
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
+      try { this.hosted = !!(await this.api('/env')).hosted; } catch (e) {}
+      if (this.hosted && this.hostedHidden.includes(this.view)) this.view = 'dashboard';
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(), this.loadDoc('lessons'),
         this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
+      this.loadGameplan();
       const def = this.screeners.find(s => s.is_default) || this.screeners[0];
       this.scanScreener = this.suggestions.screener_id || (def && def.id) || '';
       this.docEdit && (this.docEdit = this.docEdit);
@@ -159,6 +171,12 @@ function dataCenter() {
     async loadWatchlist() { this.watchlist = await this.api('/watchlist'); },
     async loadStats() { this.stats = await this.api('/stats'); },
     async loadMarket() { this.marketRegime = await this.api('/market'); },
+    async loadGameplan() { try { this.gameplan = await this.api('/gameplan'); } catch (e) {} },
+    async loadPrediction() {
+      this.predictionLoading = true;
+      try { this.prediction = await this.api('/prediction'); } catch (e) {}
+      this.predictionLoading = false;
+    },
     async loadUniverse() { this.universe = await this.api('/universe'); },
     async buildUniverse() {
       const r = await this.api('/universe/build', 'POST');
@@ -178,6 +196,7 @@ function dataCenter() {
     },
 
     // ---------- computed-ish ----------
+    get navItems() { return this.hosted ? this.nav.filter(n => !this.hostedHidden.includes(n.id)) : this.nav; },
     get openTrades() { return this.trades.filter(t => t.status === 'open'); },
     get activeTrades() { return this.trades.filter(t => t.status === 'open'); },
     get closedTrades() { return this.trades.filter(t => t.status === 'closed'); },
@@ -229,6 +248,8 @@ function dataCenter() {
       else if (mf === '6M') items = items.filter(s => s.screen_6m);
       if (this.sectorFilter !== 'All') items = items.filter(s => s.theme === this.sectorFilter);
       if (this.waitFilter) items = items.filter(s => s.worth_waiting);
+      if (this.leaderFilter) items = items.filter(s => (s.rs_pct || 0) >= 85);
+      if (this.risingFilter) items = items.filter(s => s.theme_trend === 'Rising');
       return items;
     },
     // sector filter options: every category from the (updated) sector heater, plus any
@@ -388,6 +409,7 @@ function dataCenter() {
       this.mobileNav = false;          // close the mobile drawer after picking a view
       if (id === 'watchlist') this.loadWatchlistAnalysis();
       if (id === 'news') this.loadNews();
+      if (id === 'dashboard' && !this.gameplan) this.loadGameplan();
     },
 
     // ---------- sector heat ----------
@@ -460,6 +482,35 @@ function dataCenter() {
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(), this.loadDoc('lessons'),
         this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
+      this.loadGameplan();
+    },
+    // ---------- gameplan / prediction helpers ----------
+    actionStyle(tone) {
+      return ({
+        danger: 'background:rgba(255,93,115,.18);color:#ffb3bf;border-color:rgba(255,93,115,.5)',
+        warn: 'background:rgba(255,181,61,.18);color:#ffd591;border-color:rgba(255,181,61,.5)',
+        good: 'background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)',
+        neutral: 'background:rgba(120,140,180,.14);color:#c3cee0;border-color:rgba(120,140,180,.3)',
+      })[tone] || 'background:rgba(120,140,180,.14);color:#c3cee0;border-color:rgba(120,140,180,.3)';
+    },
+    leanColor(lean) {
+      if (!lean) return '#93a1b8';
+      if (lean === 'Bullish') return '#22e0a1';
+      if (lean === 'Constructive') return '#84cc16';
+      if (lean.startsWith('Neutral')) return '#eab308';
+      if (lean === 'Cautious') return '#f97316';
+      return '#ef4444';
+    },
+    driverColor(d) { return d === 'pos' ? '#22e0a1' : d === 'neg' ? '#ff5d73' : '#93a1b8'; },
+    // earnings proximity badge text/colour for a suggestion (or null when far out)
+    earnBadge(s) {
+      const d = s.earnings_days;
+      if (d == null || d < 0 || d > 14) return null;
+      const est = s.earnings_estimate ? '~' : '';
+      return { text: '🗓 ' + est + (d === 0 ? 'today' : d + 'd'),
+        soon: d <= 7,
+        style: d <= 7 ? 'background:rgba(255,93,115,.18);color:#ffb3bf;border-color:rgba(255,93,115,.5)'
+          : 'background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)' };
     },
     // ---------- market regime helpers ----------
     postureColor(p) {
@@ -608,6 +659,14 @@ function dataCenter() {
       });
       const bars = data.bars || [];
       series.setData(bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+      // volume pane (histogram, pinned to the bottom ~20% on its own hidden scale)
+      if (this.chartModal.showVolume) {
+        series.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.24 } });
+        const vol = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+        chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+        vol.setData(bars.map(b => ({ time: b.time, value: b.volume,
+          color: b.close >= b.open ? 'rgba(34,194,87,.45)' : 'rgba(239,68,68,.45)' })));
+      }
       // 9 / 21 / 50 EMA overlays (toggleable)
       if (this.chartModal.showEmas) {
         const emaCfg = [[9, '#eab308'], [21, '#f59e0b'], [50, '#5b8cff']];

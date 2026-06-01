@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-06-01 — Earnings, volume, position coach, daily gameplan, prediction
+
+Built roadmap items 4 → 3 → 2 → 1 → 7 in one session.
+
+### Earnings dates (new data source)
+- `scanner.get_earnings()` pulls the next earnings date from Yahoo `quoteSummary/calendarEvents`
+  via a cached cookie+crumb session. Disk-cached daily; degrades to `None` on any failure so a Yahoo
+  change can never break the scan. Returns `{date, ts, estimate}` (`estimate` = Yahoo's est. flag).
+
+### #4 — Upcoming-earnings warning in Suggestions
+- The scan fetches earnings for the top ~70 names; `grade_suggestions()` computes
+  `earnings_days`/`earnings_soon`/`earnings_near` and **demotes the grade −18 (≤7d) / −6 (8–14d)**.
+- Suggestion cards show a 🗓 earnings badge (red ≤7d, amber ≤14d) + a ⚠️ "probably skip" banner.
+
+### #3 — Earnings + volume on charts, volume into the setup score
+- Chart modal: a **volume pane** (green/red histogram, Vol toggle) + a next-earnings chip in the header.
+- `scanner.analyze` adds a **volume-character signal** (`±2` on the raw score): rising/heavy down-day
+  volume on a pullback = distribution (flag, penalize); drying volume = healthy; rising up-day volume
+  on an advance = accumulation (favor); thin advance = penalize. Shown in the "why" line. Rubric v4.
+
+### #2 — Suggested position actions (Dashboard)
+- `position_coach()` rates every open position: **EXIT** (closed under the 9-EMA / below stop),
+  **TRIM** (extended +3R or earnings imminent with profit), **RAISE STOP** (+1R → breakeven),
+  **WATCH** (bad news / earnings with no cushion), **HOLD**, plus an optional **ADD** note. Each open
+  position now shows an action pill + the reasons (profit R, extension vs 9-EMA in ADR units, earnings days).
+
+### #1 — Daily Gameplan (Dashboard, top card)
+- `GET /api/gameplan` synthesizes regime, positions + their actions, exposure (invested % / free cash /
+  open risk %), buyable A/A+ setups, earnings/news avoids, and top lessons into one prioritized plan
+  with an honest bottom line — "do nothing today" is a valid plan.
+
+### #7 — Prediction (News → 🔮 Prediction tab)
+- `GET /api/prediction` blends market regime, sector rising/slowing/falling, breadth, news tone,
+  end-of-day buy/sell footprint and pre-market skew into a **lean** (Bullish → Risk-off) + confidence
+  + a driver list. Framed as probabilistic, not advice.
+
+### Distribution-day fix + two new Suggestions filters (same day)
+- **Distribution / climax-reversal day** (`scanner.analyze`): a heavy-volume rejection off a recent
+  high (or the "distribution" volume signal) now sets `distribution_today`, **forces
+  `buyable_now=false`**, and **caps the composite grade at C** in `grade_suggestions` — overriding RS
+  and a hot sector. Fixes the case where ASTS graded A "buyable now" the same scan it flagged "pullback
+  may not be over." A "let it settle, don't buy the drop" banner shows on the card. (Extended >2.2×
+  ADR names are no longer flagged buyable-now either.) Verified: ASTS A→**C**, top 8 now clean.
+- **Two Suggestions filters** next to ⏳ Worth waiting: **🏆 Market leaders** (RS percentile ≥ 85, ~top
+  15%) and **🚀 Rising sector** (`theme_trend == Rising`). Verified counts: 124 / 129 of 796.
+- Re-scanned the full 800-name universe so earnings dates + the new flags are live (70 earnings dates,
+  3 earnings-soon demoted, 175 distribution-day flags). Rubric → `scoring.md` v4.1.
+
+### Internals
+- Extracted the suggestion grading out of the HTTP handler into a reusable `grade_suggestions()`
+  module function (used by both `/suggestions` and `/gameplan`). Added `days_until()` + `datetime` import.
+- Verified live: gameplan, coach, prediction, volume pane, earnings chip; clean console; no 375px overflow.
+
 ## 2026-05-31 (evening) — Hosted launch, pre-market movers, mobile
 
 ### Hosting (share with friends)

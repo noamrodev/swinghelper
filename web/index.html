@@ -34,7 +34,7 @@
         <div class="text-xl font-extrabold tracking-tight brand">◆ Data Center</div>
       </div>
       <nav class="flex-1 py-3">
-        <template x-for="item in nav" :key="item.id">
+        <template x-for="item in navItems" :key="item.id">
           <button @click="selectView(item.id)"
             class="nav-item w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium"
             :class="view===item.id ? 'nav-item-active' : 'text-slate-400 hover:text-slate-200'">
@@ -90,6 +90,93 @@
           <!-- universe coverage line -->
           <div class="text-xs text-slate-500 -mt-2" x-show="universe.kept">
             🌐 Scanning <b class="text-slate-300" x-text="universe.kept"></b> names — top <span x-text="universe.kept"></span> by liquidity of <b class="text-slate-300" x-text="universe.passed_filter"></b> that pass your Market Leaders filter (mkt cap &gt; $300M · price &gt; $10 · $vol &gt; $10M), from <b class="text-slate-300" x-text="universe.universe_total"></b> US-listed stocks. <span x-show="universe.built_at">Built <span x-text="universe.built_at"></span>.</span>
+          </div>
+
+          <!-- ===== Daily Gameplan — one synthesized plan from all the data ===== -->
+          <div class="card p-5" x-show="gameplan">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
+              <span>🗒️ Daily Gameplan <span class="text-xs font-normal text-slate-500" x-show="gameplan" x-text="gameplan ? '· '+gameplan.date : ''"></span></span>
+              <div class="flex items-center gap-2">
+                <button class="btn-sm" @click="loadGameplan()" title="Rebuild from the latest data">↻</button>
+                <button class="btn-sm" @click="gameplanOpen=!gameplanOpen" x-text="gameplanOpen?'Hide':'Show'"></button>
+              </div>
+            </div>
+            <template x-if="gameplan">
+              <div class="space-y-4" x-show="gameplanOpen">
+                <!-- stance + bottom line -->
+                <div>
+                  <div class="text-base font-extrabold" :style="'color:'+postureColor(gameplan.posture)" x-text="gameplan.stance"></div>
+                  <div class="text-sm text-slate-300 mt-1" x-text="gameplan.bottom_line"></div>
+                </div>
+                <!-- exposure mini-stats -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center" x-show="gameplan.exposure.account">
+                  <div class="lvl"><div class="lvl-l">Invested</div><div class="font-bold" x-text="gameplan.exposure.invested_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="'$'+Math.round(gameplan.exposure.invested).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Free cash</div><div class="font-bold text-up" x-text="'$'+Math.round(gameplan.exposure.free_cash).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Open risk</div><div class="font-bold" :class="gameplan.exposure.open_risk_pct>2?'text-warn':''" x-text="gameplan.exposure.open_risk_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="'$'+Math.round(gameplan.exposure.open_risk).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Positions</div><div class="font-bold" x-text="gameplan.exposure.positions"></div></div>
+                </div>
+                <div class="grid md:grid-cols-2 gap-4">
+                  <!-- manage positions -->
+                  <div x-show="gameplan.manage.length">
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">📊 Manage positions</div>
+                    <div class="space-y-1.5">
+                      <template x-for="m in gameplan.manage" :key="m.ticker">
+                        <div class="flex items-start gap-2 text-sm">
+                          <span class="badge font-extrabold shrink-0 w-20 text-center" :style="actionStyle(m.tone)" x-text="m.action"></span>
+                          <span class="font-bold w-14 shrink-0" x-text="m.ticker"></span>
+                          <span class="text-slate-400 flex-1 text-xs" x-text="m.reason"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                  <!-- buy / watch -->
+                  <div>
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🎯 New entries</div>
+                    <template x-if="!gameplan.buy_now.length && !gameplan.watch.length">
+                      <div class="text-sm text-slate-500">No clean A/A+ setups — patience.</div>
+                    </template>
+                    <div class="space-y-1.5">
+                      <template x-for="s in gameplan.buy_now" :key="'b'+s.ticker">
+                        <div class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/5 rounded px-1 py-0.5" @click="view='suggestions'">
+                          <span class="shrink-0">🟢</span>
+                          <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
+                          <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
+                          <span class="text-slate-400 text-xs flex-1">buy <span x-text="s.zone_bottom+'–'+s.zone_top"></span></span>
+                          <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
+                        </div>
+                      </template>
+                      <template x-for="s in gameplan.watch" :key="'w'+s.ticker">
+                        <div class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/5 rounded px-1 py-0.5 opacity-80" @click="view='suggestions'">
+                          <span class="shrink-0">⏳</span>
+                          <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
+                          <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
+                          <span class="text-slate-400 text-xs flex-1">wait for <span x-text="s.entry"></span></span>
+                          <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+                <!-- avoid + reminders -->
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div x-show="gameplan.avoid.length">
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🛑 Avoid today</div>
+                    <div class="space-y-1">
+                      <template x-for="a in gameplan.avoid" :key="a.ticker">
+                        <div class="text-sm text-slate-400"><span class="font-bold text-slate-300" x-text="a.ticker"></span> — <span x-text="a.reason"></span></div>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="gameplan.lessons.length">
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">💡 Remember (from your lessons)</div>
+                    <div class="space-y-1">
+                      <template x-for="(l,li) in gameplan.lessons" :key="li"><div class="text-xs text-amber-300/80">• <span x-text="l"></span></div></template>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-[11px] text-slate-500" x-show="gameplan.computed_at">Synthesized from your positions, cash, market regime, setups, news &amp; lessons · <span x-text="gameplan.computed_at"></span>. Not advice — you make the call.</div>
+              </div>
+            </template>
           </div>
 
           <!-- market regime: SPX / QQQ / IWM + blended posture -->
@@ -173,19 +260,35 @@
           </div>
 
           <div class="card">
-            <div class="card-head">Open positions</div>
+            <div class="card-head">Open positions <span class="text-xs font-normal text-slate-500">— suggested action from profit, extension, earnings &amp; news</span></div>
             <template x-if="openTrades.length===0"><div class="p-5 text-sm text-slate-500">No open positions.</div></template>
             <template x-for="t in openTrades" :key="t.id">
-              <div class="flex items-center justify-between px-5 py-3 border-t border-line gap-3">
-                <div class="w-40"><span class="font-semibold" x-text="t.ticker"></span>
-                  <span class="badge ml-2" x-text="t.setup_type"></span></div>
-                <div class="flex-1 text-sm text-slate-400">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span> · <span x-text="t.shares||'?'"></span> sh</div>
-                <div class="w-32 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></div>
-                <div class="flex gap-2">
-                  <button class="btn-sm" @click="showChart(t.ticker, t)">📈</button>
-                  <button class="btn-sm" @click="openEdit(t)">✏️ Edit</button>
-                  <button class="btn-sm bg-accent/40" @click="openClose(t)">Close</button>
+              <div class="px-5 py-3 border-t border-line space-y-2">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <div class="w-40"><span class="font-semibold" x-text="t.ticker"></span>
+                    <span class="badge ml-2" x-text="t.setup_type"></span></div>
+                  <div class="flex-1 text-sm text-slate-400 min-w-[140px]">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span> · <span x-text="t.shares||'?'"></span> sh</div>
+                  <div class="w-28 text-right text-sm font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></div>
+                  <div class="flex gap-2">
+                    <button class="btn-sm" @click="showChart(t.ticker, t)">📈</button>
+                    <button class="btn-sm" @click="openEdit(t)">✏️ Edit</button>
+                    <button class="btn-sm bg-accent/40" @click="openClose(t)">Close</button>
+                  </div>
                 </div>
+                <template x-if="t.coach">
+                  <div class="flex items-start gap-2 flex-wrap text-xs">
+                    <span class="badge font-extrabold shrink-0" :style="actionStyle(t.coach.tone)" x-text="t.coach.action"></span>
+                    <span class="text-slate-400 flex-1 min-w-[180px]" x-text="(t.coach.reasons&&t.coach.reasons[0])||''"></span>
+                    <span class="text-slate-500 shrink-0" x-show="t.coach.r_mult!=null" x-text="(t.coach.r_mult>=0?'+':'')+t.coach.r_mult+'R'"></span>
+                    <span class="text-slate-500 shrink-0" x-show="t.coach.ext9_adr!=null" :title="'extension above the 9 EMA in ADR units'">· <span x-text="t.coach.ext9_adr"></span>× ADR vs 9EMA</span>
+                    <span class="shrink-0" x-show="t.coach.earnings_days!=null && t.coach.earnings_days>=0 && t.coach.earnings_days<=21" :class="t.coach.earnings_days<=7?'text-down font-bold':'text-warn'">· 🗓 <span x-text="t.coach.earnings_days"></span>d</span>
+                  </div>
+                </template>
+                <template x-if="t.coach && t.coach.reasons && t.coach.reasons.length>1">
+                  <div class="text-[11px] text-slate-500 pl-1 space-y-0.5">
+                    <template x-for="(r,ri) in t.coach.reasons.slice(1)" :key="ri"><div>• <span x-text="r"></span></div></template>
+                  </div>
+                </template>
               </div>
             </template>
           </div>
@@ -259,9 +362,15 @@
             <button @click="waitFilter=!waitFilter" class="px-3 py-1 rounded-lg font-semibold"
               :class="waitFilter?'bg-accent text-white':'bg-panel2 text-slate-400'"
               title="Patient entries: buy zone is below current price (wait for the dip), incl. deep pullbacks into the 50 EMA">⏳ Worth waiting</button>
+            <button @click="leaderFilter=!leaderFilter" class="px-3 py-1 rounded-lg font-semibold"
+              :class="leaderFilter?'bg-accent text-white':'bg-panel2 text-slate-400'"
+              title="Relative-strength leaders — top ~15% RS in the scanned universe (the names leading the market)">🏆 Market leaders</button>
+            <button @click="risingFilter=!risingFilter" class="px-3 py-1 rounded-lg font-semibold"
+              :class="risingFilter?'bg-accent text-white':'bg-panel2 text-slate-400'"
+              title="Names in a sector whose momentum trend is Rising (rotating in)">🚀 Rising sector</button>
             <span class="text-xs text-slate-500"><b class="text-slate-300" x-text="filteredSuggestions.length"></b> match<span x-show="filteredSuggestions.length!==1">es</span></span>
-            <button class="btn-ghost text-xs" x-show="setupFilter!=='All'||momFilter!=='All'||sectorFilter!=='All'||filter!=='all'||waitFilter"
-              @click="setupFilter='All';momFilter='All';sectorFilter='All';filter='all';waitFilter=false">✕ clear filters</button>
+            <button class="btn-ghost text-xs" x-show="setupFilter!=='All'||momFilter!=='All'||sectorFilter!=='All'||filter!=='all'||waitFilter||leaderFilter||risingFilter"
+              @click="setupFilter='All';momFilter='All';sectorFilter='All';filter='all';waitFilter=false;leaderFilter=false;risingFilter=false">✕ clear filters</button>
           </div>
 
           <div x-show="hotSectors.length" class="flex items-center gap-2 flex-wrap text-sm">
@@ -293,6 +402,9 @@
                       </template>
                       <span class="badge" x-show="s.worth_waiting" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA"
                         style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⏳ Worth waiting</span>
+                      <template x-if="earnBadge(s)">
+                        <span class="badge" :style="earnBadge(s).style" :title="(earnBadge(s).soon?'Earnings within a week — skip new entries (binary risk)':'Earnings coming up — be cautious sizing in')+(s.earnings_date?' · '+s.earnings_date:'')" x-text="earnBadge(s).text"></span>
+                      </template>
                     </div>
                   </div>
                   <div class="text-right">
@@ -308,6 +420,8 @@
                 </div>
                 <div x-show="inZone(s)" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · $<span x-text="s.close"></span> is in the zone</div>
                 <div x-show="!inZone(s)" class="text-xs text-slate-500">⏳ wait — pull back toward <span x-text="s.entry"></span> (now $<span x-text="s.close"></span>)</div>
+                <div x-show="s.earnings_soon" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,93,115,.16);color:#ffb3bf;border:1px solid rgba(255,93,115,.5)">⚠️ Earnings in <span x-text="s.earnings_days"></span>d<span x-show="s.earnings_estimate"> (est.)</span> — probably skip, binary risk</div>
+                <div x-show="s.distribution_today" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Distribution / reversal day — let it settle, don't buy the drop</div>
                 <div class="text-xs text-slate-400"><b class="text-slate-100" x-text="s.shares ?? '—'"></b> sh · ≈$<span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> · risk $<span x-text="s.risk_ps"></span>/sh (1%)<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
                 <div class="text-xs text-slate-500" x-text="s.why"></div>
                 <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
@@ -576,12 +690,13 @@
 
         <!-- ===== NEWS ===== -->
         <section x-show="view==='news'" x-transition.opacity.duration.250ms class="space-y-5">
-          <div class="flex gap-2">
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab!=='suspicious'?'btn':'btn-sm'" @click="newsTab='news'">📰 News</button>
+          <div class="flex gap-2 flex-wrap">
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='news'?'btn':'btn-sm'" @click="newsTab='news'">📰 News</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='suspicious'?'btn':'btn-sm'" @click="newsTab='suspicious'; loadSuspicious()">🕵️ Suspicious activity</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='prediction'?'btn':'btn-sm'" @click="newsTab='prediction'; loadPrediction()">🔮 Prediction</button>
           </div>
 
-          <div x-show="newsTab!=='suspicious'" class="space-y-5">
+          <div x-show="newsTab==='news'" class="space-y-5">
           <div class="flex items-center gap-3 flex-wrap">
             <button class="btn" @click="refreshNews()" :disabled="newsStatus.running">
               <span x-show="!newsStatus.running">↻ Refresh news</span>
@@ -684,6 +799,50 @@
               </div>
             </div>
           </div>
+
+          <!-- ===== Prediction — probabilistic forward read ===== -->
+          <div x-show="newsTab==='prediction'" class="space-y-5">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="loadPrediction()" :disabled="predictionLoading">
+                <span x-show="!predictionLoading">🔮 Rebuild prediction</span>
+                <span x-show="predictionLoading" class="flex items-center gap-2"><span class="spinner"></span> reading the data…</span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="prediction && prediction.computed_at">Built <span x-text="prediction && prediction.computed_at"></span></span>
+            </div>
+            <template x-if="!prediction && !predictionLoading">
+              <div class="card p-5 text-sm text-slate-500">Click <b>Rebuild prediction</b> to synthesize a forward read from the market regime, sector rotation, news tone and end-of-day flow.</div>
+            </template>
+            <template x-if="prediction">
+              <div class="space-y-5">
+                <div class="card p-5">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div class="text-2xl font-extrabold" :style="'color:'+leanColor(prediction.lean)" x-text="prediction.lean"></div>
+                    <span class="text-xs font-bold px-2 py-1 rounded border border-line text-slate-400" x-text="prediction.confidence+' confidence'"></span>
+                  </div>
+                  <div class="text-sm text-slate-300 mt-3 leading-relaxed" x-html="prediction.outlook"></div>
+                  <div class="flex flex-wrap gap-2 mt-4" x-show="prediction.rising && prediction.rising.length">
+                    <span class="text-xs text-slate-500 self-center">Into:</span>
+                    <template x-for="r in prediction.rising" :key="'r'+r"><span class="badge badge-pullback">🚀 <span x-text="r"></span></span></template>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-2" x-show="(prediction.slowing&&prediction.slowing.length)||(prediction.falling&&prediction.falling.length)">
+                    <span class="text-xs text-slate-500 self-center">Out of:</span>
+                    <template x-for="r in prediction.falling" :key="'f'+r"><span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)">🔻 <span x-text="r"></span></span></template>
+                    <template x-for="r in prediction.slowing" :key="'s'+r"><span class="badge badge-ep">🐢 <span x-text="r"></span></span></template>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-head">What's driving this read</div>
+                  <template x-for="(d,di) in prediction.drivers" :key="di">
+                    <div class="flex items-start gap-3 px-5 py-2.5 border-t border-line text-sm">
+                      <span class="shrink-0 mt-0.5" :style="'color:'+driverColor(d.dir)" x-text="d.dir==='pos'?'▲':d.dir==='neg'?'▼':'■'"></span>
+                      <span class="text-slate-300" x-text="d.text"></span>
+                    </div>
+                  </template>
+                </div>
+                <div class="text-[11px] text-slate-500 leading-relaxed" x-text="prediction.note"></div>
+              </div>
+            </template>
+          </div>
         </section>
 
         <!-- ===== STATS ===== -->
@@ -744,10 +903,20 @@
   <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="closeChart()" x-cloak>
     <div class="bg-panel border border-line rounded-lg w-[1340px] max-w-[97vw] max-h-[95vh] overflow-y-auto p-3 sm:p-4">
       <div class="flex justify-between items-center gap-2 mb-3 flex-wrap">
-        <div class="font-bold text-xl" x-text="chartModal.ticker"></div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="font-bold text-xl" x-text="chartModal.ticker"></div>
+          <template x-if="chartModal._data && chartModal._data.earnings">
+            <span class="text-xs font-bold px-2 py-1 rounded border"
+              :style="(chartModal._data.earnings.days!=null && chartModal._data.earnings.days<=7)?'background:rgba(255,93,115,.18);color:#ffb3bf;border-color:rgba(255,93,115,.5)':'background:rgba(255,181,61,.14);color:#ffd591;border-color:rgba(255,181,61,.4)'">
+              🗓 Earnings <span x-text="chartModal._data.earnings.date"></span><span x-show="chartModal._data.earnings.estimate" title="estimated date">~</span><span x-show="chartModal._data.earnings.days!=null" x-text="' · '+(chartModal._data.earnings.days<=0?'today':'in '+chartModal._data.earnings.days+'d')"></span>
+            </span>
+          </template>
+        </div>
         <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showEmas?'bg-accent text-white':'bg-panel2 text-slate-400'"
             @click="chartModal.showEmas=!chartModal.showEmas; renderChart()" title="Show/hide the 9 / 21 / 50 EMAs">EMAs</button>
+          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showVolume?'bg-accent text-white':'bg-panel2 text-slate-400'"
+            @click="chartModal.showVolume=!chartModal.showVolume; renderChart()" title="Show/hide the volume pane">Vol</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showAvwap?'bg-accent text-white':'bg-panel2 text-slate-400'"
             @click="chartModal.showAvwap=!chartModal.showAvwap; renderChart()" title="Show/hide the AVWAP lines (ATH & earnings)">AVWAP</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.logScale?'bg-accent text-white':'bg-panel2 text-slate-400'"
@@ -762,7 +931,7 @@
         <span class="text-up">Buy zone</span> = the band between the two green lines (buy anywhere inside it) · <span class="text-down">stop</span> red ·
         EMAs <span style="color:#eab308">9</span>/<span style="color:#f59e0b">21</span>/<span style="color:#5b8cff">50</span> ·
         AVWAP <span style="color:#a855f7">ATH</span>/<span style="color:#22d3ee">earnings</span> ·
-        <span style="color:#3b82f6">channel</span>.
+        <span style="color:#3b82f6">channel</span> · <b>volume</b> bars at the base (green up / red down).
         Exit on a close under the <b>9 EMA</b>. EOD data.
       </div>
     </div>
