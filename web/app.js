@@ -48,6 +48,9 @@ function dataCenter() {
     newsTab: 'news',
     suspicious: { buying: [], selling: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
     premarket: { movers: [], scanned: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
+    spinning: { spins: [], scanned: null, candidates: null, scanned_at: null, status: { running: false, done: 0, total: 0, current: '' } },
+    spinLeadersOnly: false,
+    spinRisingOnly: false,
     refreshState: { running: false, stage: '', done: 0, total: 4 },
     gameplan: null,
     gameplanOpen: true,
@@ -212,6 +215,12 @@ function dataCenter() {
             && !(this.premarket.status && this.premarket.status.running)
             && (!this._lastPmScan || Date.now() - this._lastPmScan > 8 * 60 * 1000)) {
           this._lastPmScan = Date.now(); this.scanPremarket();
+        }
+        // auto re-scan spins every ~3 min while viewing the tab during market hours (catches new spins)
+        if (this.view === 'screeners' && this.screenTab === 'spinning' && this.marketOpen
+            && !(this.spinning.status && this.spinning.status.running)
+            && (!this._lastSpinScan || Date.now() - this._lastSpinScan > 3 * 60 * 1000)) {
+          this._lastSpinScan = Date.now(); this.scanSpinning();
         }
       } catch (e) {}
     },
@@ -648,6 +657,22 @@ function dataCenter() {
         await this.loadPremarket();
         if (!this.premarket.status?.running) clearInterval(this._pm);
       }, 1500);
+    },
+    async loadSpinning() { this.spinning = await this.api('/spinning'); },
+    async scanSpinning() {
+      const r = await this.api('/spinning/scan', 'POST');
+      if (r.ok) { this.spinning.status = { running: true, done: 0, total: 0, current: 'starting…' }; this.pollSpinning(); }
+    },
+    pollSpinning() {
+      clearInterval(this._sp);
+      this._sp = setInterval(async () => {
+        await this.loadSpinning();
+        if (!this.spinning.status?.running) clearInterval(this._sp);
+      }, 1500);
+    },
+    spinFiltered() {
+      return (this.spinning.spins || []).filter(s =>
+        (!this.spinLeadersOnly || s.leader) && (!this.spinRisingOnly || s.rising_sector));
     },
     fmtVol(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : ('' + (n || 0)); },
     // ---------- "new day" full refresh ----------

@@ -833,6 +833,139 @@ def scan_premarket(tickers, progress=None):
             "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
 
 
+# --------------------------------------------------------------------------- #
+# Spinning stocks (intraday reversal / rotation candidates)
+# --------------------------------------------------------------------------- #
+# A "spin": a stock that got BEATEN DOWN (a real flush off a recent high), then starts to
+# ROTATE BACK UP — on the 5-min chart a green candle reclaims a turning-up 10-period EMA, ideally
+# with buyers' volume rising on the turn. The ASTS gold-standard: flushed ~$113 -> ~$101, then
+# green candles reclaim the 10 EMA at ~$103 as the line flattens and curls up. We rank candidates
+# by how much rotation potential is LEFT (early reclaim off a big flush, near the line, buyers
+# stepping in) — not how far they've already bounced. Thresholds tuned on live data (ASTS/RKLB/MARA
+# rank top; too-shallow, already-recovered, and not-yet-turning names are rejected).
+def spin_signal(sym, adr=None):
+    """5-min intraday reversal detector. Returns a ranked spin dict or None (gates not met)."""
+    bars, gmt = _fetch_intraday(sym, rng="2d")
+    if not bars:
+        return None
+    while bars and bars[-1]["v"] == 0:               # drop the in-progress (no-volume) bar(s)
+        bars = bars[:-1]
+    if len(bars) < 20:
+        return None
+    adr = adr or 4.0
+
+    def ethr(t):
+        return ((t + gmt) % 86400) / 3600            # hour-of-day in exchange tz
+    def eday(t):
+        return (t + gmt) // 86400                    # day index in exchange tz
+
+    days = sorted({eday(b["t"]) for b in bars})
+    today = days[-1]
+    reg = [b for b in bars if eday(b["t"]) == today and 9.5 <= ethr(b["t"]) < 16.0]
+    if len(reg) < 12 and len(days) > 1:              # too early in today's session -> use prior day
+        today = days[-2]
+        reg = [b for b in bars if eday(b["t"]) == today and 9.5 <= ethr(b["t"]) < 16.0]
+    if len(reg) < 12:
+        return None
+    prior = [b for b in bars if eday(b["t"]) < today and 9.5 <= ethr(b["t"]) < 16.0]
+    prior_close = prior[-1]["c"] if prior else reg[0]["o"]
+
+    c = [b["c"] for b in reg]
+    o = [b["o"] for b in reg]
+    v = [b["v"] for b in reg]
+    n = len(c)
+    # 10-period EMA on the 5-min closes (the smooth turn line)
+    k = 2 / 11
+    ma = [c[0]]
+    for x in c[1:]:
+        ma.append(x * k + ma[-1] * (1 - k))
+
+    ref_high = max(prior_close, max(c))              # beaten-down reference (catches gap-downs)
+    hi_i = max(range(n), key=lambda i: c[i])
+    trough = min(min(c[hi_i:]), min(c))
+    trough_i = min(range(n), key=lambda i: c[i])
+    drop = (ref_high - trough) / ref_high * 100 if ref_high > 0 else 0.0
+    last = c[-1]
+    dist_ma = (last / ma[-1] - 1) * 100 if ma[-1] > 0 else 0.0
+    off_low = (last / trough - 1) * 100 if trough > 0 else 0.0
+    above = [c[i] > ma[i] for i in range(n)]
+    green = [c[i] > o[i] for i in range(n)]
+    ma_up = ma[-1] >= ma[-4]
+    cross_recent = any((not above[i - 1]) and above[i] for i in range(max(1, n - 4), n))
+    n_above = 0                                      # consecutive bars closing above the MA
+    for i in range(n - 1, -1, -1):
+        if above[i]:
+            n_above += 1
+        else:
+            break
+    # rising volume on the turn: buyers (up-bar vol) vs sellers (down-bar vol) over the recovery
+    # leg only (since the trough) — keeps the early-session flush out of the comparison.
+    leg = list(range(max(trough_i, n - 12), n))
+    up_v = [v[i] for i in leg if green[i]]
+    dn_v = [v[i] for i in leg if not green[i]]
+    mu, md = (st.mean(up_v) if up_v else 0.0), (st.mean(dn_v) if dn_v else 0.0)
+    vol_ratio = (mu / md) if md > 0 else (1.5 if mu > 0 else 1.0)
+
+    # ----- gates (all must pass) -----
+    beaten = drop >= max(4.0, 0.8 * adr)             # a real flush, scaled to volatility
+    reclaimed = above[-1] and (cross_recent or n_above <= 6)
+    turning = ma_up and off_low >= 0.8               # MA curling up + off the low
+    not_late = n_above <= 8 and dist_ma <= 2.2       # the spin hasn't already run away
+    if not (beaten and reclaimed and turning and not_late):
+        return None
+
+    # ----- potential score (0-100): how much rotation is LEFT -----
+    drop_s = min(1.0, drop / 12.0)                              # snapback fuel
+    fresh_s = max(0.0, 1.0 - max(0, n_above - 1) / 7.0)         # earlier reclaim = more upside left
+    vol_s = max(0.0, min(1.0, (vol_ratio - 0.8) / 1.0))        # buyers > sellers on the turn
+    green_s = 0.6 * (1.0 if green[-1] else 0.0) + 0.4 * (1.0 if last >= max(c[-3:]) else 0.0)
+    prox_s = max(0.0, 1.0 - dist_ma / 2.0)                      # close to the line = not chased
+    offlow_s = 1.0 - min(1.0, abs(off_low - 3.0) / 6.0)        # sweet spot ~1-6% off the low
+    score = round(100 * (0.26 * drop_s + 0.20 * fresh_s + 0.16 * vol_s +
+                         0.16 * green_s + 0.12 * prox_s + 0.10 * offlow_s))
+    return {
+        "ticker": sym.upper(), "score": score, "drop": round(drop, 1),
+        "off_low": round(off_low, 1), "dist_ma": round(dist_ma, 2), "n_above": n_above,
+        "vol_ratio": round(vol_ratio, 1), "green_last": green[-1], "ma_up": ma_up,
+        "price": round(last, 2), "ma": round(ma[-1], 2), "trough": round(trough, 2),
+        "fresh": n_above <= 3,
+    }
+
+
+def _daily_adr(sym):
+    """Daily ADR% from cached daily bars (cheap — the main scan already cached them)."""
+    bars = get_bars(sym)
+    if not bars or len(bars) < 21:
+        return 4.0
+    h = [b["high"] for b in bars]
+    l = [b["low"] for b in bars]
+    return st.mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0]) or 4.0
+
+
+def scan_spinning(tickers, min_down=-2.5, progress=None):
+    """Find spinning stocks. Smart pre-filter: pull live quotes, keep only names DOWN on the day
+    (the beaten-down universe), then fetch 5-min bars for just those — fast and on-target. Returns
+    spins ranked by potential (highest first)."""
+    quotes = fetch_quotes(tickers)
+    cand = [s.strip().upper() for s in tickers
+            if (quotes.get(s.strip().upper(), {}).get("change_pct") or 0) <= min_down]
+    spins = []
+    total = len(cand)
+    for i, t in enumerate(cand, 1):
+        if progress:
+            progress(i, total, t)
+        try:
+            sig = spin_signal(t, _daily_adr(t))
+        except Exception:
+            sig = None
+        if sig:
+            spins.append(sig)
+        time.sleep(0.03)
+    spins.sort(key=lambda x: -x["score"])
+    return {"spins": spins[:60], "scanned": len(tickers), "candidates": total,
+            "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+
+
 def sector_metrics(tickers):
     """Composite momentum metrics for a group of tickers (a sector/theme),
     plus per-member detail (sorted hottest-first) for the expandable view."""

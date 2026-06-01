@@ -50,6 +50,7 @@ MARKET_F = DATA / "market.json"
 UNIVERSE_F = DATA / "universe.json"
 SUSPICIOUS_F = DATA / "suspicious.json"
 PREMARKET_F = DATA / "premarket.json"
+SPINNING_F = DATA / "spinning.json"        # last spinning-stocks (intraday reversal) scan
 FORWARD_F = DATA / "forward_log.json"      # live A/A+ picks snapshotted each scan (forward/paper test)
 GROUPS_F = DATA / "groups.json"            # detected emerging groups (correlated movers)
 
@@ -197,6 +198,8 @@ SUSPECT = {"running": False, "done": 0, "total": 0, "current": ""}
 _suspect_lock = threading.Lock()
 PREMKT = {"running": False, "done": 0, "total": 0, "current": ""}
 _premkt_lock = threading.Lock()
+SPIN = {"running": False, "done": 0, "total": 0, "current": ""}
+_spin_lock = threading.Lock()
 GROUPS = {"running": False, "done": 0, "total": 0, "current": ""}
 _groups_lock = threading.Lock()
 
@@ -388,6 +391,26 @@ def run_premarket():
     except Exception as e:
         PREMKT.update(current="error: " + str(e))
     PREMKT.update(running=False, current="")
+
+
+def run_spinning():
+    """Scan the universe for 'spinning' stocks — beaten-down names reclaiming the 5-min 10 EMA
+    (intraday reversal candidates). Smart-prefiltered to names down on the day inside the scanner."""
+    tickers = []
+    screeners = read_json(SCREENERS_F, [])
+    default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
+    if default:
+        tickers = default.get("tickers", [])
+    SPIN.update(running=True, done=0, total=len(tickers) or 1, current="quotes…")
+
+    def prog(done, total, t):
+        SPIN.update(done=done, total=total, current=t)
+    try:
+        out = scanner.scan_spinning(tickers, progress=prog)
+        write_json(SPINNING_F, out)
+    except Exception as e:
+        SPIN.update(current="error: " + str(e))
+    SPIN.update(running=False, current="")
 
 
 def run_detect_groups():
@@ -1470,6 +1493,37 @@ class Handler(BaseHTTPRequestHandler):
                     m["worth_waiting"] = si.get("setup_type") in ("Deep Pullback", "Consolidation")
             pm["status"] = PREMKT
             self._json(pm)
+        elif route == "spinning":
+            sp = read_json(SPINNING_F, {"spins": []})
+            rev = reverse_themes()
+            heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
+            news_map = read_json(NEWS_F, {}).get("ticker_news", {})
+            sug = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
+            for s in sp.get("spins", []):
+                th = rev.get(s["ticker"])
+                s["theme"] = th
+                hr = heat.get(th)
+                if hr:
+                    s["theme_trend"] = hr.get("trend")
+                    s["theme_tier"] = hr.get("tier")
+                    s["theme_hot"] = hr.get("tier") == "Hot" or hr.get("trend") == "Rising"
+                si = sug.get(s["ticker"])
+                if si:
+                    s["setup_type"] = si.get("setup_type")
+                    s["rs_pct"] = si.get("rs_pct")
+                nm = news_map.get(s["ticker"])
+                if nm:
+                    s["news_headline"] = nm["title"]
+                    s["news_link"] = nm["link"]
+                    s["news_dir"] = nm.get("sentiment")
+                # leader (strong relative strength) + rising-sector flags, with a ranking boost
+                s["leader"] = (s.get("rs_pct") or 0) >= 80
+                s["rising_sector"] = bool(s.get("theme_hot"))
+                s["base_score"] = s.get("score", 0)
+                s["score"] = s["base_score"] + (8 if s["leader"] else 0) + (6 if s["rising_sector"] else 0)
+            sp["spins"] = sorted(sp.get("spins", []), key=lambda x: -x.get("score", 0))
+            sp["status"] = SPIN
+            self._json(sp)
         elif route == "watchlist":
             self._json(read_json(watchlist_f(), []))
         elif route == "trades":
@@ -1646,6 +1700,13 @@ class Handler(BaseHTTPRequestHandler):
                 if PREMKT["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
                 threading.Thread(target=run_premarket, daemon=True).start()
+            self._json({"ok": True})
+
+        elif route == "spinning" and len(parts) > 2 and parts[2] == "scan":
+            with _spin_lock:
+                if SPIN["running"]:
+                    self._json({"ok": False, "error": "already running"}, 409); return
+                threading.Thread(target=run_spinning, daemon=True).start()
             self._json({"ok": True})
 
         elif route == "groups" and len(parts) > 2 and parts[2] == "detect":

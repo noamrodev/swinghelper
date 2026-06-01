@@ -475,6 +475,7 @@
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='lists'?'btn':'btn-sm'" @click="screenTab='lists'">🗂️ Screener lists</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat(); if(marketOpen) loadSectorHeatLive()">🔥 Sector Heat</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='premarket'?'btn':'btn-sm'" @click="screenTab='premarket'; loadPremarket()">🌅 Pre-market</button>
+            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='spinning'?'btn':'btn-sm'" @click="screenTab='spinning'; loadSpinning()">🔄 Spinning</button>
             <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='groups'?'btn':'btn-sm'" @click="screenTab='groups'; loadGroups()">🧭 New groups</button>
           </div>
 
@@ -517,6 +518,68 @@
                     <span x-show="m.news_trump">🇺🇸 </span><span x-text="(m.news_dir==='good'?'📈 ':m.news_dir==='bad'?'📉 ':'📰 ')+m.news_headline"></span>
                   </a>
                   <div class="text-[11px] text-slate-500 mt-2">prev close $<span x-text="m.prev_close"></span> · tap for chart</div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- spinning stocks (intraday reversal) -->
+          <div x-show="screenTab==='spinning'" class="space-y-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn" @click="scanSpinning()" :disabled="spinning.status && spinning.status.running">
+                <span x-show="!(spinning.status && spinning.status.running)">🔄 Scan for spins</span>
+                <span x-show="spinning.status && spinning.status.running" class="flex items-center gap-2"><span class="spinner"></span> <span x-text="spinning.status.current"></span> (<span x-text="spinning.status.done"></span>/<span x-text="spinning.status.total"></span>)</span>
+              </button>
+              <span class="text-xs text-slate-500" x-show="spinning.scanned_at">Checked <span x-text="spinning.candidates"></span> beaten-down of <span x-text="spinning.scanned"></span> · <span x-text="spinning.scanned_at"></span></span>
+              <span x-show="marketOpen" class="text-xs font-bold flex items-center gap-1.5" style="color:#22e0a1">
+                <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background:#22e0a1"></span><span class="relative inline-flex rounded-full h-2 w-2" style="background:#22e0a1"></span></span>
+                live · auto-updating
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 -mt-2">Beaten-down stocks starting to rotate back up: a green 5-min candle reclaiming a turning-up 10 EMA, ranked by how much snap-back potential is left (early reclaim off a big flush, near the line, buyers stepping in). Tap a card for the chart. Not a buy signal — confirm the level and size to 1% risk.</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button class="px-3 py-1.5 rounded-lg text-xs font-bold transition" :class="spinLeadersOnly?'btn':'btn-sm'" @click="spinLeadersOnly=!spinLeadersOnly">⚡ Leaders only</button>
+              <button class="px-3 py-1.5 rounded-lg text-xs font-bold transition" :class="spinRisingOnly?'btn':'btn-sm'" @click="spinRisingOnly=!spinRisingOnly">🔥 Rising sectors only</button>
+              <span class="text-xs text-slate-500" x-show="(spinning.spins||[]).length" x-text="spinFiltered().length+' of '+(spinning.spins||[]).length+' spins'"></span>
+            </div>
+            <template x-if="!(spinning.spins||[]).length && !(spinning.status && spinning.status.running)">
+              <div class="card p-5 text-sm text-slate-500">No spins yet — run a scan during market hours. Spins need beaten-down names actively reclaiming the 5-min 10 EMA.</div>
+            </template>
+            <template x-if="(spinning.spins||[]).length && !spinFiltered().length">
+              <div class="card p-5 text-sm text-slate-500">No spins match the active filters.</div>
+            </template>
+            <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              <template x-for="s in spinFiltered()" :key="s.ticker">
+                <div class="card card-hover p-4 cursor-pointer" @click="showChart(s.ticker,{})">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-baseline gap-2 min-w-0">
+                      <span class="font-extrabold text-lg" x-text="s.ticker"></span>
+                      <span class="text-xs text-slate-500" x-text="'$'+s.price"></span>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <div class="text-xl font-extrabold text-up" x-text="s.score"></div>
+                      <div class="text-[10px] text-slate-500 -mt-1">potential</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span class="badge" x-show="s.fresh" style="color:#22e0a1">✦ fresh</span>
+                    <span class="badge" title="how far it was beaten down off the recent high">📉 −<span x-text="s.drop"></span>%</span>
+                    <span class="badge" title="bounce off the intraday low so far">↑ <span x-text="s.off_low"></span>% off low</span>
+                    <span class="badge" :class="s.dist_ma<=1?'badge-hot':''" title="distance above the 5-min 10 EMA (lower = earlier)"><span x-text="(s.dist_ma>=0?'+':'')+s.dist_ma"></span>% vs 10EMA</span>
+                    <span class="badge" x-show="s.vol_ratio>=1.2" title="up-bar vs down-bar volume on the turn">🟢 vol <span x-text="s.vol_ratio"></span>×</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <span class="badge" x-show="s.leader" :class="'badge-hot'" title="relative-strength leader">⚡ leader · RS <span x-text="s.rs_pct"></span></span>
+                    <span class="badge" x-show="!s.leader && s.rs_pct!=null" title="relative-strength percentile (0–100)">RS <span x-text="s.rs_pct"></span></span>
+                    <span class="badge" x-show="s.theme" :class="s.theme_hot?'badge-hot':''"><span x-show="s.theme_hot" class="fire">🔥</span><span x-text="s.theme"></span></span>
+                    <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)"><span x-text="trendIcon(s.theme_trend)"></span> <span x-text="s.theme_trend"></span></span>
+                    <span class="badge" x-show="s.setup_type" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
+                  </div>
+                  <a x-show="s.news_headline" :href="s.news_link" target="_blank" @click.stop class="block mt-2 text-xs leading-snug"
+                    :class="s.news_dir==='good'?'text-up':s.news_dir==='bad'?'text-down':'text-slate-400'">
+                    <span x-text="(s.news_dir==='good'?'📈 ':s.news_dir==='bad'?'📉 ':'📰 ')+s.news_headline"></span>
+                  </a>
+                  <div class="text-[11px] text-slate-500 mt-2">stop idea: under intraday low $<span x-text="s.trough"></span> · 10EMA $<span x-text="s.ma"></span> · tap for chart</div>
                 </div>
               </template>
             </div>

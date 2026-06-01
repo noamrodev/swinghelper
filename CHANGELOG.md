@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-01 (Spinning stocks screener)
+
+### 🔄 Spinning stocks (Screeners → 🔄 Spinning)
+- New intraday-reversal screener: **beaten-down stocks starting to rotate back up.** On the 5-min
+  chart, a green candle reclaims a turning-up 10 EMA off a real flush — ranked by how much snap-back
+  potential is *left* (early reclaim, near the line, buyers stepping in), not how far it's already
+  bounced. The ASTS example (flushed ~$113→$101, reclaiming the 10 EMA at ~$103) is the gold standard.
+- `scanner.spin_signal()` (5-min detector) + `scanner.scan_spinning()` with a **smart live-quote
+  pre-filter**: pulls quotes for the ~800 universe, keeps only names *down on the day* (the beaten-down
+  set), then fetches 5-min bars for just those (~50s, ~140 candidates instead of 800).
+- **Gates** (tuned on live data): real flush (`drop ≥ max(4%, 0.8×ADR)`), reclaimed the 10 EMA
+  (fresh cross or ≤6 bars above), MA turning up + off the low, and not-already-run-away (≤8 bars
+  above / ≤2.2% over the line). **Potential score** blends drop depth, freshness, up/down volume on
+  the turn, reclaim-candle strength, proximity to the line, and a sweet-spot off-low.
+- **Leader / rising-sector** toggle filters + a ranking boost (+8 RS-leader, +6 rising sector); each
+  card shows RS, setup, theme, drop%, off-low, Δ-to-10EMA, volume, news, and a stop idea (intraday
+  low). `GET /api/spinning` (+ enrichment/boost) and `POST /api/spinning/scan`; **auto-refreshes
+  every ~3 min** while the tab is open during market hours. Verified live (UMAC/LUNR/RKLB/ASTS led a
+  space/drone rotation day), clean console, mobile-safe at 375px.
+
 ## 2026-06-01 (perf + groups polish)
 
 ### Performance (no behavior change)
