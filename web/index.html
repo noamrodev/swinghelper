@@ -565,7 +565,8 @@
                     <span class="badge" x-show="s.fresh" style="color:#22e0a1">✦ fresh</span>
                     <span class="badge" title="how far it was beaten down off the recent high">📉 −<span x-text="s.drop"></span>%</span>
                     <span class="badge" title="bounce off the intraday low so far">↑ <span x-text="s.off_low"></span>% off low</span>
-                    <span class="badge" :class="s.dist_ma<=1?'badge-hot':''" title="distance above the 5-min 10 EMA (lower = earlier)"><span x-text="(s.dist_ma>=0?'+':'')+s.dist_ma"></span>% vs 10EMA</span>
+                    <span class="badge" :class="Math.abs(s.dist_ma)<=1?'badge-hot':''" title="distance from the 5-min 10 EMA (at the line = earliest; a small minus is a shallow dip)"><span x-text="(s.dist_ma>=0?'+':'')+s.dist_ma"></span>% vs 10EMA</span>
+                    <span class="badge" x-show="s.higher_lows" style="color:#22e0a1" title="making higher lows on the 5-min — rising structure, kept even if a candle dips under the line">📈 higher lows</span>
                     <span class="badge" x-show="s.vol_ratio>=1.2" title="up-bar vs down-bar volume on the turn">🟢 vol <span x-text="s.vol_ratio"></span>×</span>
                   </div>
                   <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">

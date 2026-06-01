@@ -836,6 +836,20 @@ def scan_premarket(tickers, progress=None):
 # --------------------------------------------------------------------------- #
 # Spinning stocks (intraday reversal / rotation candidates)
 # --------------------------------------------------------------------------- #
+def _higher_lows(closes, start_i):
+    """Higher-lows structure on the 5-min recovery leg (closes only — intraday bars carry no
+    high/low). True when the recent swing low sits ABOVE the prior one: a rising 5-min uptrend that
+    is likely to keep going even if the latest candle just poked under the 10 EMA. This is why we
+    DON'T drop a name the instant one bar dips below the line."""
+    seg = closes[max(0, start_i):]
+    if len(seg) < 6:
+        return False
+    piv = [seg[i] for i in range(1, len(seg) - 1) if seg[i] < seg[i - 1] and seg[i] <= seg[i + 1]]
+    if len(piv) >= 2 and piv[-1] > piv[-2]:          # last pivot low above the prior one
+        return True
+    return min(seg[-3:]) > min(seg[-7:-3])           # fallback: a fresh rolling higher low
+
+
 # A "spin": a stock that got BEATEN DOWN (a real flush off a recent high), then starts to
 # ROTATE BACK UP — on the 5-min chart a green candle reclaims a turning-up 10-period EMA, ideally
 # with buyers' volume rising on the turn. The ASTS gold-standard: flushed ~$113 -> ~$101, then
@@ -906,10 +920,18 @@ def spin_signal(sym, adr=None):
     mu, md = (st.mean(up_v) if up_v else 0.0), (st.mean(dn_v) if dn_v else 0.0)
     vol_ratio = (mu / md) if md > 0 else (1.5 if mu > 0 else 1.0)
 
+    higher_lows = _higher_lows(c, trough_i)
+    recently_above = any(above[-3:])                 # reclaimed within the last ~15 min
+    tol = min(1.2, max(0.4, 0.2 * adr))              # how far under the 10 EMA still counts as "a little"
+
     # ----- gates (all must pass) -----
     beaten = drop >= max(4.0, 0.8 * adr)             # a real flush, scaled to volatility
-    reclaimed = above[-1] and (cross_recent or n_above <= 6)
-    turning = ma_up and off_low >= 0.8               # MA curling up + off the low
+    # Reclaimed = closed back above the 10 EMA, OR it reclaimed recently and is only a LITTLE under
+    # the line while still making higher lows (a shallow dip in a rising 5-min structure — don't
+    # drop it, it can keep going). Far below the line or breaking structure still fails.
+    reclaimed = (above[-1] and (cross_recent or n_above <= 6)) \
+        or (recently_above and higher_lows and dist_ma >= -tol)
+    turning = (ma_up or higher_lows) and off_low >= 0.5   # MA curling up OR higher-lows, off the low
     not_late = n_above <= 8 and dist_ma <= 2.2       # the spin hasn't already run away
     if not (beaten and reclaimed and turning and not_late):
         return None
@@ -919,16 +941,17 @@ def spin_signal(sym, adr=None):
     fresh_s = max(0.0, 1.0 - max(0, n_above - 1) / 7.0)         # earlier reclaim = more upside left
     vol_s = max(0.0, min(1.0, (vol_ratio - 0.8) / 1.0))        # buyers > sellers on the turn
     green_s = 0.6 * (1.0 if green[-1] else 0.0) + 0.4 * (1.0 if last >= max(c[-3:]) else 0.0)
-    prox_s = max(0.0, 1.0 - dist_ma / 2.0)                      # close to the line = not chased
+    prox_s = max(0.0, 1.0 - abs(dist_ma) / 2.0)                # right at the line = best (under or over)
     offlow_s = 1.0 - min(1.0, abs(off_low - 3.0) / 6.0)        # sweet spot ~1-6% off the low
-    score = round(100 * (0.26 * drop_s + 0.20 * fresh_s + 0.16 * vol_s +
-                         0.16 * green_s + 0.12 * prox_s + 0.10 * offlow_s))
+    struct_s = 1.0 if higher_lows else 0.0                      # rising 5-min structure = stays in
+    score = round(100 * (0.24 * drop_s + 0.16 * fresh_s + 0.14 * vol_s + 0.14 * green_s +
+                         0.12 * prox_s + 0.08 * offlow_s + 0.12 * struct_s))
     return {
         "ticker": sym.upper(), "score": score, "drop": round(drop, 1),
         "off_low": round(off_low, 1), "dist_ma": round(dist_ma, 2), "n_above": n_above,
         "vol_ratio": round(vol_ratio, 1), "green_last": green[-1], "ma_up": ma_up,
-        "price": round(last, 2), "ma": round(ma[-1], 2), "trough": round(trough, 2),
-        "fresh": n_above <= 3,
+        "higher_lows": higher_lows, "price": round(last, 2), "ma": round(ma[-1], 2),
+        "trough": round(trough, 2), "fresh": n_above <= 3,
     }
 
 

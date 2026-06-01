@@ -14,6 +14,11 @@
   (fresh cross or ≤6 bars above), MA turning up + off the low, and not-already-run-away (≤8 bars
   above / ≤2.2% over the line). **Potential score** blends drop depth, freshness, up/down volume on
   the turn, reclaim-candle strength, proximity to the line, and a sweet-spot off-low.
+- **Higher-lows fix (less aggressive):** a single 5-min candle dipping a little under the 10 EMA no
+  longer drops a name — if it reclaimed recently and is still making **higher lows** (rising 5-min
+  structure, `scanner._higher_lows()`), it stays on the list within a small tolerance under the line
+  (`min(1.2%, 0.2×ADR)`). Higher-lows structure is now a scored term and shown as a 📈 badge; the
+  "vs 10EMA" chip handles the small negative. (e.g. ENPH was kept at −0.11% under the line.)
 - **Leader / rising-sector** toggle filters + a ranking boost (+8 RS-leader, +6 rising sector); each
   card shows RS, setup, theme, drop%, off-low, Δ-to-10EMA, volume, news, and a stop idea (intraday
   low). `GET /api/spinning` (+ enrichment/boost) and `POST /api/spinning/scan`; **auto-refreshes
