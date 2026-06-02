@@ -508,7 +508,10 @@
                           <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
                           <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
                         </div>
-                        <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="ei===0?'primary':'option'"></span>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <span class="font-extrabold text-base leading-none" x-show="e.grade" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100) — each setup is graded on its own entry'" x-text="e.grade"></span>
+                          <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="ei===0?'primary':'option'"></span>
+                        </div>
                       </div>
                       <div class="grid grid-cols-3 gap-2 text-center text-sm">
                         <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>

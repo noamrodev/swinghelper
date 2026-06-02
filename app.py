@@ -1111,27 +1111,40 @@ def grade_suggestions(items, settings):
     pullback_setups = ("Pullback", "Pullback @ AVWAP",
                        "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
 
-    def _rating(it):
+    def _rating(it, unit=None):
+        # `unit` = a single entry option's per-entry inputs (setup_type / ext50_adr / entry_quality /
+        # buyable_now / chase_exempt). None → grade the ticker off its primary fields. The grade is
+        # PER setup: a name's pullback option and breakout option grade apart (INOD pullback can be A
+        # while its breakout — a buy-stop above an extended high — is a chase, C/D).
+        u = unit or {}
+        st = u.get("setup_type") or it.get("setup_type") or ""
+        ext = u.get("ext50_adr")
+        ext = (it.get("ext50_adr", 0) or 0) if ext is None else ext     # extension above the 50-EMA in ADR (chase measure)
+        ww = u.get("chase_exempt")
+        ww = bool(it.get("worth_waiting")) if ww is None else bool(ww)   # patient dip-buy — buys INTO the 50 (exempt from chase pen)
+        patient_quality = ww or ("AVWAP" in st)                         # setups the backtest showed work in ANY tape
+        buyable = u.get("buyable_now", it.get("buyable_now"))
         setup = max(0, min(100, (it.get("score", 0) - 4) / 16 * 100))   # technical setup quality
         rs = it.get("rs_score", 50)                                     # relative strength
         # market regime: breakouts/EPs are demoted harder than pullbacks in weak tape
-        regime = posture if it.get("setup_type") in pullback_setups else (
+        regime = posture if st in pullback_setups else (
             posture if posture >= 55 else posture * 0.6)
-        entry_loc = it.get("entry_quality", 60)                         # don't-chase / tight-stop
+        entry_loc = u.get("entry_quality")
+        entry_loc = it.get("entry_quality", 60) if entry_loc is None else entry_loc   # don't-chase / tight-stop
         liq = it.get("liq_score", 50)                                    # liquidity -> institutional interest
         tr, tier = it.get("theme_trend"), it.get("theme_tier")
         # backtest: a RISING sector beat a backward-looking "Hot" tier (Hot is often already extended),
         # so Rising now outranks Hot.
         sector = 100 if tr == "Rising" else (85 if tier == "Hot" else 25 if tr == "Slowing"
                                              else 12 if tr == "Falling" else 55)
-        # actionable now still helps, but only a little — the backtest showed buying in-zone NOW
-        # underperformed waiting for the pullback to the line, so don't over-reward chasing.
-        timing = 75 if it.get("buyable_now") else 55
+        # timing rewards WAITING (backtest: not-buyable +0.36R beat buyable-now +0.17R): the in-zone
+        # bonus only goes to patient setups OR a non-extended name — never an extended in-zone chase.
+        timing = 75 if (ww or (buyable and ext < 2)) else 55
         nd = it.get("news_dir")
         news = 100 if nd == "good" else (8 if nd == "bad" else (75 if it.get("news_flag") else 55))
         r = (0.28 * setup + 0.14 * rs + 0.14 * regime + 0.14 * entry_loc
              + 0.08 * liq + 0.10 * sector + 0.06 * timing + 0.06 * news)
-        hist = bysetup.get(it.get("setup_type"))                        # learns from realized results
+        hist = bysetup.get(st)                                          # learns from realized results
         if hist and hist.get("n", 0) >= 5:
             r += max(-8, min(8, hist.get("avg_r", 0) * 3))
         # earnings overhang: a print inside a week is a hard demote (don't open binary risk);
@@ -1140,22 +1153,60 @@ def grade_suggestions(items, settings):
             r -= 18
         elif it.get("earnings_near"):
             r -= 6
-        # distribution / climax-reversal day: cap the grade regardless of how strong RS/sector
-        # look — a heavy-volume rejection off the highs is a "wait", never a "get in now". (RS and
-        # a hot sector are exactly what make a blow-off look buyable, so the cap overrides them.)
+        # EXTENSION / CHASE penalty (v5): a momentum name far above its BASE (the 50-EMA) already made the
+        # money — buying it is a chase (SEDG: +85%/1m, 4.1x ADR over the 50, was grading B). Graded demote
+        # above 2.5x ADR, HARD-CAP at C once parabolic (>=4x). worth_waiting dip-buys buy INTO the 50 -> exempt.
+        if not ww:
+            if ext > 2.5:
+                r -= (ext - 2.5) * 8
+            if ext >= 4.0:
+                r = min(r, 52)                              # parabolic chase -> max C (overrides RS/sector)
+            elif ext >= 2.5:
+                r = min(r, 72)                              # extended 2.5-4x ADR above the 50 -> max B, not A
+                                                           # (the APLD case: shallow pullback in an extended move)
+        # distribution / climax-reversal day: cap at C regardless of how strong RS/sector look (the ASTS case).
         if it.get("distribution_today"):
-            r = min(r, 62)                                  # cap at C — don't buy the reversal
-        # REGIME GATE (backtest's biggest lesson): A/A+ taken with blended posture < ~65 LOST money
-        # (the 55-69 "constructive but not strong" band was −0.5R). Below 65 we cap at B (still
-        # visible, not "get in now"); a weak/correcting tape (<50) caps at C.
-        if posture < 50:
-            r = min(r, 52)
-        elif posture < 65:
-            r = min(r, 72)
+            r = min(r, 62)
+        # REGIME GATE (v5 — setup-aware): the backtest's losers in weak tape were breakouts/EPs; AVWAP/
+        # Consolidation/worth-waiting worked in any tape. So breakouts/EPs stay capped below posture 65,
+        # but the BEST patient at-support setups can reach A even in a mixed tape (user choice).
+        if st in ("Breakout", "Episodic Pivot"):
+            if posture < 50:
+                r = min(r, 52)
+            elif posture < 65:
+                r = min(r, 72)                              # breakouts fail in weak tape -> max B
+        elif patient_quality and ext < 2.5 and tr != "Falling":
+            if posture < 50:
+                r = min(r, 72)                              # deep correction: even the best -> max B, not A
+            # posture >= 50: no cap -> A/A+ reachable for the best patient setups (near their base)
+        else:                                               # plain pullbacks & everything else
+            if posture < 50:
+                r = min(r, 52)
+            elif posture < 65:
+                r = min(r, 78)                              # allow A, not A+
         return round(max(0, min(99, r)))
 
+    patient_or_pullback = pullback_setups + ("Deep Pullback", "Consolidation")
     for it in items:
-        it["rating"] = _rating(it)
+        entries = it.get("entries") or []
+        for e in entries:
+            bk = e.get("kind") == "breakout"
+            # per-entry effective setup type for the gate: a breakout option grades as a Breakout;
+            # a pullback option keeps the ticker's pullback family, or "Pullback" if the ticker is a breakout.
+            if bk:
+                unit_setup = "Breakout"
+            elif (it.get("setup_type") or "") in patient_or_pullback:
+                unit_setup = it.get("setup_type")
+            else:
+                unit_setup = "Pullback"
+            e["rating"] = _rating(it, {"setup_type": unit_setup, "ext50_adr": e.get("ext50_adr"),
+                                       "entry_quality": e.get("entry_quality"),
+                                       "buyable_now": e.get("buyable_now"),
+                                       "chase_exempt": e.get("chase_exempt")})
+            e["grade"] = _grade_letter(e["rating"])
+        # the ticker's headline grade = the BEST available option (a name with an A pullback is an A name),
+        # but each option carries its own grade so the user can see the breakout is a chase.
+        it["rating"] = max((e["rating"] for e in entries), default=_rating(it))
         it["grade"] = _grade_letter(it["rating"])
     return sorted(items, key=lambda x: x.get("rating", 0), reverse=True)
 
@@ -1175,7 +1226,10 @@ def _ema_series(closes, n):
     return out
 
 
-FORWARD_TOP_N = 10                      # how many of today's TOP suggestions to log each day
+FORWARD_TOP_N = 50                      # how many of today's TOP suggestions to log each day
+                                       # (50, not 10: the BEST setups are "worth waiting" and rarely
+                                       # trigger same-day — a wider net captures the ones that DO have
+                                       # an entry today, so the forward test still collects real data)
 
 
 def log_forward_picks(date_key=None):

@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-06-02 (Grade is PER ENTRY OPTION, not per ticker)
+- User: "grade should be PER setup — INOD pullback can be A but the breakout is DEF NOT." The grade was
+  computed once per ticker from the primary's factors; now **each entry option is graded on its own merit**.
+- `scanner.analyze` computes per-entry **`ext50_adr` + `entry_quality` + `chase_exempt`** on every `entries[]`
+  plan — graded at the price you'd actually PAY (a buy-stop at its higher trigger; a BUYABLE-NOW pullback at
+  the current price, not its lower limit — so APLD buyable at 48 grades as extended, not at its 46 limit).
+- `_rating(it, unit)` (app.py) accepts per-entry inputs; the loop grades each option and sets the ticker
+  headline grade = **max of the options** (best available setup); each option carries its own `grade`/`rating`.
+- Card shows a **colored grade letter per option row**. Result: **INOD pullback A+ / breakout C**; DOCN
+  pullback A+ / breakout D; ONDS pullback A / breakout C; DXYZ pullback A / breakout B (breakout only 1.7×
+  ADR extended → still B, not blanket). **Restart python + re-scan.**
+
+## 2026-06-02 (Grade rubric v5 — chases out of B, A reachable for the best)
+- **Problem:** posture-58 tape capped every grade at B → 0 A's, 98 B's, ~half of them CHASES (e.g. SEDG
+  +85%/1m, 4.1× ADR above the 50-EMA, graded B/72). "If chases get B, B is meaningless." Diagnosed via a
+  3-agent deep-research pass over the rubric + the 228-trade backtest + the 9-trade journal (CRWV waited→+3R
+  vs INOD chased→+0.9R; AVWAP +0.58R / Consolidation +0.41R / worth-waiting +0.36R work in any tape;
+  breakouts/EPs fail in weak tape).
+- **Fix (canonical in `strategy/scoring.md` v5, mirrored in `app.py _rating()` + `scanner.py analyze()`):**
+  1. **Extension/chase penalty** on `ext50_adr` (distance above the 50-EMA in ADR) — graded demote
+     `−(ext50_adr−2.5)×8`, **cap at B once ≥2.5×**, **HARD-CAP at C once ≥4×** (parabolic threshold 4.5→4.0,
+     now caps the GRADE not just `buyable_now`). Gradient: <2.5× A-eligible / 2.5–4× B / ≥4× C. `worth_waiting`
+     dip-buys exempt (deep pullback buys AT the 50; tight Consolidation has a tight base/stop). The 2.5× B-cap
+     came from the **APLD** case (Pullback @ AVWAP, ext 2.7, +36%/1m — shallow pullback in an extended move,
+     was A → now B).
+  2. **`entry_quality` also penalizes distance from the 50-EMA/base** (`stretch50_pen`), not just the 10-EMA
+     — closes the "10-EMA is itself parabolic" blind spot (SEDG entry_quality 42→7).
+  3. **Timing rewards WAITING** (in-zone bonus only for non-extended names).
+  4. **Regime gate is setup-aware** — breakouts/EPs stay capped at B below posture 65; patient
+     worth_waiting/AVWAP setups with `ext50_adr<3` can reach **A even in mixed tape** (user choice: "let the
+     best reach A now").
+- **Result on the 796 (posture 58):** A=12, B=47 (was 98), C=167, D=570. SEDG→C; no ≥4×-ADR name above C;
+  the A's are clean pullback/consolidation/AVWAP at support (incl. DOCN, the user's model trade). Magnitudes
+  are a starting calibration — tune via the forward-test loop. **Restart python + re-scan.**
+
 ## 2026-06-02 (Dual entries, live rotation, forward-test fixes — session)
 
 ### Dual entry options + EP relabel (`scanner.py`, `app.py`, `web/`)

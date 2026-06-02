@@ -771,14 +771,18 @@ def analyze(sym, bars, settings=None):
         stop_basis = "1x ADR below the trigger"
     risk_ps = round(entry - stop, 2)
     target = round(entry + 2 * risk_ps, 2)
-    # entry-location quality (0-100): penalize buying stretched far above the 10-EMA and
-    # penalize a stop forced near the full 1x-ADR limit. A valid setup bought right on the
+    # entry-location quality (0-100): penalize buying stretched far above the 10-EMA, far above the
+    # 50-EMA/BASE, and a stop forced near the full 1x-ADR limit. A valid setup bought right on the
     # rising line with a tight stop scores ~100; the same setup chased 2x ADR up scores low.
     stretch_x = max(0.0, ext10 / adr_safe)
     stretch_pen = min(50.0, stretch_x * 25.0)
+    # distance above the 50-EMA (the base) in ADR units — on a parabolic name the 10-EMA is itself far
+    # above the 50, so a chase sitting ON its 10-EMA used to score high; this term closes that blind spot.
+    ext50_eq = ((close / e50 - 1) * 100 / adr_safe) if e50 else 0.0
+    stretch50_pen = min(40.0, max(0.0, ext50_eq - 1.0) * 12.0)
     one_adr_px = entry * adr / 100 or 1
     width_pen = min(40.0, max(0.0, risk_ps / one_adr_px - 0.4) * 60.0)
-    entry_quality = round(max(0.0, 100.0 - stretch_pen - width_pen))
+    entry_quality = round(max(0.0, 100.0 - stretch_pen - stretch50_pen - width_pen))
     # buy zone = a band around the entry (you don't need an exact tick). Being inside it = buyable now.
     adr_px = entry * adr / 100
     if entry_type == "limit":
@@ -802,7 +806,7 @@ def analyze(sym, bars, settings=None):
     # vertical move. Measured as distance above the 50 EMA in ADR units. Patient dip-buy setups
     # (deep pullback / consolidation) are exempt — they buy INTO the 50/support, not extended above it.
     ext50_adr = ((close / e50 - 1) * 100 / adr_safe) if e50 else 0.0
-    parabolic = ext50_adr >= 4.5
+    parabolic = ext50_adr >= 4.0          # ≥4x ADR above the 50 = a chase (my-rules); also hard-caps the grade at C
     if parabolic and not worth_waiting:
         buyable_now = False
 
@@ -836,6 +840,26 @@ def analyze(sym, bars, settings=None):
         if distribution_today or extended or (parabolic and not worth_waiting):
             alt["buyable_now"] = False                   # never flag an alt buyable into a hot/extended move
         entries.append(alt)
+    # per-ENTRY grade factors so each option is graded on ITS OWN merit (the app grades per entry):
+    # entry location vs the 10/50-EMA + stop width AT that entry, plus whether it's exempt from the
+    # chase cap. A buy-the-dip pullback and a chase-the-breakout buy-stop on the same name grade apart.
+    for e in entries:
+        ep, sp = e["entry"], e["stop"]
+        # grade at the price you'd actually PAY: a buy-stop fills at its (higher) trigger; a pullback
+        # that's BUYABLE NOW fills at the current price (you buy in the upper zone), not the lower limit —
+        # so a "buy the dip" that's already extended (APLD at 48 vs its 46 limit) still grades as extended.
+        gp = max(ep, close) if (e["entry_type"] == "limit" and e.get("buyable_now")) else ep
+        ex10 = (gp / e10 - 1) * 100 / adr_safe if e10 else 0.0
+        ex50 = (gp / e50 - 1) * 100 / adr_safe if e50 else 0.0
+        spen = min(50.0, max(0.0, ex10) * 25.0)
+        s50pen = min(40.0, max(0.0, ex50 - 1.0) * 12.0)
+        adr_px_e = ep * adr / 100 or 1
+        wpen = min(40.0, max(0.0, (ep - sp) / adr_px_e - 0.4) * 60.0)
+        e["ext50_adr"] = round(ex50, 1)
+        e["entry_quality"] = round(max(0.0, 100.0 - spen - s50pen - wpen))
+        # the pullback option of a patient setup (deep pullback / consolidation) buys INTO support with a
+        # tight stop -> exempt from the chase cap; breakout options (and other pullbacks) never are.
+        e["chase_exempt"] = bool(worth_waiting and e["kind"] == "pullback")
 
     # ----- sizing -----
     acct = settings.get("account_size")
