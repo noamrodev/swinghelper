@@ -13,6 +13,13 @@ function workspaceId() {
   return id;
 }
 
+// Which market the user is viewing (US default, or IL = Tel Aviv). Sent as X-Market on
+// every request so the server routes to that market's separate data (suggestions, account,
+// positions, forward test). Persisted per browser.
+function currentMarket() {
+  return localStorage.getItem('dc_market') || 'us';
+}
+
 function dataCenter() {
   return {
     nav: [
@@ -26,6 +33,7 @@ function dataCenter() {
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
     view: 'dashboard',
+    market: currentMarket(),     // 'us' (default) or 'il' (Tel Aviv) — switches all data
     mobileNav: false,
     hosted: false,
     // pages hidden on the hosted free service (no persistent storage there, so they can't save)
@@ -168,6 +176,7 @@ function dataCenter() {
       this.applyScale();
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
       try { this.hosted = !!(await this.api('/env')).hosted; } catch (e) {}
+      if (this.hosted) { this.market = 'us'; localStorage.setItem('dc_market', 'us'); }   // IL is local-only; site stays US
       if (this.hosted && this.hostedHidden.includes(this.view)) this.view = 'dashboard';
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(), this.loadDoc('lessons'),
@@ -206,6 +215,7 @@ function dataCenter() {
       if (!q || q.price == null) return;
       const lb = cm._bars[cm._bars.length - 1];
       try { cm._series.update({ time: lb.time, open: lb.open, high: Math.max(lb.high, q.price), low: Math.min(lb.low, q.price), close: q.price }); } catch (e) {}
+      if (cm._priceLine) { try { cm._priceLine.applyOptions({ price: +q.price.toFixed(2) }); } catch (e) {} }   // keep the white price mark live
       // live rotation: keep the stop pinned to today's low as the session builds
       if (cm._rotStop && cm._rotEntry && q.day_low != null) {
         let st = q.day_low;
@@ -399,10 +409,32 @@ function dataCenter() {
         : ['POST', 'POSTPOST'].includes(this.live.market_state) ? 'After-hours P&L' : 'Extended P&L';
     },
     async api(path, method = 'GET', body) {
-      const opt = { method, headers: { 'Content-Type': 'application/json', 'X-Workspace': workspaceId() } };
+      const opt = { method, headers: { 'Content-Type': 'application/json', 'X-Workspace': workspaceId(), 'X-Market': currentMarket() } };
       if (body) opt.body = JSON.stringify(body);
       const r = await fetch('/api' + path, opt);
       return r.json();
+    },
+
+    // ---------- market switch (US <-> Israel/TASE) ----------
+    toggleMarket() {
+      this.market = this.market === 'il' ? 'us' : 'il';
+      localStorage.setItem('dc_market', this.market);
+      this.reloadAll();
+    },
+    get marketLabel() { return this.market === 'il' ? '🇮🇱 IL' : '🇺🇸 US'; },
+    get cur() { return this.market === 'il' ? '₪' : '$'; },   // currency glyph for price labels (TASE quotes in agorot)
+    async reloadAll() {
+      // re-fetch everything under the new X-Market so the whole dashboard, account,
+      // positions, suggestions and forward test swap to the selected market.
+      this.gameplan = null; this.forward = null; this.openForwardDay = null; this.pnlCal = {};
+      this.live = { prices: {}, market_state: null, updated_at: null, posture: null };
+      await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
+        this.loadTrades(), this.loadWatchlist(), this.loadStats(),
+        this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
+      this.loadGameplan();
+      this.loadForward(); this.loadPnlCal();
+      const def = this.screeners.find(s => s.is_default) || this.screeners[0];
+      this.scanScreener = this.suggestions.screener_id || (def && def.id) || '';
     },
 
     // ---------- loaders ----------
@@ -482,8 +514,9 @@ function dataCenter() {
         : d === 'avoid' ? 'background:rgba(255,93,115,.12);border-color:rgba(255,93,115,.55)'
         : 'background:rgba(255,181,61,.12);border-color:rgba(255,181,61,.5)';
     },
-    gradeColor(g) { return (g === 'A+' || g === 'A') ? '#22e0a1' : g === 'B' ? '#6a8dff' : g === 'C' ? '#ffb53d' : '#93a1b8'; },
+    gradeColor(g) { const b = (g || '')[0]; return b === 'A' ? '#22e0a1' : b === 'B' ? '#6a8dff' : b === 'C' ? '#ffb53d' : '#93a1b8'; },
     gradeLetter(r) { return r >= 82 ? 'A+' : r >= 73 ? 'A' : r >= 63 ? 'B' : r >= 52 ? 'C' : 'D'; },
+    _plusGrade(g) { return !g ? g : (g.endsWith('+') ? g : g + '+'); },   // B -> B+, A -> A+ (A+ stays A+)
     entryGradeStats(list) {
       const g = (list || []).filter(t => t.entry_rating != null);
       if (!g.length) return null;
@@ -642,9 +675,9 @@ function dataCenter() {
     },
     fmtDollarVol(v) {
       if (!v) return '—';
-      if (v >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B/d';
-      if (v >= 1e6) return '$' + Math.round(v / 1e6) + 'M/d';
-      return '$' + Math.round(v / 1e3) + 'K/d';
+      if (v >= 1e9) return this.cur + (v / 1e9).toFixed(1) + 'B/d';
+      if (v >= 1e6) return this.cur + Math.round(v / 1e6) + 'M/d';
+      return this.cur + Math.round(v / 1e3) + 'K/d';
     },
     liqColor(score) {
       if (score == null) return '#93a1b8';
@@ -732,7 +765,7 @@ function dataCenter() {
     },
     async deleteScreener(id) {
       if (!confirm('Delete this screener?')) return;
-      await fetch('/api/screeners/' + id, { method: 'DELETE', headers: { 'X-Workspace': workspaceId() } });
+      await fetch('/api/screeners/' + id, { method: 'DELETE', headers: { 'X-Workspace': workspaceId(), 'X-Market': currentMarket() } });
       await this.loadScreeners();
     },
 
@@ -914,10 +947,11 @@ function dataCenter() {
     // a LIMIT is a dip to support ("wait for the pullback") — never "pull back" for a stop.
     // Prefer the plan's own trigger_note (set by the engine / the live rotation) when present.
     entryHint(e, close) {
-      const now = close != null ? ` (now $${close})` : '';
-      if (e.trigger_note) return (e.entry_type === 'stop' ? '▲ ' : '⏳ ') + e.trigger_note + now;
-      if (e.entry_type === 'stop') return `▲ break above $${e.entry} to trigger${now}`;
-      return `⏳ wait for the pullback to $${e.entry}${now}`;
+      const cur = this.cur;
+      const now = close != null ? ` (now ${cur}${close})` : '';
+      if (e.trigger_note) return ((e.entry_type === 'stop' ? '▲ ' : '⏳ ') + e.trigger_note + now).replaceAll('$', cur);
+      if (e.entry_type === 'stop') return `▲ break above ${cur}${e.entry} to trigger${now}`;
+      return `⏳ wait for the pullback to ${cur}${e.entry}${now}`;
     },
     // LIVE intraday rotation: once the market's open and a (non-patient) name has broken out and
     // sits ABOVE its daily pullback zone, the realistic pullback entry is the rotation — buy the
@@ -963,6 +997,51 @@ function dataCenter() {
       return { ...e, ...rot, entry_type: 'stop', rotation: true, shares,
         trigger_note: note, entry_note: 'intraday rotation: reclaim the prior-day high, stop at the day low' };
     },
+    // LIVE "pullback catch of the breakout" for patient deep-dip setups (Deep Pullback / Consolidation):
+    // once the market's open and a strong leader has ALREADY BROKEN OUT above its deep dip zone, a
+    // pullback all the way to the 50 EMA is unlikely. The realistic dip is a SHALLOW pullback to the
+    // nearest rising EMA (10/20) — so swap the deep zone for a catch there (buy-limit, ≤1× ADR stop).
+    // Live/market-hours only; EOD the deep zone stands. Returns the catch levels or null.
+    breakoutCatchFor(s) {
+      if (!s || !s.worth_waiting) return null;
+      const q = (this.live.prices || {})[s.ticker];
+      if (!q || q.market_state !== 'REGULAR' || q.price == null) return null;
+      const price = q.price;
+      const pb = (s.entries || []).find(e => e.kind === 'pullback');
+      const zoneTop = pb ? (pb.zone_top != null ? pb.zone_top : pb.entry) : s.zone_top;
+      if (zoneTop == null || price <= zoneTop) return null;          // not broken out → keep the deep zone
+      const adrPx = price * (s.adr || 0) / 100 || 0.01;
+      const below = [['10 EMA', s.ema10], ['20 EMA', s.ema20]].filter(([l, v]) => v && v <= price - 0.2 * adrPx);
+      if (!below.length) return null;            // price hugging the EMAs → no meaningful dip to catch
+      const [lbl, lvl] = below.reduce((a, b) => (b[1] > a[1] ? b : a));   // highest (nearest) EMA below price
+      const entry = +(+lvl).toFixed(2);
+      const stop = +(entry - adrPx).toFixed(2);  // ≤1× ADR below the catch EMA
+      const riskPs = +(entry - stop).toFixed(2);
+      if (riskPs <= 0) return null;
+      return { entry, stop, risk_ps: riskPs, lbl, status: 'catch', buyable_now: false,
+        zone_bottom: entry, zone_top: +(entry + 0.4 * adrPx).toFixed(2), target: +(entry + 2 * riskPs).toFixed(2) };
+    },
+    // merge a live breakout-catch onto the pullback entry for display (entry/stop/zone/sizing + phrasing)
+    _applyCatch(s, e, cat) {
+      const acct = this.settings.account_size, rp = this.settings.risk_pct || 1, mp = this.settings.max_position_pct || 15;
+      let shares = null;
+      if (acct && cat.risk_ps > 0) shares = Math.max(0, Math.min(
+        Math.floor(acct * rp / 100 / cat.risk_ps), Math.floor(acct * mp / 100 / cat.entry), Math.floor(acct / cat.entry)));
+      // GRADE: the catch is NOT the original deep pullback (its A grade) — it's a pullback INTO a
+      // breakout, so grade it off the confirmation/breakout option + one notch ("a +"): better than
+      // chasing the confirmed breakout (you get a dip entry), but not the deep-pullback's A.
+      const base = (s.entries || []).find(x => x.kind === 'confirm') || (s.entries || []).find(x => x.kind === 'breakout');
+      let grade = e.grade, rating = e.rating;
+      if (base && base.grade) {
+        grade = this._plusGrade(base.grade);
+        rating = Math.min((base.rating || 63) + 5, 81);     // a notch up, never crossing into A+ territory
+      } else if (e.rating != null) {                         // no momentum option to anchor on -> demote a notch
+        rating = Math.max(52, e.rating - 10); grade = this.gradeLetter(rating);
+      }
+      return { ...e, ...cat, entry_type: 'limit', breakoutCatch: true, shares, grade, rating,
+        trigger_note: `broke out — catch a dip to the ${cat.lbl} $${cat.entry} (the deep dip is now unlikely) · stop $${cat.stop}`,
+        entry_note: `pullback catch of today's breakout — buy the dip to the ${cat.lbl}` };
+    },
     // the entries to render for a card/chart — the pullback option swapped for the live rotation
     // when one applies. Falls back to a single synthesized entry for legacy items without `entries`.
     displayEntries(s) {
@@ -972,9 +1051,32 @@ function dataCenter() {
         zone_top: s.zone_top, buyable_now: s.buyable_now, shares: s.shares, risk_ps: s.risk_ps,
         trigger_note: s.trigger_note,
       }];
-      const rot = this.rotationFor(s);
-      if (!rot) return entries;
-      return entries.map(e => e.kind === 'pullback' ? this._applyRot(s, e, rot) : e);
+      const rot = this.rotationFor(s);                 // non-patient: reclaim the prior-day high
+      const cat = rot ? null : this.breakoutCatchFor(s); // patient + broke out: shallow catch to nearest EMA
+      return entries.map(e => {
+        if (e.kind === 'pullback') return rot ? this._applyRot(s, e, rot) : (cat ? this._applyCatch(s, e, cat) : e);
+        if (e.kind === 'confirm') return this._confirmDayStop(s, e);    // breakout confirm: stop at the day low (live)
+        return e;
+      });
+    },
+    // LIVE: a confirmation entry is a breakout buy-STOP — once it triggers the real invalidation is the
+    // DAY'S LOW (same as the rotation), not a fixed 1× ADR stop. While the market's open, tighten the
+    // confirm stop to today's low (floored so a gap isn't ~0 risk; never WIDER than the 1× ADR stop).
+    _confirmDayStop(s, e) {
+      const q = (this.live.prices || {})[s.ticker];
+      if (!q || q.market_state !== 'REGULAR' || q.day_low == null || e.entry == null) return e;
+      const entry = e.entry, adrPx = entry * (s.adr || 0) / 100 || 0.01;
+      let stop = Math.max(q.day_low, e.stop);                       // tighten to the day low, but never wider than 1× ADR
+      if (entry - stop < 0.3 * adrPx) stop = entry - 0.3 * adrPx;   // floor so a gap-up isn't ~0 risk
+      stop = +stop.toFixed(2);
+      const risk = +(entry - stop).toFixed(2);
+      if (risk <= 0) return e;
+      const acct = this.settings.account_size, rp = this.settings.risk_pct || 1, mp = this.settings.max_position_pct || 15;
+      let shares = null;
+      if (acct && risk > 0) shares = Math.max(0, Math.min(
+        Math.floor(acct * rp / 100 / risk), Math.floor(acct * mp / 100 / entry), Math.floor(acct / entry)));
+      return { ...e, stop, risk_ps: risk, shares, dayLowStop: true,
+        trigger_note: (e.trigger_note || '') + ` · stop = day low $${stop}` };
     },
 
     // ---------- watchlist ----------
@@ -1118,6 +1220,7 @@ function dataCenter() {
       const series = chart.addCandlestickSeries({
         upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
         wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+        lastValueVisible: false,        // hide the green/red price tag — we mark price in WHITE below
       });
       const bars = data.bars || [];
       series.setData(bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
@@ -1168,11 +1271,10 @@ function dataCenter() {
         chLine(data.channel.lower, 2, 0);
         chLine(data.channel.mid, 1, 2);   // dashed midline
       }
-      // buy-zone band (green) + stop (red) for the SELECTED setup; the other setup(s) drawn faint.
+      // buy-zone band (green) + stop (red) for the SELECTED setup only (toggle switches setups).
       // The pullback option may be a LIVE rotation (reclaim the prior-day high, stop = day low) —
       // its stop line is tracked so the live tick can move it with today's low.
       const pl = (p, c, w, style, title) => p ? series.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: style, axisLabelVisible: true, title }) : null;
-      const faint = (p, c) => { if (p) series.createPriceLine({ price: p, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' }); };
       this.chartModal._rotStop = null;
       // signal bar = the prior close the snapshot was frozen at (last bar BEFORE the act-session date)
       let sigTime = null;
@@ -1208,25 +1310,24 @@ function dataCenter() {
         const dEntries = this.displayEntries(obj);
         const idx = dEntries.length ? Math.min(this.chartModal.entryIdx || 0, dEntries.length - 1) : 0;
         const e = dEntries.length ? dEntries[idx] : obj;
-        // faint markers for the OTHER live setup(s)
-        dEntries.forEach((o, oi) => {
-          if (oi === idx) return;
-          faint(o.zone_bottom || o.entry, 'rgba(34,224,161,.35)');
-          faint(o.zone_top, 'rgba(34,224,161,.22)');
-          faint(o.stop, 'rgba(255,93,115,.35)');
-        });
+        // draw ONLY the selected setup's levels (the toggle above switches setups) — drawing the other
+        // setup faintly cluttered the view, especially with the confirm/pullback levels close together.
         if (e.zone_top && e.zone_bottom) {
           pl(e.zone_top, '#22e0a1', 1, 2, e.rotation ? 'Reclaim ≤' : 'Buy ≤');
           pl(e.zone_bottom, '#22e0a1', 2, 0, e.rotation ? 'Reclaim (prior-day high)' : 'Buy ≥');
         } else if (e.entry || obj.entry || obj.planned_entry) {
           pl(e.entry || obj.entry || obj.planned_entry, '#22e0a1', 2, 0, 'Entry');
         }
-        const stopLine = pl(e.stop || obj.stop, '#ff5d73', 1, 2, e.rotation ? 'Stop (day low)' : 'Stop');
-        if (e.rotation && stopLine) {
+        const stopLine = pl(e.stop || obj.stop, '#ff5d73', 1, 2, (e.rotation || e.dayLowStop) ? 'Stop (day low)' : 'Stop');
+        if ((e.rotation || e.dayLowStop) && stopLine) {     // keep the day-low stop tracking today's low live
           this.chartModal._rotStop = stopLine;
           this.chartModal._rotEntry = e.entry;
           this.chartModal._rotAdrPx = (e.entry || 0) * (obj.adr || 0) / 100 || 0.01;
         }
+        // current price marked in WHITE (neutral) so it never reads as a green buy / red stop level
+        const _px = ((this.live.prices || {})[this.chartModal.ticker] || {}).price
+          || (bars.length ? bars[bars.length - 1].close : null);
+        if (_px) this.chartModal._priceLine = series.createPriceLine({ price: +(+_px).toFixed(2), color: '#ffffff', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
       }
       // forward-test snapshot: drop a marker at the SIGNAL bar so you can watch the price action AFTER it
       // (the entry/stop rays start here — fills only count from this bar forward).
@@ -1239,7 +1340,7 @@ function dataCenter() {
     closeChart() {
       if (this.chartModal._ro) { try { this.chartModal._ro.disconnect(); } catch (e) {} this.chartModal._ro = null; }
       if (this.chartModal._chart) { this.chartModal._chart.remove(); this.chartModal._chart = null; }
-      this.chartModal._series = null; this.chartModal._bars = null; this.chartModal._rotStop = null;
+      this.chartModal._series = null; this.chartModal._bars = null; this.chartModal._rotStop = null; this.chartModal._priceLine = null;
       this.chartModal._meta = null; this.chartModal._showLive = false;
       this.chartModal.open = false;
     },

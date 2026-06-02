@@ -52,13 +52,13 @@
         <div>Account:
           <span class="text-slate-300 font-semibold"
             :title="settings.equity_info ? ('base $'+Number(settings.equity_info.base).toLocaleString()+' + open $'+Number(settings.equity_info.open).toLocaleString()+' + realized $'+Number(settings.equity_info.realized).toLocaleString()) : 'set your account size in Settings'"
-            x-text="settings.equity_info ? ('$'+Number(settings.equity_info.equity).toLocaleString()) : (settings.account_size ? ('$'+Number(settings.account_size).toLocaleString()) : 'not set')"></span>
+            x-text="settings.equity_info ? (cur+Number(settings.equity_info.equity).toLocaleString()) : (settings.account_size ? (cur+Number(settings.account_size).toLocaleString()) : 'not set')"></span>
           <span x-show="settings.equity_info && (settings.equity_info.open || settings.equity_info.realized)" class="text-[10px]"
             :class="(settings.equity_info && (settings.equity_info.open+settings.equity_info.realized)>=0)?'text-up':'text-down'"
-            x-text="settings.equity_info ? ('('+(((settings.equity_info.open+settings.equity_info.realized))>=0?'+':'')+'$'+Number(settings.equity_info.open+settings.equity_info.realized).toLocaleString()+' P&L)') : ''"></span>
+            x-text="settings.equity_info ? ('('+(((settings.equity_info.open+settings.equity_info.realized))>=0?'+':'')+cur+Number(settings.equity_info.open+settings.equity_info.realized).toLocaleString()+' P&L)') : ''"></span>
         </div>
         <div>Risk/trade: <span class="text-slate-300 font-semibold" x-text="(settings.risk_pct||1)+'%'"></span>
-          <span x-show="settings.account_size" class="text-up font-semibold" x-text="'≈ $'+riskDollar"></span>
+          <span x-show="settings.account_size" class="text-up font-semibold" x-text="'≈ '+cur+riskDollar"></span>
         </div>
       </div>
     </aside>
@@ -70,7 +70,11 @@
           <button class="md:hidden text-2xl leading-none text-slate-300 hover:text-white" @click="mobileNav=true" aria-label="Open menu">☰</button>
           <h1 class="text-xl font-semibold truncate" x-text="nav.find(n=>n.id===view)?.label"></h1>
         </div>
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+          <button x-show="!hosted" @click="toggleMarket()" x-text="marketLabel"
+            :title="'Market: '+(market==='il'?'Tel Aviv (TASE) — click for US':'US — click for Tel Aviv (TASE)')"
+            class="text-xs font-bold px-2.5 py-1 rounded-lg border transition"
+            :style="market==='il'?'color:#5b8cff;border-color:rgba(91,140,255,.5);background:rgba(91,140,255,.10)':'color:#93a1b8;border-color:#222c3c'"></button>
           <button @click="toggleLive()" :title="liveOn?'Live updates on — click to pause':'Live updates paused — click to resume'"
             class="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border transition"
             :style="(liveOn&&marketOpen)?'color:#22e0a1;border-color:rgba(34,224,161,.5);background:rgba(34,224,161,.08)':'color:#93a1b8;border-color:#222c3c'">
@@ -124,18 +128,18 @@
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             <div class="stat" x-show="settings.equity_info" title="Account equity = base + realized (closed) + open (unrealized) P&L. This is what position sizing uses.">
               <div class="stat-label">Equity</div>
-              <div class="stat-val" x-text="settings.equity_info ? '$'+Math.round(settings.equity_info.equity).toLocaleString() : '—'"></div>
+              <div class="stat-val" x-text="settings.equity_info ? cur+Math.round(settings.equity_info.equity).toLocaleString() : '—'"></div>
             </div>
             <div class="stat" title="Today's REGULAR-session move on your open positions: (regular-session price − yesterday's close) × shares. Pre/after-hours moves are shown separately, on the line below.">
               <div class="stat-label flex items-center gap-1">Today's P&L <span x-show="dailyPnl!=null && marketOpen" class="text-up text-[8px]" title="live">●</span></div>
-              <div class="stat-val" :class="(dailyPnl||0)>=0?'text-up':'text-down'" x-text="dailyPnl!=null ? ((dailyPnl>=0?'+':'-')+'$'+Math.abs(Math.round(dailyPnl)).toLocaleString()) : '—'"></div>
+              <div class="stat-val" :class="(dailyPnl||0)>=0?'text-up':'text-down'" x-text="dailyPnl!=null ? ((dailyPnl>=0?'+':'-')+cur+Math.abs(Math.round(dailyPnl)).toLocaleString()) : '—'"></div>
               <div class="text-[10px] font-semibold mt-0.5" x-show="extPnl!=null" :class="(extPnl||0)>=0?'text-up':'text-down'"
                    :title="'Pre-market / after-hours move (extended price − regular-session close) × shares. Kept separate — extended-hours prices are thin and often don\'t hold into the next open.'">
-                🌙 <span x-text="extLabel"></span>: <span x-text="extPnl!=null ? ((extPnl>=0?'+':'-')+'$'+Math.abs(Math.round(extPnl)).toLocaleString()) : ''"></span>
+                🌙 <span x-text="extLabel"></span>: <span x-text="extPnl!=null ? ((extPnl>=0?'+':'-')+cur+Math.abs(Math.round(extPnl)).toLocaleString()) : ''"></span>
               </div>
             </div>
-            <div class="stat" title="Total profit since you entered: (current price − your entry) × shares, summed across open positions."><div class="stat-label">Open P&L</div><div class="stat-val" :class="openPnl>=0?'text-up':'text-down'" x-text="(openPnl>=0?'+':'-')+'$'+Math.abs(Math.round(openPnl)).toLocaleString()"></div></div>
-            <div class="stat"><div class="stat-label">Realized P&L</div><div class="stat-val" :class="realizedPnl>=0?'text-up':'text-down'" x-text="(realizedPnl>=0?'+':'-')+'$'+Math.abs(Math.round(realizedPnl)).toLocaleString()"></div></div>
+            <div class="stat" title="Total profit since you entered: (current price − your entry) × shares, summed across open positions."><div class="stat-label">Open P&L</div><div class="stat-val" :class="openPnl>=0?'text-up':'text-down'" x-text="(openPnl>=0?'+':'-')+cur+Math.abs(Math.round(openPnl)).toLocaleString()"></div></div>
+            <div class="stat"><div class="stat-label">Realized P&L</div><div class="stat-val" :class="realizedPnl>=0?'text-up':'text-down'" x-text="(realizedPnl>=0?'+':'-')+cur+Math.abs(Math.round(realizedPnl)).toLocaleString()"></div></div>
             <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null ? stats.win_rate+'%' : '—'"></div></div>
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null ? stats.avg_r+'R' : '—'"></div></div>
           </div>
@@ -163,9 +167,9 @@
                 </div>
                 <!-- exposure mini-stats -->
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center" x-show="gameplan.exposure.account">
-                  <div class="lvl"><div class="lvl-l">Invested</div><div class="font-bold" x-text="gameplan.exposure.invested_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="'$'+Math.round(gameplan.exposure.invested).toLocaleString()"></div></div>
-                  <div class="lvl"><div class="lvl-l">Free cash</div><div class="font-bold text-up" x-text="'$'+Math.round(gameplan.exposure.free_cash).toLocaleString()"></div></div>
-                  <div class="lvl"><div class="lvl-l">Open risk</div><div class="font-bold" :class="gameplan.exposure.open_risk_pct>2?'text-warn':''" x-text="gameplan.exposure.open_risk_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="'$'+Math.round(gameplan.exposure.open_risk).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Invested</div><div class="font-bold" x-text="gameplan.exposure.invested_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.invested).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Free cash</div><div class="font-bold text-up" x-text="cur+Math.round(gameplan.exposure.free_cash).toLocaleString()"></div></div>
+                  <div class="lvl"><div class="lvl-l">Open risk</div><div class="font-bold" :class="gameplan.exposure.open_risk_pct>2?'text-warn':''" x-text="gameplan.exposure.open_risk_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.open_risk).toLocaleString()"></div></div>
                   <div class="lvl"><div class="lvl-l">Positions</div><div class="font-bold" x-text="gameplan.exposure.positions"></div></div>
                 </div>
                 <!-- Your positions — manage + full detail merged (live coach; premarket-aware via _liveCoach) -->
@@ -191,7 +195,7 @@
                           <span class="font-bold shrink-0 w-14" x-text="t.ticker"></span>
                           <span class="shrink-0 text-xs font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'">
                             <span x-show="t._live" class="text-up text-[8px] align-middle" title="live price">●</span>
-                            <span x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()"></span><span class="opacity-80" x-show="t.pnl_pct!=null" x-text="' ('+(t.pnl_pct>=0?'+':'')+t.pnl_pct+'%)'"></span>
+                            <span x-text="(t.pnl>=0?'+':'')+cur+Math.round(t.pnl).toLocaleString()"></span><span class="opacity-80" x-show="t.pnl_pct!=null" x-text="' ('+(t.pnl_pct>=0?'+':'')+t.pnl_pct+'%)'"></span>
                           </span>
                           <span class="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded" x-show="t._extPct!=null" :class="t._extPct>=0?'text-up':'text-down'" style="background:rgba(255,181,61,.12)"
                                 :title="extLabel+' move on this position: '+(t._extImpact!=null?((t._extImpact>=0?'+$':'-$')+Math.abs(Math.round(t._extImpact)).toLocaleString()):'')">
@@ -208,8 +212,8 @@
                               :title="'System grade of this setup at entry ('+(t.taken_at||'')+') — '+(t.grade_note||'')+(t.graded_setup&&t.graded_setup!==t.setup_type?'. Engine read the setup as '+t.graded_setup+'.':'')">grade <span x-text="t.entry_grade"></span></span>
                             <span class="badge" x-show="t.low_grade" style="color:#ffb53d;border-color:rgba(255,181,61,.5)" title="Below B at entry — worth reviewing why you took it">⚠ low</span>
                           </div>
-                          <div class="text-xs text-slate-400">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span><span x-show="t.initial_stop!=null" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh · P&L <span x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></span><span x-show="t._extPct!=null" :class="t._extPct>=0?'text-up':'text-down'"> · 🌙 <span x-text="extLabel.replace(' P&L','')"></span> <span x-text="(t._extPct>=0?'+':'')+t._extPct+'%'"></span><span x-show="t._extImpact!=null" x-text="' ('+(t._extImpact>=0?'+$':'-$')+Math.abs(Math.round(t._extImpact)).toLocaleString()+')'"></span></span></div>
-                          <div x-show="t._hitTarget" class="text-xs"><span class="badge font-bold" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">🎯 hit target ($<span x-text="t.target"></span>) — trim / trail the rest</span></div>
+                          <div class="text-xs text-slate-400">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span><span x-show="t.initial_stop!=null" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh · P&L <span x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+cur+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></span><span x-show="t._extPct!=null" :class="t._extPct>=0?'text-up':'text-down'"> · 🌙 <span x-text="extLabel.replace(' P&L','')"></span> <span x-text="(t._extPct>=0?'+':'')+t._extPct+'%'"></span><span x-show="t._extImpact!=null" x-text="' ('+(t._extImpact>=0?'+$':'-$')+Math.abs(Math.round(t._extImpact)).toLocaleString()+')'"></span></span></div>
+                          <div x-show="t._hitTarget" class="text-xs"><span class="badge font-bold" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">🎯 hit target (<span x-text="cur"></span><span x-text="t.target"></span>) — trim / trail the rest</span></div>
                           <template x-if="(t._liveCoach||t.coach)">
                             <div class="flex items-start gap-2 flex-wrap text-xs">
                               <span class="text-slate-400 flex-1 min-w-[180px]" x-text="(t._liveCoach&&t._liveCoach.reason)||((t.coach&&t.coach.reasons)?t.coach.reasons[0]:'')"></span>
@@ -255,7 +259,7 @@
                           <span class="shrink-0">⏳</span>
                           <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
                           <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
-                          <span class="text-slate-400 text-xs flex-1" x-text="s.trigger_note || (s.entry_type==='stop' ? ('▲ break above $'+s.entry) : ('⏳ wait for pullback to $'+s.entry))"></span>
+                          <span class="text-slate-400 text-xs flex-1" x-text="(s.trigger_note ? s.trigger_note.replaceAll('$',cur) : (s.entry_type==='stop' ? ('▲ break above '+cur+s.entry) : ('⏳ wait for pullback to '+cur+s.entry)))"></span>
                           <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
                         </div>
                       </template>
@@ -299,7 +303,7 @@
                 <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
                 <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)" x-text="trendIcon(s.theme_trend)+' '+s.theme_trend"></span>
                 <span class="badge" x-show="s.news_flag" x-text="s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰'"></span>
-                <div class="flex-1 text-slate-500 truncate hidden lg:block" x-text="s.entry_note"></div>
+                <div class="flex-1 text-slate-500 truncate hidden lg:block" x-text="(s.entry_note||'').replaceAll('$',cur)"></div>
                 <div class="text-slate-300 text-right whitespace-nowrap" x-text="(s.entry_type==='limit'?'limit ':'stop ')+s.entry"></div>
               </div>
             </template>
@@ -369,8 +373,8 @@
                 <div class="text-[11px] text-slate-500 mt-2" x-show="calc.entry && calc.stop && calc.stop<calc.entry">stop is <span x-text="(((calc.entry-calc.stop)/calc.entry)*100).toFixed(1)"></span>% below entry</div>
                 <div class="grid grid-cols-2 gap-3 mt-3" x-show="calcShares!=null">
                   <div class="lvl"><div class="lvl-l">Buy</div><div class="text-xl font-extrabold text-accent" x-text="calcShares+' sh'"></div></div>
-                  <div class="lvl"><div class="lvl-l">Cost</div><div class="text-lg font-bold" x-text="'$'+calcCost"></div><div class="text-[10px] text-slate-500" x-text="calcPct+'% acct'"></div></div>
-                  <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-lg font-bold text-down" x-text="'$'+calcRisk"></div><div class="text-[10px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
+                  <div class="lvl"><div class="lvl-l">Cost</div><div class="text-lg font-bold" x-text="cur+calcCost"></div><div class="text-[10px] text-slate-500" x-text="calcPct+'% acct'"></div></div>
+                  <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-lg font-bold text-down" x-text="cur+calcRisk"></div><div class="text-[10px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
                   <div class="lvl"><div class="lvl-l">Buying power</div><div class="text-lg font-bold" :class="calcPct>100?'text-down':''" x-text="calcPct+'%'"></div></div>
                 </div>
                 <div class="text-[11px] text-warn mt-2" x-show="calcCapped">⚠ Capped by <b x-text="calcCapReason"></b> — keeps the position within your limit.</div>
@@ -491,7 +495,7 @@
                     <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
                     <div class="text-[10px] text-slate-500" x-text="s.rating+'/100 · ADR '+s.adr+'%'"></div>
                     <div class="text-xs font-bold" x-show="s._livechg!=null" :class="s._livechg>=0?'text-up':'text-down'">
-                      <span class="text-up text-[9px]">●</span> $<span x-text="s.close"></span> <span x-text="(s._livechg>=0?'+':'')+s._livechg+'%'"></span>
+                      <span class="text-up text-[9px]">●</span> <span x-text="cur"></span><span x-text="s.close"></span> <span x-text="(s._livechg>=0?'+':'')+s._livechg+'%'"></span>
                     </div>
                     <span class="badge mt-1" x-show="s.status==='taken'" :class="statusClass(s.status)">✓ taken</span>
                   </div>
@@ -504,8 +508,12 @@
                     <div class="rounded-xl p-2.5" :class="ei===0?'border border-white/10 bg-white/[0.03]':'border border-white/5 bg-white/[0.015]'">
                       <div class="flex items-center justify-between gap-2 mb-1.5">
                         <div class="flex items-center gap-1.5 flex-wrap">
-                          <span class="badge shrink-0" :class="e.kind==='breakout'?'badge-ep':'badge-pullback'" x-text="(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback')+(ei===0?'':' · alt')"></span>
+                          <span class="badge shrink-0" :class="e.kind==='breakout'?'badge-ep':(e.kind==='confirm'?'':'badge-pullback')"
+                            :style="e.kind==='confirm'?'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)':''"
+                            :title="e.kind==='confirm'?'Confirmation entry — instead of catching the deep dip, buy once buyers prove themselves by reclaiming the 50 EMA (if price slid below it) or breaking the prior-day high. 1× ADR stop. Graded & forward-tested like any entry.':''"
+                            x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))+(ei===0?'':' · alt')"></span>
                           <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
+                          <span x-show="e.breakoutCatch" class="badge shrink-0" title="Market's open and this strong leader already BROKE OUT above its deep dip zone — a pullback all the way to the 50 EMA is unlikely now. The realistic dip is a shallow pullback to the nearest rising EMA; catch it there. Updates live." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">🎯 breakout catch</span>
                           <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
@@ -515,20 +523,20 @@
                       </div>
                       <div class="grid grid-cols-3 gap-2 text-center text-sm">
                         <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
-                        <div class="lvl"><div class="lvl-l" x-text="e.rotation?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
+                        <div class="lvl"><div class="lvl-l" x-text="(e.rotation||e.dayLowStop)?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
                         <div class="lvl"><div class="lvl-l">Target 2R</div><div class="font-bold" style="color:var(--cyan)" x-text="e.target"></div></div>
                       </div>
-                      <div x-show="e.buyable_now" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · $<span x-text="s.close"></span> is in the zone</div>
+                      <div x-show="e.buyable_now" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · <span x-text="cur"></span><span x-text="s.close"></span> is in the zone</div>
                       <div x-show="!e.buyable_now" class="text-xs text-slate-500 mt-1.5" x-text="entryHint(e, s.close)"></div>
-                      <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk $<span x-text="e.risk_ps"></span>/sh</div>
+                      <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk <span x-text="cur"></span><span x-text="e.risk_ps"></span>/sh</div>
                     </div>
                   </template>
                 </div>
                 <div x-show="s.earnings_soon" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,93,115,.16);color:#ffb3bf;border:1px solid rgba(255,93,115,.5)">⚠️ Earnings in <span x-text="s.earnings_days"></span>d<span x-show="s.earnings_estimate"> (est.)</span> — probably skip, binary risk</div>
                 <div x-show="s.distribution_today" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Distribution / reversal day — let it settle, don't buy the drop</div>
                 <div x-show="s.parabolic && !s.worth_waiting" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Extended ~<span x-text="s.ext50_adr"></span>× ADR above the 50 EMA — chasing; wait for a pullback</div>
-                <div class="text-xs text-slate-400">primary ≈$<span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> at 1% risk<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
-                <div class="text-xs text-slate-500" x-text="s.why"></div>
+                <div class="text-xs text-slate-400">primary ≈<span x-text="cur"></span><span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> at 1% risk<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
+                <div class="text-xs text-slate-500" x-text="(s.why||'').replaceAll('$',cur)"></div>
                 <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
                 <div class="flex gap-2 pt-1">
                   <button class="btn-sm flex-1" @click="showChart(s.ticker, s)">📈 Chart</button>
@@ -578,7 +586,7 @@
                   <div class="flex items-center justify-between gap-2">
                     <div class="flex items-baseline gap-2 min-w-0">
                       <span class="font-extrabold text-lg" x-text="m.ticker"></span>
-                      <span class="text-xs text-slate-500" x-text="'$'+m.price"></span>
+                      <span class="text-xs text-slate-500" x-text="cur+m.price"></span>
                     </div>
                     <div class="text-xl font-extrabold shrink-0" :class="m.gap>=0?'text-up':'text-down'" x-text="(m.gap>=0?'+':'')+m.gap+'%'"></div>
                   </div>
@@ -593,7 +601,7 @@
                     :class="m.news_dir==='good'?'text-up':m.news_dir==='bad'?'text-down':'text-slate-400'">
                     <span x-show="m.news_trump">🇺🇸 </span><span x-text="(m.news_dir==='good'?'📈 ':m.news_dir==='bad'?'📉 ':'📰 ')+m.news_headline"></span>
                   </a>
-                  <div class="text-[11px] text-slate-500 mt-2">prev close $<span x-text="m.prev_close"></span> · tap for chart</div>
+                  <div class="text-[11px] text-slate-500 mt-2">prev close <span x-text="cur"></span><span x-text="m.prev_close"></span> · tap for chart</div>
                 </div>
               </template>
             </div>
@@ -630,7 +638,7 @@
                   <div class="flex items-center justify-between gap-2">
                     <div class="flex items-baseline gap-2 min-w-0">
                       <span class="font-extrabold text-lg" x-text="s.ticker"></span>
-                      <span class="text-xs text-slate-500" x-text="'$'+s.price"></span>
+                      <span class="text-xs text-slate-500" x-text="cur+s.price"></span>
                     </div>
                     <div class="text-right shrink-0">
                       <div class="text-xl font-extrabold text-up" x-text="s.score"></div>
@@ -656,7 +664,7 @@
                     :class="s.news_dir==='good'?'text-up':s.news_dir==='bad'?'text-down':'text-slate-400'">
                     <span x-text="(s.news_dir==='good'?'📈 ':s.news_dir==='bad'?'📉 ':'📰 ')+s.news_headline"></span>
                   </a>
-                  <div class="text-[11px] text-slate-500 mt-2">stop idea: under intraday low $<span x-text="s.trough"></span> · 9EMA $<span x-text="s.ma"></span> · tap for chart</div>
+                  <div class="text-[11px] text-slate-500 mt-2">stop idea: under intraday low <span x-text="cur"></span><span x-text="s.trough"></span> · 9EMA <span x-text="cur"></span><span x-text="s.ma"></span> · tap for chart</div>
                 </div>
               </template>
             </div>
@@ -884,7 +892,7 @@
                   <div class="text-xs text-slate-500" x-text="t.taken_at"></div>
                 </div>
                 <div class="text-sm text-slate-400">entry <b class="text-slate-200" x-text="t.entry||t.planned_entry||'?'"></b> · stop <b class="text-down" x-text="t.stop"></b><span x-show="t.initial_stop!=null" class="text-slate-500" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh<span x-show="t.r_open!=null" class="ml-1" :class="t.r_open>=0?'text-up':'text-down'" :title="'unrealized R off the initial stop'"> · <span x-text="(t.r_open>=0?'+':'')+t.r_open+'R'"></span></span></div>
-                <div class="text-sm" x-show="t.pnl!=null">P&L <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></b> <span class="text-xs text-slate-500">@ <span x-text="t.last"></span></span></div>
+                <div class="text-sm" x-show="t.pnl!=null">P&L <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+cur+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></b> <span class="text-xs text-slate-500">@ <span x-text="t.last"></span></span></div>
                 <div class="text-xs text-slate-500" x-show="t.notes" x-text="t.notes"></div>
                 <div class="flex gap-2 flex-wrap" x-show="t.screenshots && t.screenshots.length">
                   <template x-for="sh in t.screenshots" :key="sh"><a :href="sh" target="_blank"><img :src="sh" class="h-16 rounded-lg border border-line"></a></template>
@@ -913,7 +921,7 @@
                   <b :class="t.result_r>=0?'text-up':'text-down'" x-text="(t.result_r>0?'+':'')+(t.result_r!=null?t.result_r+'R':'—')"></b>
                 </div>
                 <div class="text-sm text-slate-400">entry <span x-text="t.entry||'?'"></span> → exit <span x-text="t.exit||'?'"></span>
-                  <span x-show="t.pnl!=null"> · <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+'$'+Math.round(t.pnl).toLocaleString()"></b></span></div>
+                  <span x-show="t.pnl!=null"> · <b :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+cur+Math.round(t.pnl).toLocaleString()"></b></span></div>
                 <div class="text-xs text-amber-300/80" x-show="t.lesson">💡 <span x-text="t.lesson"></span></div>
                 <button class="btn-sm" @click="showChart(t.ticker, t)">📈 Chart</button>
               </div>
@@ -965,7 +973,7 @@
                   <template x-if="r.grade">
                     <div>
                       <div x-show="r.buyable" class="font-bold text-up">🟢 buy <span x-text="r.zone_bottom+'–'+r.zone_top"></span></div>
-                      <div x-show="!r.buyable" class="text-slate-400" x-text="r.trigger_note || (r.entry_type==='stop' ? ('▲ break above $'+r.entry) : ('⏳ wait for pullback to $'+r.entry))"></div>
+                      <div x-show="!r.buyable" class="text-slate-400" x-text="(r.trigger_note ? r.trigger_note.replaceAll('$',cur) : (r.entry_type==='stop' ? ('▲ break above '+cur+r.entry) : ('⏳ wait for pullback to '+cur+r.entry)))"></div>
                     </div>
                   </template>
                   <template x-if="!r.grade"><span class="text-[11px] text-slate-500">not in current setups</span></template>
@@ -1019,7 +1027,7 @@
                     <span class="text-up font-bold w-16 text-right" x-text="(s.move>=0?'+':'')+s.move+'%'"></span>
                     <span class="badge" style="background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)" x-text="s.vol_mult+'× vol'"></span>
                     <span class="text-xs text-slate-500" x-text="s.after_hours?'after-hrs':'into close'"></span>
-                    <span class="ml-auto text-slate-400" x-text="'$'+s.price"></span>
+                    <span class="ml-auto text-slate-400" x-text="cur+s.price"></span>
                   </div>
                 </template>
               </div>
@@ -1032,7 +1040,7 @@
                     <span class="text-down font-bold w-16 text-right" x-text="s.move+'%'"></span>
                     <span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)" x-text="s.vol_mult+'× vol'"></span>
                     <span class="text-xs text-slate-500" x-text="s.after_hours?'after-hrs':'into close'"></span>
-                    <span class="ml-auto text-slate-400" x-text="'$'+s.price"></span>
+                    <span class="ml-auto text-slate-400" x-text="cur+s.price"></span>
                   </div>
                 </template>
               </div>
@@ -1106,7 +1114,7 @@
                 <button class="btn-sm" @click="pnlMonthOffset--">‹</button>
                 <span class="font-bold w-32 text-center" x-text="pnlMonthLabel"></span>
                 <button class="btn-sm" @click="pnlMonthOffset++" :disabled="pnlMonthOffset>=0">›</button>
-                <span class="ml-2 text-xs" x-show="pnlMonthTotal!=null">month: <b :class="pnlMonthTotal>=0?'text-up':'text-down'" x-text="(pnlMonthTotal>=0?'+':'')+'$'+pnlMonthTotal.toLocaleString()"></b></span>
+                <span class="ml-2 text-xs" x-show="pnlMonthTotal!=null">month: <b :class="pnlMonthTotal>=0?'text-up':'text-down'" x-text="(pnlMonthTotal>=0?'+':'')+cur+pnlMonthTotal.toLocaleString()"></b></span>
               </div>
             </div>
             <div class="grid grid-cols-7 gap-1.5 text-center">
@@ -1119,7 +1127,7 @@
                   :style="c.pnl!=null ? ('background:'+(c.pnl>=0?'rgba(34,224,161,':'rgba(255,93,115,')+(Math.min(0.28, 0.06+Math.abs(c.pnl)/3000))+');border-color:'+(c.pnl>=0?'rgba(34,224,161,.5)':'rgba(255,93,115,.5)')) : ''">
                   <div class="text-[10px] text-slate-400 text-left" x-text="c.day"></div>
                   <div class="flex-1 flex items-center justify-center">
-                    <span x-show="c.pnl!=null" class="text-xs font-bold" :class="c.pnl>=0?'text-up':'text-down'" x-text="(c.pnl>=0?'+':'')+'$'+Math.round(c.pnl).toLocaleString()"></span>
+                    <span x-show="c.pnl!=null" class="text-xs font-bold" :class="c.pnl>=0?'text-up':'text-down'" x-text="(c.pnl>=0?'+':'')+cur+Math.round(c.pnl).toLocaleString()"></span>
                   </div>
                 </div>
               </template>
@@ -1271,10 +1279,10 @@
             </div>
           </template>
           <template x-if="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">
-            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Switch which setup's levels are drawn (the other shows faint)">
+            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Switch which setup's levels are drawn on the chart">
               <template x-for="(e,ei) in chartModal._obj.entries" :key="ei">
                 <button class="px-2.5 py-1 text-xs font-bold" :class="chartModal.entryIdx===ei?'bg-accent text-white':'bg-panel2 text-slate-400'"
-                  @click="chartModal.entryIdx=ei; renderChart()" x-text="(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback')"></button>
+                  @click="chartModal.entryIdx=ei; renderChart()" x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))"></button>
               </template>
             </div>
           </template>
@@ -1297,7 +1305,7 @@
         EMAs <span style="color:#eab308">9</span>/<span style="color:#f59e0b">21</span>/<span style="color:#5b8cff">50</span> ·
         AVWAP <span style="color:#a855f7">ATH</span>/<span style="color:#22d3ee">earnings</span> ·
         <span style="color:#3b82f6">channel</span> · <b>volume</b> bars at the base (green up / red down).
-        <span x-show="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">When a name has two setups, the buttons above switch which one is drawn solid (the other shows faint). </span>
+        <span x-show="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">When a name has two setups, the buttons above switch which one's levels are drawn. </span>
         Exit on a close under the <b>9 EMA</b>. EOD data.
       </div>
     </div>
@@ -1327,7 +1335,7 @@
         <div class="space-y-2">
           <label class="text-sm block">Exit price <input class="input w-full" type="number" x-model.number="tradeModal.exit"></label>
           <template x-if="tradeModal.exit!=null && closeRPreview()!=null">
-            <div class="text-xs text-slate-400 -mt-1">= <b :class="closeRPreview()>=0?'text-up':'text-down'" x-text="(closeRPreview()>=0?'+':'')+closeRPreview()+'R'"></b> off the initial stop $<span x-text="(tradeModal._trade.initial_stop!=null?tradeModal._trade.initial_stop:tradeModal._trade.stop)"></span> <span class="text-slate-500">(auto-recorded — leave Result blank to use this)</span></div>
+            <div class="text-xs text-slate-400 -mt-1">= <b :class="closeRPreview()>=0?'text-up':'text-down'" x-text="(closeRPreview()>=0?'+':'')+closeRPreview()+'R'"></b> off the initial stop <span x-text="cur"></span><span x-text="(tradeModal._trade.initial_stop!=null?tradeModal._trade.initial_stop:tradeModal._trade.stop)"></span> <span class="text-slate-500">(auto-recorded — leave Result blank to use this)</span></div>
           </template>
           <label class="text-sm block">Result (R) <span class="text-slate-500 text-xs">— optional, auto-computed from exit</span><input class="input w-full" type="number" step="0.1" x-model.number="tradeModal.result_r"></label>
           <label class="text-sm block">Followed rules?
@@ -1351,15 +1359,15 @@
         <div class="font-bold text-lg">🧮 Position size <span class="text-slate-500" x-show="calcModal.ticker" x-text="'· '+calcModal.ticker"></span></div>
         <button class="btn-ghost" @click="calcModal.open=false">✕</button>
       </div>
-      <div class="text-xs text-slate-500">risk ≤ <span x-text="settings.risk_pct||1"></span>% ($<span x-text="riskDollar"></span>) · position ≤ <span x-text="settings.max_position_pct||15"></span>%</div>
+      <div class="text-xs text-slate-500">risk ≤ <span x-text="settings.risk_pct||1"></span>% (<span x-text="cur"></span><span x-text="riskDollar"></span>) · position ≤ <span x-text="settings.max_position_pct||15"></span>%</div>
       <div class="flex gap-3">
         <label class="text-sm flex-1">Entry price<input type="number" step="0.01" class="input w-full mt-1" x-model.number="calc.entry"></label>
         <label class="text-sm flex-1">Stop price<input type="number" step="0.01" class="input w-full mt-1" x-model.number="calc.stop"></label>
       </div>
       <div class="grid grid-cols-2 gap-3" x-show="calcShares!=null">
         <div class="lvl"><div class="lvl-l">Buy</div><div class="text-2xl font-extrabold text-accent" x-text="calcShares+' sh'"></div></div>
-        <div class="lvl"><div class="lvl-l">Position cost</div><div class="text-xl font-bold" x-text="'$'+calcCost"></div><div class="text-[11px] text-slate-500" x-text="calcPct+'% of acct'"></div></div>
-        <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-xl font-bold text-down" x-text="'$'+calcRisk"></div><div class="text-[11px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
+        <div class="lvl"><div class="lvl-l">Position cost</div><div class="text-xl font-bold" x-text="cur+calcCost"></div><div class="text-[11px] text-slate-500" x-text="calcPct+'% of acct'"></div></div>
+        <div class="lvl"><div class="lvl-l">Max loss</div><div class="text-xl font-bold text-down" x-text="cur+calcRisk"></div><div class="text-[11px] text-slate-500" x-text="calcRiskPct+'% risk'"></div></div>
         <div class="lvl"><div class="lvl-l">Buying power</div><div class="text-xl font-bold" :class="calcPct>100?'text-down':''" x-text="calcPct+'%'"></div></div>
       </div>
       <div class="text-xs text-warn" x-show="calcCapped">⚠ Capped by <b x-text="calcCapReason"></b> — full 1% risk would buy more, but this keeps the position within your limit.</div>

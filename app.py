@@ -36,25 +36,9 @@ DATA = Path(os.environ["DATA_DIR"]) if os.environ.get("DATA_DIR") else SEED
 WEB = BASE / "web"
 UPLOADS = DATA / "uploads"
 
-# Shared, market-wide data (one copy for everyone). SETTINGS_F is the owner's config,
-# used only as a fallback for shared jobs (scan/universe params); per-user settings live
-# in the workspace dir (see settings_f()).
-SETTINGS_F = DATA / "settings.json"
-SCREENERS_F = DATA / "screeners.json"
-SUGGEST_F = DATA / "suggestions.json"
-SECTORS_F = DATA / "sectors.json"
-THEMES_F = DATA / "themes.json"
-SECTOR_HEAT_F = DATA / "sector_heat.json"
-NEWS_F = DATA / "news.json"
-MARKET_F = DATA / "market.json"
-UNIVERSE_F = DATA / "universe.json"
-SYMNAMES_F = DATA / "symbol_names.json"     # {ticker: company name} cache (news headline -> ticker)
-SUSPICIOUS_F = DATA / "suspicious.json"
-PREMARKET_F = DATA / "premarket.json"
-SPINNING_F = DATA / "spinning.json"        # last spinning-stocks (intraday reversal) scan
-FORWARD_F = DATA / "forward_log.json"      # live A/A+ picks snapshotted each scan (forward/paper test)
-PNL_F = DATA / "pnl_calendar.json"         # per-day account equity + day P&L (the personal calendar)
-GROUPS_F = DATA / "groups.json"            # detected emerging groups (correlated movers)
+# Shared, market-wide data files are now resolved per-market via getters defined just below
+# the workspace helpers (suggest_f(), market_f(), ...). US keeps the original data/ paths;
+# the Israeli market (market()=="il") namespaces every file under data/il/. See _mns().
 
 DOCS = {
     "qullamaggie": BASE / "strategy" / "qullamaggie.md",
@@ -79,16 +63,63 @@ TEMPLATE_DIR = SEED / "template"         # baked blank-workspace template (alway
 _ctx = threading.local()
 
 
+# --------------------------------------------------------------------------- #
+# Market dimension (US default + Israel/TASE). Mirrors the per-user workspace
+# pattern: a thread-local `market` set per request (X-Market header) and per
+# worker thread. US keeps the original data/ paths untouched; IL namespaces every
+# data file under an il/ subfolder, giving a fully separate dashboard, account,
+# positions, suggestions and forward-test log. NOTE: _ctx is request/worker-thread
+# local — worker threads must set _ctx.market explicitly (it is NOT inherited).
+# --------------------------------------------------------------------------- #
+def market():
+    return getattr(_ctx, "market", "us")
+
+
+def _safe_market(raw):
+    m = (raw or "us").lower()
+    return m if m in ("us", "il") else "us"
+
+
+def _mns(p):
+    """Market-namespace a shared data path: US unchanged; IL -> <dir>/il/<name>."""
+    return p if market() == "us" else p.parent / "il" / p.name
+
+
 def udir():
     """The current request's data dir: a per-user folder when hosted, else data/."""
     return getattr(_ctx, "udir", DATA)
 
 
-def settings_f():   return udir() / "settings.json"     # per-user account/risk
-def trades_f():     return udir() / "trades.json"       # per-user journal
-def watchlist_f():  return udir() / "watchlist.json"    # per-user watchlist
-def status_f():     return udir() / "status.json"       # per-user approve/reject/take overlay
-def uploads_dir():  return udir() / "uploads"           # per-user screenshots
+def _ud():
+    """Per-user data dir for the current market (US unchanged; IL under il/)."""
+    return udir() if market() == "us" else udir() / "il"
+
+
+def settings_f():   return _ud() / "settings.json"      # per-user account/risk
+def trades_f():     return _ud() / "trades.json"        # per-user journal
+def watchlist_f():  return _ud() / "watchlist.json"     # per-user watchlist
+def status_f():     return _ud() / "status.json"        # per-user approve/reject/take overlay
+def uploads_dir():  return _ud() / "uploads"            # per-user screenshots
+
+
+# Shared, market-wide data files (per-market). settings_owner_f() is the owner's config,
+# a fallback for shared jobs (scan/universe params); per-user settings live in settings_f().
+def settings_owner_f():  return _mns(DATA / "settings.json")
+def screeners_f():       return _mns(DATA / "screeners.json")
+def suggest_f():         return _mns(DATA / "suggestions.json")
+def sectors_f():         return _mns(DATA / "sectors.json")
+def themes_f():          return _mns(DATA / "themes.json")
+def sector_heat_f():     return _mns(DATA / "sector_heat.json")
+def news_f():            return _mns(DATA / "news.json")
+def market_f():          return _mns(DATA / "market.json")
+def universe_f():        return _mns(DATA / "universe.json")
+def symnames_f():        return _mns(DATA / "symbol_names.json")  # {ticker: name} cache (news resolver)
+def suspicious_f():      return _mns(DATA / "suspicious.json")
+def premarket_f():       return _mns(DATA / "premarket.json")
+def spinning_f():        return _mns(DATA / "spinning.json")      # last spinning (intraday reversal) scan
+def forward_f():         return _mns(DATA / "forward_log.json")   # forward/paper-test snapshots
+def pnl_f():             return _mns(DATA / "pnl_calendar.json")  # per-day equity + day P&L calendar
+def groups_f():          return _mns(DATA / "groups.json")        # detected emerging groups
 
 
 _TEMPLATE_DEFAULTS = {
@@ -137,15 +168,20 @@ def seed_shared():
 
 
 def set_workspace(handler):
-    """Resolve the per-request workspace from the X-Workspace header (hosted only)."""
+    """Resolve per-request market (X-Market) + workspace (X-Workspace, hosted only)."""
+    _ctx.market = _safe_market(handler.headers.get("X-Market", "us"))
     if not HOSTED:
         _ctx.udir = DATA
-        return
-    wsid = _safe_wsid(handler.headers.get("X-Workspace", "")) or "default"
-    ud = USERS_DIR / wsid
-    if not ud.exists():
-        bootstrap_workspace(ud)
-    _ctx.udir = ud
+    else:
+        wsid = _safe_wsid(handler.headers.get("X-Workspace", "")) or "default"
+        ud = USERS_DIR / wsid
+        if not ud.exists():
+            bootstrap_workspace(ud)
+        _ctx.udir = ud
+    if _ctx.market != "us":                 # lazy-create the per-market per-user workspace
+        d = _ud()
+        if not d.exists():
+            bootstrap_workspace(d)
 
 
 PORT = int(os.environ.get("PORT", "8765"))
@@ -161,8 +197,21 @@ _refresh_lock = threading.Lock()
 _universe_lock = threading.Lock()
 
 
+def _spawn(target, *args, **kwargs):
+    """Start a daemon worker that inherits the current request's market + workspace.
+    The thread-local _ctx is NOT inherited by new threads, so capture both here and
+    re-set them inside the worker — otherwise IL jobs would write into the US files."""
+    mkt, ud = market(), udir()
+
+    def _run():
+        _ctx.market, _ctx.udir = mkt, ud
+        target(*args, **kwargs)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def run_sector_heat():
-    themes = read_json(THEMES_F, {})
+    themes = read_json(themes_f(), {})
     SECTORH.update(running=True, done=0, total=sum(len(v) for v in themes.values()) or 1, current="")
     done, rows = 0, []
     for name, tickers in themes.items():
@@ -180,13 +229,13 @@ def run_sector_heat():
     for i, r in enumerate(rows):
         r["rank"] = i + 1
         r["tier"] = "Hot" if r["rank"] <= max(1, n // 3) else ("Warm" if r["rank"] <= 2 * n // 3 else "Cool")
-    write_json(SECTOR_HEAT_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sectors": rows})
+    write_json(sector_heat_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sectors": rows})
     SECTORH.update(running=False, current="")
 
 
 def reverse_themes():
     rev = {}
-    for name, ts in read_json(THEMES_F, {}).items():
+    for name, ts in read_json(themes_f(), {}).items():
         for t in ts:
             rev[t] = name
     return rev
@@ -351,7 +400,7 @@ _SUBJ_NEXT = {"stock", "stocks", "shares", "share", "s", "stocks", "rises", "ros
 def _symbol_names():
     """{ticker: company name}, cached to data/symbol_names.json and refreshed ~monthly from the
     keyless NASDAQ directory. Degrades to whatever's cached (or {}) if the fetch fails."""
-    cached = read_json(SYMNAMES_F, None)
+    cached = read_json(symnames_f(), None)
     if isinstance(cached, dict) and cached.get("names"):
         try:
             if time.time() - float(cached.get("_ep", 0)) < 30 * 86400:
@@ -361,7 +410,7 @@ def _symbol_names():
     try:
         names = universe.fetch_symbol_names()
         if names:
-            write_json(SYMNAMES_F, {"_ep": time.time(),
+            write_json(symnames_f(), {"_ep": time.time(),
                                     "built_at": time.strftime("%Y-%m-%d %H:%M"), "names": names})
             return names
     except Exception:
@@ -374,7 +423,7 @@ def _build_news_resolver():
     about, by company name ('Marvell Technology'->MRVL) or an explicit ticker token ('HPE stock').
     Restricted to the current universe so only tradeable names surface. This is what lets a fresh
     catalyst on a name that ISN'T yet a graded suggestion still show up in catalysts."""
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
     uni_set = set(default.get("tickers", [])) if default else set()
     names = _symbol_names()
@@ -437,7 +486,7 @@ def run_news_refresh():
         {"name": "🇺🇸 Trump & policy", "items": _recent_important(raw_trump)},
         {"name": "📰 Market catalysts", "items": _recent_important(raw_market)},
     ]
-    hot = [s for s in read_json(SECTOR_HEAT_F, {}).get("sectors", [])
+    hot = [s for s in read_json(sector_heat_f(), {}).get("sectors", [])
            if s.get("tier") == "Hot" or s.get("trend") == "Rising"][:3]
     pool = list(raw_trump) + list(raw_market)
     for s in hot:
@@ -459,7 +508,7 @@ def run_news_refresh():
     # per-ticker: only keep a ticker that has a recent IMPORTANT headline.
     # News is shared market data, so it draws from the shared scan's top names (not any
     # one user's journal — open positions are private and per-user).
-    tickers = [i["ticker"] for i in read_json(SUGGEST_F, {}).get("items", [])[:16]]
+    tickers = [i["ticker"] for i in read_json(suggest_f(), {}).get("items", [])[:16]]
     seen, tn = [], {}
     uniq = [t for t in tickers if not (t in seen or seen.append(t))]
     NEWS.update(total=len(uniq))
@@ -494,7 +543,7 @@ def run_news_refresh():
                       "sentiment": sent, "trump": "trump" in tl, "from_feed": True}
             promoted += 1
     # ---- actionable alerts: distill the BIG catalysts into BUY / AVOID directives ----
-    themes_map = read_json(THEMES_F, {})
+    themes_map = read_json(themes_f(), {})
     alerts = []
     for th, info in theme_news.items():
         if not any(k in info["title"].lower() for k in HARD):
@@ -530,7 +579,7 @@ def run_news_refresh():
     # major market news — the high-bar macro banner (war / Fed chair / crash / election shock).
     # Scans the dedicated macro query + the existing pool; empty on a normal day.
     macro = _detect_macro(list(raw_macro) + pool)
-    write_json(NEWS_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sections": sections,
+    write_json(news_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sections": sections,
                         "ticker_news": tn, "theme_news": theme_news, "alerts": alerts,
                         "feed": feed, "macro": macro})
     NEWS.update(running=False, current="")
@@ -539,7 +588,7 @@ def run_news_refresh():
 def run_suspicious():
     """Scan the universe for end-of-day / after-hours buy & sell anomalies (insider-style)."""
     tickers = []
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
     if default:
         tickers = default.get("tickers", [])
@@ -549,7 +598,7 @@ def run_suspicious():
         SUSPECT.update(done=done, total=total, current=t)
     try:
         out = scanner.scan_suspicious(tickers, prog)
-        write_json(SUSPICIOUS_F, out)
+        write_json(suspicious_f(), out)
     except Exception as e:
         SUSPECT.update(current="error: " + str(e))
     SUSPECT.update(running=False, current="")
@@ -558,7 +607,7 @@ def run_suspicious():
 def run_premarket():
     """Scan the universe for notable pre-market gaps (run during pre-market hours)."""
     tickers = []
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
     if default:
         tickers = default.get("tickers", [])
@@ -568,7 +617,7 @@ def run_premarket():
         PREMKT.update(done=done, total=total, current=t)
     try:
         out = scanner.scan_premarket(tickers, prog)
-        write_json(PREMARKET_F, out)
+        write_json(premarket_f(), out)
     except Exception as e:
         PREMKT.update(current="error: " + str(e))
     PREMKT.update(running=False, current="")
@@ -578,7 +627,7 @@ def run_spinning():
     """Scan the universe for 'spinning' stocks — beaten-down names reclaiming the 5-min 10 EMA
     (intraday reversal candidates). Smart-prefiltered to names down on the day inside the scanner."""
     tickers = []
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
     if default:
         tickers = default.get("tickers", [])
@@ -588,7 +637,7 @@ def run_spinning():
         SPIN.update(done=done, total=total, current=t)
     try:
         out = scanner.scan_spinning(tickers, progress=prog)
-        write_json(SPINNING_F, out)
+        write_json(spinning_f(), out)
     except Exception as e:
         SPIN.update(current="error: " + str(e))
     SPIN.update(running=False, current="")
@@ -596,7 +645,7 @@ def run_spinning():
 
 def run_detect_groups():
     """Detect emerging groups (correlated recent movers) over the default screener universe."""
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
     tickers = default.get("tickers", []) if default else []
     GROUPS.update(running=True, done=0, total=len(tickers) or 1, current="")
@@ -605,9 +654,9 @@ def run_detect_groups():
         GROUPS.update(done=done, total=total, current=t)
     try:
         groups = scanner.detect_groups(tickers, progress=prog)
-        smap = read_json(SECTORS_F, {})
+        smap = read_json(sectors_f(), {})
         rev = reverse_themes()
-        theme_keys = set(read_json(THEMES_F, {}).keys())
+        theme_keys = set(read_json(themes_f(), {}).keys())
         kept = []
         for g in groups:
             theme_tally, sector_tally = {}, {}
@@ -635,50 +684,60 @@ def run_detect_groups():
             else:
                 continue                                 # an existing sector/theme or no thread → skip
             kept.append(g)
-        write_json(GROUPS_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "groups": kept})
+        write_json(groups_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "groups": kept})
     except Exception as e:
         GROUPS.update(current="error: " + str(e))
     GROUPS.update(running=False, current="")
 
 
 def run_market_regime():
-    """Classify SPX / QQQ / IWM into a blended market posture; store for the dashboard + grade."""
+    """Classify the market's benchmark indexes into a blended posture; store for dashboard + grade."""
     try:
-        reg = scanner.market_regime()
+        reg = scanner.market_regime(market())
         if reg:
-            write_json(MARKET_F, reg)
+            write_json(market_f(), reg)
     except Exception:
         pass
 
 
 def run_build_universe():
-    """Assemble the full tradeable US universe, coarse-filter to the Market Leaders criteria,
-    and write the ticker list into the default screener so the scan runs on the real universe."""
-    settings = read_json(SETTINGS_F, {})
-    UNIVERSE.update(running=True, stage="Fetching US symbols…", done=0, total=0)
+    """Assemble the market's tradeable universe, coarse-filter to the Market Leaders criteria,
+    and write the ticker list into the default screener so the scan runs on the real universe.
+    US: the full NASDAQ/NYSE/AMEX directory. IL: the curated TASE seed list (data/il_symbols.json),
+    re-quoted + liquidity-filtered the same way (no auto-directory exists for Tel Aviv)."""
+    mkt = market()
+    settings = read_json(settings_owner_f(), {})
+    uni = scanner.mcfg(mkt)["uni"]
+    il_syms = None
+    label = "Fetching US symbols…"
+    if mkt == "il":
+        il_syms = read_json(DATA / "il_symbols.json", {}).get("symbols", [])
+        label = "Reading TASE symbols…"
+    UNIVERSE.update(running=True, stage=label, done=0, total=0)
 
     def prog(stage, total, done):
-        UNIVERSE.update(stage="Reading market caps…" if stage == "quotes" else "Fetching US symbols…",
+        UNIVERSE.update(stage="Reading market caps…" if stage == "quotes" else label,
                         done=done, total=total)
     try:
         u = universe.build_universe(
             exchanges=settings.get("universe_exchanges", "all"),
-            size=settings.get("universe_size", 800),
-            min_price=settings.get("universe_min_price", 10),
-            min_mktcap_m=settings.get("universe_min_mktcap_m", 300),
-            min_dollar_vol_m=settings.get("universe_min_dollar_vol_m", 10),
+            size=settings.get("universe_size", uni["size"]),
+            min_price=settings.get("universe_min_price", uni["min_price"]),
+            min_mktcap_m=settings.get("universe_min_mktcap_m", uni["min_mktcap_m"]),
+            min_dollar_vol_m=settings.get("universe_min_dollar_vol_m", uni["min_dollar_vol_m"]),
             progress=prog,
+            symbols=il_syms,
         )
         if u.get("tickers"):
-            write_json(UNIVERSE_F, u)
-            screeners = read_json(SCREENERS_F, [])
+            write_json(universe_f(), u)
+            screeners = read_json(screeners_f(), [])
             tgt = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
             if tgt is None:
                 tgt = {"id": "market-leaders", "name": "Market Leaders", "is_default": True}
                 screeners.append(tgt)
             tgt["tickers"] = u["tickers"]
             tgt["auto"] = True
-            write_json(SCREENERS_F, screeners)
+            write_json(screeners_f(), screeners)
         UNIVERSE.update(running=False, stage="Done", built_at=u.get("built_at"),
                         kept=u.get("kept"), passed=u.get("passed_filter"),
                         total_syms=u.get("universe_total"))
@@ -694,7 +753,7 @@ def run_refresh_all():
     try:
         run_market_regime()
         REFRESH.update(stage="Updating setups & ratings…", done=1)
-        screeners = read_json(SCREENERS_F, [])
+        screeners = read_json(screeners_f(), [])
         default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
         if default:
             run_scan(default["id"])
@@ -718,7 +777,9 @@ def read_json(path, default):
 
 
 def write_json(path, obj):
-    Path(path).write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)   # IL namespace dir may not exist yet
+    p.write_text(json.dumps(obj, indent=2), encoding="utf-8")
 
 
 def now_date():
@@ -938,7 +999,7 @@ def entry_grade_for(ticker, date, settings):
     thresholds as the live grade (strategy/scoring.md) so the letter is comparable. This is the mirror
     on the trader's OWN entries — taking C/D setups is a fair lesson, separate from the system's calls.
     Returns {rating, grade, setup_type, entry_quality, ext10, asof, note} or None."""
-    a = scanner.analyze_at(ticker, date, settings)
+    a = scanner.analyze_at(ticker, date, settings, market())
     if not a:
         return None
     setup = max(0, min(100, (a.get("score", 0) - 4) / 16 * 100))
@@ -962,7 +1023,7 @@ def enrich_trades(trades):
     """Add current price + P&L to each trade, a coaching action for open positions, and the
     system grade of the setup as of the entry date (so the trader can see if they're taking weak setups)."""
     settings = read_json(settings_f(), {})
-    news_map = read_json(NEWS_F, {}).get("ticker_news", {})
+    news_map = read_json(news_f(), {}).get("ticker_news", {})
     for t in trades:
         e, sh = t.get("entry"), t.get("shares")
         t["last"] = t["pnl"] = t["pnl_pct"] = None
@@ -1015,7 +1076,7 @@ def enrich_trades(trades):
 
 
 def attach_sectors(items):
-    smap = read_json(SECTORS_F, {})
+    smap = read_json(sectors_f(), {})
     for it in items:
         it["sector"] = smap.get(it["ticker"], "Other")
 
@@ -1039,8 +1100,8 @@ def grade_suggestions(items, settings):
     and the composite 0-100 rating + letter grade. Mutates items in place and returns them
     sorted best-first. Canonical rubric: strategy/scoring.md (keep weights in sync)."""
     rev = reverse_themes()
-    heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
-    news_data = read_json(NEWS_F, {})
+    heat = {h["sector"]: h for h in read_json(sector_heat_f(), {}).get("sectors", [])}
+    news_data = read_json(news_f(), {})
     news_map = news_data.get("ticker_news", {})
     theme_news = news_data.get("theme_news", {})
     sd = _session_date()                                  # the live/most-recent session date (SPY-derived)
@@ -1107,7 +1168,7 @@ def grade_suggestions(items, settings):
 
     # ---- composite grade: rate every name best->worst using ALL the data ----
     bysetup = compute_stats().get("by_setup", {})
-    posture = read_json(MARKET_F, {}).get("posture", 55)               # 0-100 market regime
+    posture = read_json(market_f(), {}).get("posture", 55)               # 0-100 market regime
     pullback_setups = ("Pullback", "Pullback @ AVWAP",
                        "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
 
@@ -1236,12 +1297,12 @@ def log_forward_picks(date_key=None):
     """Snapshot today's TOP suggestions — the same set/order the dashboard's "Top suggestions today"
     shows (buyable-now floated to the top, then by rating) — so we can score how they perform over the
     following days. Keyed by the session that just CLOSED; one snapshot per date; never overwrites."""
-    items = read_json(SUGGEST_F, {}).get("items", [])
+    items = read_json(suggest_f(), {}).get("items", [])
     if not items:
         return
     day = date_key or _next_session_date()                # label by the session you ACT on these (next session
                                                           # after the close they were snapshotted at)
-    log = read_json(FORWARD_F, {"snapshots": {}})
+    log = read_json(forward_f(), {"snapshots": {}})
     if day in log.get("snapshots", {}):                 # already captured this day — keep the first
         return
     graded = grade_suggestions(items, _equity_settings())
@@ -1256,71 +1317,76 @@ def log_forward_picks(date_key=None):
               "theme_trend": s.get("theme_trend"), "close_at_signal": s.get("close")}
              for s in graded]
     log.setdefault("snapshots", {})[day] = {
-        "posture": read_json(MARKET_F, {}).get("posture"), "picks": picks,
+        "posture": read_json(market_f(), {}).get("posture"), "picks": picks,
         "logged_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),  # provenance: when frozen
         "frozen_at_close_of": _session_date()}                                    # the session whose close this is
-    write_json(FORWARD_F, log)
+    write_json(forward_f(), log)
 
 
-def _market_closed():
-    """Rough US-market-closed check (ET): weekend, or outside ~9:30-16:00. Good enough to gate a
-    once-a-day end-of-day snapshot (we don't need minute precision)."""
-    from datetime import timedelta
-    et = datetime.now(timezone.utc) - timedelta(hours=4)   # ~ET (EDT); minor winter drift is fine
-    if et.weekday() >= 5:
+def _market_closed(mk=None):
+    """Rough market-closed check in local exchange time: a non-trading day, or outside the session
+    window. Good enough to gate a once-a-day end-of-day snapshot. Market-aware: US is Mon-Fri
+    9:30-16:00 ET; IL (TASE) is Sun-Thu ~9:54-17:15 IST (see scanner.MARKETS)."""
+    cfg = scanner.mcfg(mk or market())
+    loc = datetime.now(timezone.utc) + timedelta(hours=cfg["tz_offset"])
+    if loc.weekday() not in cfg["trading_days"]:
         return True
-    hm = et.hour + et.minute / 60.0
-    return hm < 9.5 or hm >= 16.0
+    hm = loc.hour + loc.minute / 60.0
+    return hm < cfg["open"] or hm >= cfg["close"]
 
 
-def _after_close_today():
-    """True ONLY after today's regular-session close (weekday, ET >= 16:00) — NOT pre-market.
+def _after_close_today(mk=None):
+    """True ONLY after today's regular-session close (a trading day, local time >= close) — NOT pre-market.
     The end-of-day jobs (day-P&L finalize + forward snapshot) must run only once the session has
     actually CLOSED. `_market_closed()` alone is wrong for this: it's also true PRE-market, and
     pre-market the forming daily bar rolls `_session_date()` ahead to today, so the jobs would
     finalize today's P&L and freeze the NEXT session's snapshot before the session even traded
     (the mid-session/premature-capture bug)."""
-    from datetime import timedelta
-    et = datetime.now(timezone.utc) - timedelta(hours=4)
-    return et.weekday() < 5 and (et.hour + et.minute / 60.0) >= 16.0
+    cfg = scanner.mcfg(mk or market())
+    loc = datetime.now(timezone.utc) + timedelta(hours=cfg["tz_offset"])
+    return loc.weekday() in cfg["trading_days"] and (loc.hour + loc.minute / 60.0) >= cfg["close"]
 
 
-def _session_date():
-    """The latest COMPLETED US trading-session date (from SPY's most recent daily bar) — NOT the local
-    calendar date (the user's local day rolls over while the US market is still on the prior session)."""
+def _session_date(mk=None):
+    """The latest COMPLETED trading-session date (from the market's reference index's most recent daily
+    bar) — NOT the local calendar date (which rolls over while the exchange is still on the prior session)."""
+    cfg = scanner.mcfg(mk or market())
     try:
-        b = scanner.get_bars("SPY")
+        b = scanner.get_bars(cfg["ref"])
         return b[-1]["time"] if b else now_date()
     except Exception:
         return now_date()
 
 
-def _next_session_date():
-    """The NEXT US trading session after the latest completed one — i.e. the day you'd ACT on picks
+def _next_session_date(mk=None):
+    """The NEXT trading session after the latest completed one — i.e. the day you'd ACT on picks
     captured at the last close. Forward snapshots are LABELED by this (the trade day), so the picks you
-    snapshot at tonight's close show up under tomorrow's session, awaiting until it trades. Skips
-    weekends (holidays not handled — close enough)."""
+    snapshot at tonight's close show up under the next session, awaiting until it trades. Skips
+    non-trading days for the market (holidays not handled — close enough)."""
+    cfg = scanner.mcfg(mk or market())
     try:
-        d = datetime.strptime(_session_date(), "%Y-%m-%d") + timedelta(days=1)
-        while d.weekday() >= 5:                            # Sat/Sun -> Monday
+        d = datetime.strptime(_session_date(mk), "%Y-%m-%d") + timedelta(days=1)
+        while d.weekday() not in cfg["trading_days"]:     # skip the market's weekend
             d += timedelta(days=1)
         return d.strftime("%Y-%m-%d")
     except Exception:
-        return _session_date()
+        return _session_date(mk)
 
 
 def _refresh_forward_bars():
     """Pull the latest session's bars for the logged picks so score_forward() can advance them.
-    Probes SPY fresh (1 call) to learn the latest session, then force-refreshes only picks that are
-    BEHIND it — so it does nothing (beyond the probe) until a genuinely new session prints."""
+    Probes the market's reference index fresh (1 call) to learn the latest session, then
+    force-refreshes only picks that are BEHIND it — so it does nothing (beyond the probe) until a
+    genuinely new session prints."""
+    refsym = scanner.mcfg(market())["ref"]
     try:
-        ref = scanner.get_bars("SPY", max_age_hours=0)
+        ref = scanner.get_bars(refsym, max_age_hours=0)
     except Exception:
-        ref = scanner.get_bars("SPY")
+        ref = scanner.get_bars(refsym)
     sess = ref[-1]["time"] if ref else None
     if not sess:
         return
-    log = read_json(FORWARD_F, {"snapshots": {}})
+    log = read_json(forward_f(), {"snapshots": {}})
     tks = {p["ticker"] for s in log.get("snapshots", {}).values() for p in s.get("picks", [])}
     for t in tks:
         try:
@@ -1348,10 +1414,10 @@ def run_forward_eod():
                                                            # premature value, the bug the user hit)
     record_daily_pnl(_session_date())                      # finalize the just-closed session's day P&L
     trade_day = _next_session_date()                       # the upcoming session these picks are FOR (the label)
-    log = read_json(FORWARD_F, {"snapshots": {}})
+    log = read_json(forward_f(), {"snapshots": {}})
     if trade_day in log.get("snapshots", {}):
         return                                             # already snapshotted for that session (capture once)
-    if read_json(SUGGEST_F, {}).get("items"):
+    if read_json(suggest_f(), {}).get("items"):
         log_forward_picks(trade_day)                       # freeze today's dashboard top setups; tracked forward
 
 
@@ -1364,21 +1430,30 @@ def record_daily_pnl(session):
     if HOSTED:
         return
     eq = compute_equity()
-    cal = read_json(PNL_F, {})
+    cal = read_json(pnl_f(), {})
     prior = [cal[k]["equity"] for k in sorted(cal) if k < session and isinstance(cal.get(k), dict)]
     prev_eq = prior[-1] if prior else eq["base"]
     cal[session] = {"equity": eq["equity"], "open": eq["open"], "realized": eq["realized"],
                     "day_pnl": round(eq["equity"] - prev_eq, 2)}
-    write_json(PNL_F, cal)
+    write_json(pnl_f(), cal)
 
 
-def _forward_eod_loop():
-    """Local background heartbeat: check every ~30 min whether an EOD snapshot is due."""
-    while True:
+def _run_forward_eod_all():
+    """Run the EOD forward job for EVERY market (US + IL), each with its own _ctx.market so the
+    snapshots/P&L land in that market's namespace and the close-gating uses its trading calendar."""
+    for mk in ("us", "il"):
+        _ctx.market = mk
         try:
             run_forward_eod()
         except Exception:
             pass
+    _ctx.market = "us"
+
+
+def _forward_eod_loop():
+    """Local background heartbeat: check every ~30 min whether an EOD snapshot is due (per market)."""
+    while True:
+        _run_forward_eod_all()
         time.sleep(1800)
 
 
@@ -1460,7 +1535,7 @@ def _day_lesson(picks):
 def score_forward():
     """Evaluate logged TOP-suggestion picks; per-day breakdown + lessons + an overall aggregate.
     Each pick is simulated forward with the house exit rules (close < 9-EMA or hard stop)."""
-    log = read_json(FORWARD_F, {"snapshots": {}})
+    log = read_json(forward_f(), {"snapshots": {}})
     snaps = log.get("snapshots", {})
     scored, pending, by_day = [], 0, []
     for date in sorted(snaps, reverse=True):
@@ -1570,21 +1645,21 @@ def update_rules_account(acct):
 # --------------------------------------------------------------------------- #
 def run_scan(screener_id, max_age=12):
     global SCAN
-    screeners = read_json(SCREENERS_F, [])
+    screeners = read_json(screeners_f(), [])
     sc = next((s for s in screeners if s["id"] == screener_id), None)
     if not sc:
         SCAN.update(running=False)
         return
     tickers = sc["tickers"]
-    settings = read_json(SETTINGS_F, {})
+    settings = read_json(settings_owner_f(), {})
     SCAN.update(running=True, done=0, total=len(tickers), current="",
                 screener_id=screener_id, finished_at=None)
 
     def prog(done, total, t):
         SCAN.update(done=done, total=total, current=t)
 
-    out = scanner.scan(tickers, settings, prog, max_age=max_age)
-    prev = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
+    out = scanner.scan(tickers, settings, prog, max_age=max_age, market=market())
+    prev = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
     items = []
     for r in out["results"]:
         old = prev.get(r["ticker"], {})
@@ -1609,7 +1684,7 @@ def run_scan(screener_id, max_age=12):
         if e:
             it["earnings_date"] = e["date"]
             it["earnings_estimate"] = e.get("estimate", False)
-    write_json(SUGGEST_F, {"scanned_at": out["scanned_at"], "screener_id": screener_id,
+    write_json(suggest_f(), {"scanned_at": out["scanned_at"], "screener_id": screener_id,
                            "screener_name": sc["name"], "failed": out["failed"],
                            "hot_sectors": hot, "items": items})
     try:
@@ -1688,7 +1763,7 @@ def compute_gameplan():
     stretched = [i["name"] for i in indexes if i.get("stretched_50")]
     regime_live = bool(market.get("live"))
 
-    sug_items = read_json(SUGGEST_F, {}).get("items", [])
+    sug_items = read_json(suggest_f(), {}).get("items", [])
     graded = grade_suggestions(sug_items, settings) if sug_items else []
     good_grades = ("A+", "A")
     buy_now = [_sug_compact(s) for s in graded
@@ -1764,7 +1839,7 @@ def compute_gameplan():
             "posture": posture, "label": label, "stance": stance, "stretched": stretched,
             "regime_live": regime_live, "market_state": market.get("market_state"),
             "exposure": exposure, "manage": manage, "buy_now": buy_now, "watch": watch,
-            "avoid": avoid, "alerts": read_json(NEWS_F, {}).get("alerts", [])[:4],
+            "avoid": avoid, "alerts": read_json(news_f(), {}).get("alerts", [])[:4],
             "lessons": _top_lessons(3), "bottom_line": bottom}
 
 
@@ -1779,13 +1854,13 @@ def compute_prediction():
     stretched = [i["name"] for i in indexes if i.get("stretched_50")]
     regime_live = bool(market.get("live"))
 
-    heat = read_json(SECTOR_HEAT_F, {}).get("sectors", [])
+    heat = read_json(sector_heat_f(), {}).get("sectors", [])
     rising = [s["sector"] for s in heat if s.get("trend") == "Rising"]
     slowing = [s["sector"] for s in heat if s.get("trend") == "Slowing"]
     falling = [s["sector"] for s in heat if s.get("trend") == "Falling"]
     breadth = round(_mean([s.get("breadth", 50) for s in heat])) if heat else None
 
-    news = read_json(NEWS_F, {})
+    news = read_json(news_f(), {})
     alerts = news.get("alerts", [])
     a_good = len([a for a in alerts if a.get("dir") == "buy"])
     a_bad = len([a for a in alerts if a.get("dir") == "avoid"])
@@ -1793,9 +1868,9 @@ def compute_prediction():
     t_good = len([1 for v in tn.values() if v.get("sentiment") == "good"])
     t_bad = len([1 for v in tn.values() if v.get("sentiment") == "bad"])
 
-    susp = read_json(SUSPICIOUS_F, {})
+    susp = read_json(suspicious_f(), {})
     buys, sells = len(susp.get("buying", [])), len(susp.get("selling", []))
-    pm = read_json(PREMARKET_F, {}).get("movers", [])
+    pm = read_json(premarket_f(), {}).get("movers", [])
     pm_up = len([m for m in pm if m.get("gap", 0) >= 0])
     pm_dn = len(pm) - pm_up
 
@@ -1944,7 +2019,7 @@ def _premarket_sector_moves():
     """Average TRUE extended-hours (pre/after) move per sector, from each member's `ext_change_pct`
     (the move vs the regular-session close). NOT perf_1d — during PRE that's polluted by yesterday's
     full session (its prev_close is 2 days back). Returns {'when', 'up', 'down'} (empty off-hours)."""
-    heat = read_json(SECTOR_HEAT_F, {}).get("sectors", [])
+    heat = read_json(sector_heat_f(), {}).get("sectors", [])
     if not heat:
         return {"when": None, "up": [], "down": []}
     syms = list(dict.fromkeys([m["ticker"] for s in heat for m in s.get("members", [])]))
@@ -1977,7 +2052,7 @@ def _effective_regime():
     their extended-hours prices (live_posture) so the gameplan & prediction reflect what's moving
     NOW — not yesterday's close. Outside extended hours it's the stored daily regime (market.json).
     Index quotes are 30s-cached, so this is cheap."""
-    market = read_json(MARKET_F, {})
+    market = read_json(market_f(), {})
     try:
         idxq = scanner.fetch_quotes([s for _, s in scanner.INDEXES])
         ms = next((idxq[s.upper()].get("market_state") for _, s in scanner.INDEXES
@@ -1997,7 +2072,7 @@ def live_sector_heat():
     """Re-rate Sector Heat with LIVE prices: recompute each member's & sector's TODAY % (perf_1d)
     and the heat score/rank from live quotes, keeping the multi-day trend/streak/breadth from the
     last EOD compute (those don't move intraday). Read-only — never overwrites the stored heat."""
-    data = read_json(SECTOR_HEAT_F, {"sectors": []})
+    data = read_json(sector_heat_f(), {"sectors": []})
     sectors = data.get("sectors", [])
     if not sectors:
         return data
@@ -2106,9 +2181,9 @@ class Handler(BaseHTTPRequestHandler):
             # free service, where per-user data doesn't persist across the dyno sleeping.
             self._json({"hosted": HOSTED})
         elif route == "screeners":
-            self._json(read_json(SCREENERS_F, []))
+            self._json(read_json(screeners_f(), []))
         elif route == "suggestions":
-            s = read_json(SUGGEST_F, {"items": []})
+            s = read_json(suggest_f(), {"items": []})
             # Suggestions are a SHARED market scan; approve/reject/take is a per-user
             # overlay so each friend keeps their own marks without touching others'.
             ov = read_json(status_f(), {})
@@ -2123,21 +2198,21 @@ class Handler(BaseHTTPRequestHandler):
             s["items"] = grade_suggestions(s.get("items", []), _equity_settings())
             self._json(s)
         elif route == "market":
-            self._json(read_json(MARKET_F, {}))
+            self._json(read_json(market_f(), {}))
         elif route == "universe":
-            u = read_json(UNIVERSE_F, {})
+            u = read_json(universe_f(), {})
             u["status"] = UNIVERSE
             self._json(u)
         elif route == "suspicious":
-            s = read_json(SUSPICIOUS_F, {"buying": [], "selling": []})
+            s = read_json(suspicious_f(), {"buying": [], "selling": []})
             s["status"] = SUSPECT
             self._json(s)
         elif route == "premarket":
-            pm = read_json(PREMARKET_F, {"movers": []})
+            pm = read_json(premarket_f(), {"movers": []})
             rev = reverse_themes()
-            heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
-            news_map = read_json(NEWS_F, {}).get("ticker_news", {})
-            sug = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
+            heat = {h["sector"]: h for h in read_json(sector_heat_f(), {}).get("sectors", [])}
+            news_map = read_json(news_f(), {}).get("ticker_news", {})
+            sug = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
             for m in pm.get("movers", []):
                 th = rev.get(m["ticker"])
                 m["theme"] = th
@@ -2160,11 +2235,11 @@ class Handler(BaseHTTPRequestHandler):
             pm["status"] = PREMKT
             self._json(pm)
         elif route == "spinning":
-            sp = read_json(SPINNING_F, {"spins": []})
+            sp = read_json(spinning_f(), {"spins": []})
             rev = reverse_themes()
-            heat = {h["sector"]: h for h in read_json(SECTOR_HEAT_F, {}).get("sectors", [])}
-            news_map = read_json(NEWS_F, {}).get("ticker_news", {})
-            sug = {i["ticker"]: i for i in read_json(SUGGEST_F, {}).get("items", [])}
+            heat = {h["sector"]: h for h in read_json(sector_heat_f(), {}).get("sectors", [])}
+            news_map = read_json(news_f(), {}).get("ticker_news", {})
+            sug = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
             for s in sp.get("spins", []):
                 th = rev.get(s["ticker"])
                 s["theme"] = th
@@ -2217,7 +2292,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "forward":
             self._json(score_forward())
         elif route == "pnl-calendar":
-            self._json(read_json(PNL_F, {}))
+            self._json(read_json(pnl_f(), {}))
         elif route == "live":
             params = parse_qs(urlparse(self.path).query)
             req = (params.get("symbols", [""])[0] or "").split(",")
@@ -2242,13 +2317,13 @@ class Handler(BaseHTTPRequestHandler):
             esettings = _equity_settings()
             a = scanner.analyze(t, bars, esettings)
             apply_sizing(a, esettings)
-            a["sector"] = read_json(SECTORS_F, {}).get(t, "Other")
-            a["sector_hot"] = a["sector"] in read_json(SUGGEST_F, {}).get("hot_sectors", [])
+            a["sector"] = read_json(sectors_f(), {}).get(t, "Other")
+            a["sector_hot"] = a["sector"] in read_json(suggest_f(), {}).get("hot_sectors", [])
             self._json({"analysis": a, "bars": bars})
         elif route == "groups" and len(parts) > 2 and parts[2] == "status":
             self._json(GROUPS)
         elif route == "groups":
-            g = read_json(GROUPS_F, {"computed_at": None, "groups": []})
+            g = read_json(groups_f(), {"computed_at": None, "groups": []})
             g["status"] = GROUPS
             self._json(g)
         elif route == "sector-heat" and len(parts) > 2 and parts[2] == "status":
@@ -2256,13 +2331,13 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "sector-heat" and len(parts) > 2 and parts[2] == "live":
             self._json(live_sector_heat())
         elif route == "sector-heat":
-            self._json(read_json(SECTOR_HEAT_F, {"computed_at": None, "sectors": []}))
+            self._json(read_json(sector_heat_f(), {"computed_at": None, "sectors": []}))
         elif route == "news" and len(parts) > 2 and parts[2] == "status":
             self._json(NEWS)
         elif route == "news":
-            self._json(read_json(NEWS_F, {"computed_at": None, "sections": [], "ticker_news": {}}))
+            self._json(read_json(news_f(), {"computed_at": None, "sections": [], "ticker_news": {}}))
         elif route == "themes":
-            self._json(read_json(THEMES_F, {}))
+            self._json(read_json(themes_f(), {}))
         elif route == "refresh-all":
             self._json(REFRESH)
         elif route == "docs" and len(parts) > 2:
@@ -2286,7 +2361,7 @@ class Handler(BaseHTTPRequestHandler):
             # screeners (incl. the auto-built universe) are shared / owner-managed
             self._json({"ok": False, "error": "screeners are shared in hosted mode"}, 403); return
         if route == "screeners":
-            screeners = read_json(SCREENERS_F, [])
+            screeners = read_json(screeners_f(), [])
             raw = body.get("tickers", "")
             tickers = [t.strip().upper() for t in re.split(r"[\s,;]+", raw) if t.strip()]
             sid = re.sub(r"[^a-z0-9]+", "-", body.get("name", "screener").lower()).strip("-") or f"s{int(time.time())}"
@@ -2295,7 +2370,7 @@ class Handler(BaseHTTPRequestHandler):
                 sid = f"{base_sid}-{n}"; n += 1
             screeners.append({"id": sid, "name": body.get("name", "Screener"),
                               "is_default": False, "tickers": tickers})
-            write_json(SCREENERS_F, screeners)
+            write_json(screeners_f(), screeners)
             self._json({"ok": True, "id": sid})
 
         elif route == "scan" and len(parts) > 2:
@@ -2304,12 +2379,12 @@ class Handler(BaseHTTPRequestHandler):
             with _scan_lock:
                 if SCAN["running"]:
                     self._json({"ok": False, "error": "scan already running"}, 409); return
-                threading.Thread(target=run_scan, args=(sid,), kwargs={"max_age": 0 if fresh else 12}, daemon=True).start()
+                _spawn(run_scan, sid, max_age=0 if fresh else 12)
             self._json({"ok": True})
 
         elif route == "suggestions" and len(parts) > 3:
             ticker, action = parts[2].upper(), parts[3]
-            s = read_json(SUGGEST_F, {"items": []})
+            s = read_json(suggest_f(), {"items": []})
             it = next((i for i in s["items"] if i["ticker"] == ticker), None)
             if not it:
                 self._json({"error": "not found"}, 404); return
@@ -2344,56 +2419,56 @@ class Handler(BaseHTTPRequestHandler):
             with _sector_lock:
                 if SECTORH["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_sector_heat, daemon=True).start()
+                _spawn(run_sector_heat)
             self._json({"ok": True})
 
         elif route == "news" and len(parts) > 2 and parts[2] == "refresh":
             with _news_lock:
                 if NEWS["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_news_refresh, daemon=True).start()
+                _spawn(run_news_refresh)
             self._json({"ok": True})
 
         elif route == "universe" and len(parts) > 2 and parts[2] == "build":
             with _universe_lock:
                 if UNIVERSE["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_build_universe, daemon=True).start()
+                _spawn(run_build_universe)
             self._json({"ok": True})
 
         elif route == "suspicious" and len(parts) > 2 and parts[2] == "scan":
             with _suspect_lock:
                 if SUSPECT["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_suspicious, daemon=True).start()
+                _spawn(run_suspicious)
             self._json({"ok": True})
 
         elif route == "premarket" and len(parts) > 2 and parts[2] == "scan":
             with _premkt_lock:
                 if PREMKT["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_premarket, daemon=True).start()
+                _spawn(run_premarket)
             self._json({"ok": True})
 
         elif route == "spinning" and len(parts) > 2 and parts[2] == "scan":
             with _spin_lock:
                 if SPIN["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_spinning, daemon=True).start()
+                _spawn(run_spinning)
             self._json({"ok": True})
 
         elif route == "groups" and len(parts) > 2 and parts[2] == "detect":
             with _groups_lock:
                 if GROUPS["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_detect_groups, daemon=True).start()
+                _spawn(run_detect_groups)
             self._json({"ok": True})
 
         elif route == "refresh-all":
             with _refresh_lock:
                 if REFRESH["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
-                threading.Thread(target=run_refresh_all, daemon=True).start()
+                _spawn(run_refresh_all)
             self._json({"ok": True})
 
         else:
@@ -2456,8 +2531,8 @@ class Handler(BaseHTTPRequestHandler):
         if HOSTED and parts[1:2] == ["screeners"]:
             self._json({"ok": False, "error": "screeners are shared in hosted mode"}, 403); return
         if parts[1:2] == ["screeners"] and len(parts) > 2:
-            screeners = [s for s in read_json(SCREENERS_F, []) if s["id"] != parts[2]]
-            write_json(SCREENERS_F, screeners)
+            screeners = [s for s in read_json(screeners_f(), []) if s["id"] != parts[2]]
+            write_json(screeners_f(), screeners)
             self._json({"ok": True})
         else:
             self._json({"error": "unknown route"}, 404)
@@ -2597,7 +2672,7 @@ def main():
     UPLOADS.mkdir(parents=True, exist_ok=True)
     regen_watchlist()
     regen_trades_md()
-    run_forward_eod()                                    # catch up if we launched after the close
+    _run_forward_eod_all()                               # catch up (both markets) if we launched after the close
     threading.Thread(target=_forward_eod_loop, daemon=True).start()   # auto EOD snapshots (local only)
     url = f"http://localhost:{PORT}"
     try:

@@ -190,10 +190,18 @@ def batch_quotes(symbols, progress=None, chunk=100):
 
 
 def build_universe(exchanges="all", size=800, min_price=10, min_mktcap_m=300,
-                   min_dollar_vol_m=10, progress=None):
-    """Full pipeline -> ranked ticker list + stats. `progress(stage, total, done)` optional."""
-    syms = fetch_symbols(exchanges)
-    symbols = sorted(syms.keys())
+                   min_dollar_vol_m=10, progress=None, symbols=None):
+    """Full pipeline -> ranked ticker list + stats. `progress(stage, total, done)` optional.
+
+    `symbols`: when given (e.g. the Israeli/TASE seed list), use those directly and SKIP the
+    NASDAQ-Trader directory fetch + the US common-stock symbol filter. The same Yahoo
+    batch-quote + liquidity filter (price / mkt-cap / dollar-volume -> rank -> top N) then runs,
+    so it's still 'fetch then filter by liquidity', just over a different symbol source."""
+    if symbols is None:
+        syms = fetch_symbols(exchanges)
+        symbols = sorted(syms.keys())
+    else:
+        symbols = sorted(set(symbols))
     if progress:
         progress("symbols", len(symbols), len(symbols))
     quotes = batch_quotes(symbols, progress=(lambda d, t: progress("quotes", t, d)) if progress else None)

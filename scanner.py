@@ -43,6 +43,30 @@ PREF = {
 # Benchmarks for market regime + relative strength (equal-blend, per user choice).
 INDEXES = [("SPX", "^GSPC"), ("QQQ", "QQQ"), ("IWM", "IWM")]
 
+# Per-market configuration (US default + Israel / Tel Aviv Stock Exchange). Verified on
+# Yahoo: TASE bars resolve via the .TA suffix and the indexes ^TA125.TA / TA35.TA exist.
+# TASE trades Sunday-Thursday (closed Fri/Sat) and quotes prices in agorot (1/100 ILS) —
+# all strategy math is price-relative so that's display/sizing-unit only. `tz_offset` is
+# hours from UTC for the local session clock; `trading_days` are Python weekday() numbers
+# (Mon=0 .. Sun=6). `uni` holds the universe liquidity filter thresholds for that market.
+MARKETS = {
+    "us": {"indexes": [("SPX", "^GSPC"), ("QQQ", "QQQ"), ("IWM", "IWM")], "ref": "SPY",
+           "open": 9.5, "close": 16.0, "tz_offset": -4, "trading_days": (0, 1, 2, 3, 4),
+           "currency": "USD", "currency_sym": "$",
+           "uni": {"min_price": 10, "min_mktcap_m": 300, "min_dollar_vol_m": 10, "size": 800}},
+    "il": {"indexes": [("TA125", "^TA125.TA"), ("TA35", "TA35.TA")], "ref": "^TA125.TA",
+           "open": 9.9, "close": 17.25, "tz_offset": 3, "trading_days": (6, 0, 1, 2, 3),
+           "currency": "ILS", "currency_sym": "₪",
+           # NB: TASE quotes prices in AGOROT (1/100 ₪), so min_price + min_dollar_vol_m are in
+           # agorot units (min_dollar_vol_m=50 -> 50M agorot ≈ ₪0.5M/day). marketCap is in ₪.
+           # TASE has ~500 listed equities, ~220 with real liquidity — size is generous, not a true cap.
+           "uni": {"min_price": 50, "min_mktcap_m": 200, "min_dollar_vol_m": 50, "size": 300}},
+}
+
+
+def mcfg(market="us"):
+    return MARKETS.get(market, MARKETS["us"])
+
 
 # --------------------------------------------------------------------------- #
 # Data fetching (with on-disk daily cache)
@@ -833,7 +857,34 @@ def analyze(sym, bars, settings=None):
         if avwap_earn:
             supports.append(("AVWAP (earnings)", avwap_earn))
         alt = _pullback_plan(close, adr, supports, min(l[-5:]), sh_prices)
-    else:                                                # alt = break above the prior-day high
+    elif worth_waiting:
+        # alt = the CONFIRMATION entry for a patient dip-buy (deep pullback / consolidation): instead of
+        # only waiting at the deep zone, buy once buyers PROVE themselves by reclaiming the NEAREST real
+        # resistance overhead. Candidates: the 9/21/50 EMAs (match the chart), the prior-day high, and
+        # recent swing-high pivots (a "hard" horizontal level from prior days). Pick the CLOSEST one above
+        # price — on a strong leader, breaking the nearest level is enough; no need to wait for a far high.
+        # A buy-stop with a 1x-ADR stop, graded + forward-tested like any entry (the "safer play", measurable).
+        prior_high = max(h[-2:])
+        e9, e21 = _ema(c, 9), _ema(c, 21)
+        adr_px_c = close * adr / 100 or 0.01
+        floor = close + 0.1 * adr_px_c               # must be a real level overhead, not noise at the close
+        cands = []
+        for lvl, ck, lbl in ((e9, "9ema", "reclaim the 9 EMA"), (e21, "21ema", "reclaim the 21 EMA"),
+                             (e50, "50ema", "reclaim the 50 EMA"), (prior_high, "high", "break the prior-day high")):
+            if lvl and lvl >= floor:
+                cands.append((round(lvl, 2), ck, lbl))
+        for p in sh_prices:                          # overhead swing-high resistance (a hard level)
+            if p and p >= floor:
+                cands.append((round(p, 2), "resistance", "break overhead resistance"))
+        alt = None
+        if cands:
+            trig, ckind, clabel = min(cands, key=lambda x: x[0])     # the CLOSEST hurdle overhead
+            alt = _breakout_plan(trig, close, adr, clabel + " — buyers confirming")
+            if alt:
+                alt["kind"] = "confirm"
+                alt["confirm_kind"] = ckind
+                alt["trigger_note"] = f"{clabel} ${alt['entry']} — buyers confirming"
+    else:                                                # other pullbacks: alt = break the prior-day high
         alt = _breakout_plan(max(h[-2:]), close, adr, "buy-stop above the prior-day high")
     entries = [primary]
     if alt and abs(alt["entry"] - primary["entry"]) >= 0.4 * (entry * adr / 100 or 0.01):
@@ -925,16 +976,18 @@ def analyze(sym, bars, settings=None):
         # prev_high; the app (grade_suggestions) decides via _session_date() and sets prior_high.
         "last_bar_date": bars[-1].get("time"), "last_high": round(h[-1], 2),
         "prev_high": round(h[-2], 2) if len(h) >= 2 else round(h[-1], 2),
+        # current EMAs (the 50 is the deep-pullback line — a reclaim of it is itself a confirmation)
+        "ema10": round(e10, 2), "ema20": round(e20, 2), "ema50": round(e50, 2),
         "recent_gap": recent_gap, "news_move": news_move,
         "vol_signal": vol_signal, "vol_note": vol_note,
         "distribution_today": distribution_today,
     }
 
 
-def analyze_at(sym, date, settings=None):
+def analyze_at(sym, date, settings=None, market="us"):
     """Run analyze() on daily bars SLICED to a past date (a trade's entry date) so a setup can be
     graded AS OF when it was taken. Also attaches an RS-outperformance proxy vs the equal-blend
-    SPX/QQQ/IWM sliced to the same date. Price-based only — market regime / sector heat / news
+    benchmark indexes sliced to the same date. Price-based only — market regime / sector heat / news
     can't be reconstructed for a past date. Returns the analyze dict (+ rs_score, asof) or None."""
     bars = get_bars(sym)
     if not bars:
@@ -947,7 +1000,7 @@ def analyze_at(sym, date, settings=None):
     except Exception:
         return None
     b1, b3 = [], []
-    for _, isym in INDEXES:
+    for _, isym in mcfg(market)["indexes"]:
         ib = get_bars(isym)
         isl = [b for b in ib if b["time"] <= date] if ib else None
         if not isl or len(isl) < 63:
@@ -1374,10 +1427,10 @@ def _regime_one(name, bars):
             "stretched_50": very_stretched}
 
 
-def market_regime():
-    """Classify SPX / QQQ / IWM and return a blended market posture (0-100)."""
+def market_regime(market="us"):
+    """Classify the market's benchmark indexes and return a blended posture (0-100)."""
     idx = []
-    for name, sym in INDEXES:
+    for name, sym in mcfg(market)["indexes"]:
         bars = get_bars(sym)
         if bars and len(bars) >= 60:
             try:
@@ -1401,10 +1454,10 @@ def market_regime():
             "posture": round(avg), "label": label, "indexes": idx}
 
 
-def _benchmark_returns():
-    """Equal-blend 1m / 3m return of SPX+QQQ+IWM, for relative-strength outperformance."""
+def _benchmark_returns(market="us"):
+    """Equal-blend 1m / 3m return of the market's benchmark indexes, for RS outperformance."""
     r1, r3 = [], []
-    for _, sym in INDEXES:
+    for _, sym in mcfg(market)["indexes"]:
         bars = get_bars(sym)
         if not bars:
             continue
@@ -1416,11 +1469,11 @@ def _benchmark_returns():
     return (st.mean(r1) if r1 else 0.0), (st.mean(r3) if r3 else 0.0)
 
 
-def _attach_rs(results):
+def _attach_rs(results, market="us"):
     """Relative strength = 0.5 * percentile-in-universe + 0.5 * outperformance-vs-index."""
     if not results:
         return
-    b1, b3 = _benchmark_returns()
+    b1, b3 = _benchmark_returns(market)
     blended = [0.5 * r.get("p1m", 0) + 0.5 * r.get("p3m", 0) for r in results]
     order = sorted(range(len(results)), key=lambda i: blended[i])
     n = len(results)
@@ -1502,7 +1555,7 @@ def detect_groups(tickers, lookback=15, min_move=8.0, corr_thr=0.86, max_cand=12
     return groups
 
 
-def scan(tickers, settings=None, progress=None, max_age=12):
+def scan(tickers, settings=None, progress=None, max_age=12, market="us"):
     results, fails = [], []
     total = len(tickers)
     for i, t in enumerate(tickers, 1):
@@ -1521,7 +1574,7 @@ def scan(tickers, settings=None, progress=None, max_age=12):
             fails.append(t)
         if fetched:                 # only throttle when we actually hit Yahoo (cache miss)
             time.sleep(0.05)
-    _attach_rs(results)
+    _attach_rs(results, market)
     results.sort(key=lambda r: r["score"], reverse=True)
     return {"results": results, "failed": fails,
             "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
