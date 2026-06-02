@@ -255,7 +255,7 @@
                           <span class="shrink-0">⏳</span>
                           <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
                           <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
-                          <span class="text-slate-400 text-xs flex-1">wait for <span x-text="s.entry"></span></span>
+                          <span class="text-slate-400 text-xs flex-1" x-text="s.trigger_note || (s.entry_type==='stop' ? ('▲ break above $'+s.entry) : ('⏳ wait for pullback to $'+s.entry))"></span>
                           <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
                         </div>
                       </template>
@@ -496,17 +496,35 @@
                     <span class="badge mt-1" x-show="s.status==='taken'" :class="statusClass(s.status)">✓ taken</span>
                   </div>
                 </div>
-                <div class="grid grid-cols-3 gap-2 text-center text-sm">
-                  <div class="lvl"><div class="lvl-l">Buy zone</div><div class="text-up font-bold text-[13px]" x-text="s.zone_bottom+'–'+s.zone_top"></div></div>
-                  <div class="lvl"><div class="lvl-l">Stop</div><div class="text-down font-bold" x-text="s.stop"></div></div>
-                  <div class="lvl"><div class="lvl-l">Target 2R</div><div class="font-bold" style="color:var(--cyan)" x-text="s.target"></div></div>
+                <!-- entry options: a Breakout (buy-stop above a pivot) and/or a Pullback (buy the dip to
+                     support below price). Each is typed + phrased correctly — a buy-stop is "break above",
+                     a limit is "wait for the pullback", never "pull back toward" an upside trigger. -->
+                <div class="space-y-2">
+                  <template x-for="(e,ei) in displayEntries(s)" :key="ei">
+                    <div class="rounded-xl p-2.5" :class="ei===0?'border border-white/10 bg-white/[0.03]':'border border-white/5 bg-white/[0.015]'">
+                      <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <span class="badge shrink-0" :class="e.kind==='breakout'?'badge-ep':'badge-pullback'" x-text="(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback')+(ei===0?'':' · alt')"></span>
+                          <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
+                          <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
+                        </div>
+                        <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="ei===0?'primary':'option'"></span>
+                      </div>
+                      <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                        <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
+                        <div class="lvl"><div class="lvl-l" x-text="e.rotation?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
+                        <div class="lvl"><div class="lvl-l">Target 2R</div><div class="font-bold" style="color:var(--cyan)" x-text="e.target"></div></div>
+                      </div>
+                      <div x-show="e.buyable_now" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · $<span x-text="s.close"></span> is in the zone</div>
+                      <div x-show="!e.buyable_now" class="text-xs text-slate-500 mt-1.5" x-text="entryHint(e, s.close)"></div>
+                      <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk $<span x-text="e.risk_ps"></span>/sh</div>
+                    </div>
+                  </template>
                 </div>
-                <div x-show="inZone(s)" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · $<span x-text="s.close"></span> is in the zone</div>
-                <div x-show="!inZone(s)" class="text-xs text-slate-500">⏳ wait — pull back toward <span x-text="s.entry"></span> (now $<span x-text="s.close"></span>)</div>
                 <div x-show="s.earnings_soon" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,93,115,.16);color:#ffb3bf;border:1px solid rgba(255,93,115,.5)">⚠️ Earnings in <span x-text="s.earnings_days"></span>d<span x-show="s.earnings_estimate"> (est.)</span> — probably skip, binary risk</div>
                 <div x-show="s.distribution_today" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Distribution / reversal day — let it settle, don't buy the drop</div>
                 <div x-show="s.parabolic && !s.worth_waiting" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Extended ~<span x-text="s.ext50_adr"></span>× ADR above the 50 EMA — chasing; wait for a pullback</div>
-                <div class="text-xs text-slate-400"><b class="text-slate-100" x-text="s.shares ?? '—'"></b> sh · ≈$<span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> · risk $<span x-text="s.risk_ps"></span>/sh (1%)<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
+                <div class="text-xs text-slate-400">primary ≈$<span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> at 1% risk<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
                 <div class="text-xs text-slate-500" x-text="s.why"></div>
                 <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
                 <div class="flex gap-2 pt-1">
@@ -944,7 +962,7 @@
                   <template x-if="r.grade">
                     <div>
                       <div x-show="r.buyable" class="font-bold text-up">🟢 buy <span x-text="r.zone_bottom+'–'+r.zone_top"></span></div>
-                      <div x-show="!r.buyable" class="text-slate-400">⏳ wait <span x-text="r.entry"></span></div>
+                      <div x-show="!r.buyable" class="text-slate-400" x-text="r.trigger_note || (r.entry_type==='stop' ? ('▲ break above $'+r.entry) : ('⏳ wait for pullback to $'+r.entry))"></div>
                     </div>
                   </template>
                   <template x-if="!r.grade"><span class="text-[11px] text-slate-500">not in current setups</span></template>
@@ -1130,7 +1148,7 @@
                     <div class="lvl"><div class="lvl-l">&gt;1R</div><div class="text-xl font-extrabold" x-text="forward.aggregate.pct_gt1R+'%'"></div></div>
                   </div>
                 </template>
-                <div class="text-xs text-slate-500" x-show="!forward.aggregate">Picks logged — none matured yet (each needs ~7 sessions of forward data). The win rate / avg R appear here once they do.</div>
+                <div class="text-xs text-slate-500" x-show="!forward.aggregate">Picks logged — none matured yet (each needs ~7 sessions of forward data). The win rate / avg % appear here once they do.</div>
                 <template x-if="forward.by_day && forward.by_day.length">
                   <div class="space-y-3">
                     <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">Day-by-day — top picks &amp; the day's lesson</div>
@@ -1139,12 +1157,12 @@
                         <div class="flex items-center justify-between gap-2 px-3 py-2 bg-panel2 cursor-pointer" @click="openForwardDay = (openForwardDay===d.date ? null : d.date)">
                           <div class="flex items-center gap-2 text-sm min-w-0">
                             <span class="font-bold shrink-0" x-text="d.date"></span>
-                            <span class="text-[10px] text-slate-500 shrink-0 hidden sm:inline" title="This is the session you ACT on these — the top dashboard setups were frozen at the prior close, then fill on their triggers as this session trades. The status updates every market close.">act this session · frozen at prior close</span>
+                            <span class="text-[10px] text-slate-500 shrink-0 hidden sm:inline" title="The top dashboard setups frozen at the prior close. Each fills if/when price reaches its entry trigger over the following sessions — a pullback entry only fills if price pulls back to it (on an up day it may never trigger). Status updates every market close.">act this session · frozen at prior close</span>
                             <span class="badge shrink-0" x-show="d.posture!=null" :title="'blended market posture that day'" x-text="'regime '+d.posture"></span>
                           </div>
                           <div class="flex items-center gap-2 text-xs shrink-0">
                             <template x-if="d.summary && d.summary.avg_r!=null">
-                              <span class="text-slate-400"><b :class="d.summary.avg_r>=0?'text-up':'text-down'" x-text="(d.summary.avg_r>=0?'+':'')+d.summary.avg_r+'R'"></b> · <span x-text="d.summary.win_rate"></span>% · <span x-text="d.summary.matured"></span>✓/<span x-text="d.summary.open"></span> open</span>
+                              <span class="text-slate-400"><b :class="(fwdAvgPct(d.picks)||0)>=0?'text-up':'text-down'" :title="'avg '+d.summary.avg_r+'R across the filled picks'" x-text="(fwdAvgPct(d.picks)>=0?'+':'')+fwdAvgPct(d.picks)+'% avg'"></b> · <span x-text="d.summary.win_rate"></span>% win · <span x-text="d.summary.matured"></span>✓/<span x-text="d.summary.open"></span> open</span>
                             </template>
                             <template x-if="d.summary && d.summary.avg_r==null">
                               <span class="text-slate-500" x-text="(d.summary.awaiting||0)+' tracking — updates each close'"></span>
@@ -1155,15 +1173,15 @@
                         <div class="px-3 py-2 text-xs leading-snug border-t border-line" style="color:#ffd591" x-text="'💡 '+d.lesson"></div>
                         <div x-show="openForwardDay===d.date" x-transition.opacity class="border-t border-line">
                           <template x-for="(p,pi) in d.picks" :key="pi">
-                            <div class="flex items-center gap-2 px-3 py-1.5 text-sm border-t border-line/50 cursor-pointer hover:bg-white/5" @click="showChart(p.ticker, p)" :title="'View the chart for '+p.ticker+' with the snapshot levels (entry '+(p.entry||'?')+' · stop '+(p.stop||'?')+')'">
+                            <div class="flex items-center gap-2 px-3 py-1.5 text-sm border-t border-line/50 cursor-pointer hover:bg-white/5" @click="showChart(p.ticker, p, {frozen:true, date:d.date, status:p.fstatus, R:p.R, pct:fwdPct(p.R,p.entry,p.stop), exit:p.exit, entry:p.entry, stop:p.stop})" :title="'Chart with the FROZEN snapshot levels from '+d.date+' (entry '+(p.entry||'?')+' · stop '+(p.stop||'?')+') — not live'">
                               <span class="text-[10px] text-slate-600 shrink-0">📈</span>
                               <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(p.grade)" x-text="p.grade"></span>
                               <span class="font-bold w-16 shrink-0" x-text="p.ticker"></span>
                               <span class="text-slate-500 text-xs flex-1 truncate min-w-0" x-text="p.setup_type"></span>
                               <span class="badge shrink-0" x-show="p.trend_template" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)" title="passed the Minervini Trend Template">✓TT</span>
                               <span class="badge shrink-0" x-show="p.vcp" style="background:rgba(168,85,247,.18);color:#d9b3ff;border-color:rgba(168,85,247,.45)" title="VCP">🌀</span>
-                              <span class="font-bold shrink-0 w-14 text-right" :class="(p.R||0)>=0?'text-up':'text-down'" x-text="p.R!=null ? ((p.R>=0?'+':'')+p.R+'R') : '—'"></span>
-                              <span class="text-[10px] text-slate-500 shrink-0 w-20 text-right" :title="p.fstatus==='matured'?('exit on '+p.exit+' (snapshot stop $'+p.stop+')'):p.fstatus==='no-fill'?('never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry):p.fstatus==='awaiting'?('would enter on the '+(p.entry_type==='limit'?'pullback to':'break above')+' $'+p.entry+' next session'):''" x-text="p.fstatus==='matured' ? p.exit : (p.fstatus==='open' ? 'open' : p.fstatus==='no-fill' ? 'no fill' : p.fstatus==='awaiting' ? 'awaiting' : '—')"></span>
+                              <span class="font-bold shrink-0 w-16 text-right" :class="(p.R!=null?(fwdPct(p.R,p.entry,p.stop)||0):(p.progress_pct||0))>=0?'text-up':'text-down'" :style="p.R==null?'opacity:.55':''" :title="p.R!=null?('trade result = '+p.R+'R (entry → '+(p.fstatus==='open'?'now':'exit')+')'):(p.progress_pct!=null?('idea progress: the stock is '+(p.progress_pct>=0?'+':'')+p.progress_pct+'% from the entry $'+p.entry+' to now — but the entry never triggered, so hypothetical'):'')" x-text="p.R!=null ? ((fwdPct(p.R,p.entry,p.stop)>=0?'+':'')+fwdPct(p.R,p.entry,p.stop)+'%') : (p.progress_pct!=null ? ((p.progress_pct>=0?'+':'')+p.progress_pct+'%') : '—')"></span>
+                              <span class="text-[10px] shrink-0 w-24 text-right" :class="p.fstatus==='no-fill'?'text-slate-600':'text-slate-500'" :title="p.fstatus==='matured'?('filled, then exited on the '+(p.exit==='stop'?'snapshot stop $'+p.stop:'9-EMA close')):p.fstatus==='open'?('filled — still open, tracking to the 9-EMA close / stop'):p.fstatus==='no-fill'?('price never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry+' within the window — this setup gave no entry'):p.fstatus==='awaiting'?('entry $'+p.entry+' not '+(p.entry_type==='limit'?'pulled back to':'broken above')+' yet — fills if it triggers in a coming session'):''" x-text="p.fstatus==='matured' ? (p.exit==='stop'?'stopped out':p.exit==='9ema'?'9-EMA exit':'exited') : (p.fstatus==='open' ? 'filled · open' : p.fstatus==='no-fill' ? 'never triggered' : p.fstatus==='awaiting' ? 'no fill yet' : '—')"></span>
                             </div>
                           </template>
                         </div>
@@ -1235,8 +1253,28 @@
               🗓 Earnings <span x-text="chartModal._data.earnings.date"></span><span x-show="chartModal._data.earnings.estimate" title="estimated date">~</span><span x-show="chartModal._data.earnings.days!=null" x-text="' · '+(chartModal._data.earnings.days<=0?'today':'in '+chartModal._data.earnings.days+'d')"></span>
             </span>
           </template>
+          <template x-if="chartModal._meta && chartModal._meta.frozen">
+            <span class="text-xs font-bold px-2 py-1 rounded border" style="background:rgba(34,211,238,.14);color:#a5ecf7;border-color:rgba(34,211,238,.4)"
+              :title="'The ORIGINAL entry $'+chartModal._meta.entry+' / stop $'+chartModal._meta.stop+' I gave you, frozen at the close before '+chartModal._meta.date+'. The ▲ signal marker is on that close; watch the candles after it (stopped out? ran up?). Toggle Live to compare with the current setup.'">
+              🔬 Snapshot <span x-text="chartModal._meta.date"></span><span x-show="chartModal._meta.pct!=null" :class="chartModal._meta.pct>=0?'text-up':'text-down'" x-text="' · '+(chartModal._meta.pct>=0?'+':'')+chartModal._meta.pct+'%'"></span><span x-show="chartModal._meta.pct==null" class="text-slate-400" x-text="' · '+(chartModal._meta.status||'tracking')"></span>
+            </span>
+          </template>
         </div>
         <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+          <template x-if="chartModal._meta && chartModal._meta.frozen">
+            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Frozen = the entry/stop I gave you at the signal. Live = compares the ENTRANCE to where price is NOW (the idea's progress, no setup lines). The candles show how it did after the ▲ signal.">
+              <button class="px-2.5 py-1 text-xs font-bold" :class="!chartModal._showLive?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="chartModal._showLive=false; renderChart()">🔬 Frozen</button>
+              <button class="px-2.5 py-1 text-xs font-bold" :class="chartModal._showLive?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="chartModal._showLive=true; renderChart()">📈 Live</button>
+            </div>
+          </template>
+          <template x-if="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">
+            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Switch which setup's levels are drawn (the other shows faint)">
+              <template x-for="(e,ei) in chartModal._obj.entries" :key="ei">
+                <button class="px-2.5 py-1 text-xs font-bold" :class="chartModal.entryIdx===ei?'bg-accent text-white':'bg-panel2 text-slate-400'"
+                  @click="chartModal.entryIdx=ei; renderChart()" x-text="(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback')"></button>
+              </template>
+            </div>
+          </template>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showEmas?'bg-accent text-white':'bg-panel2 text-slate-400'"
             @click="chartModal.showEmas=!chartModal.showEmas; renderChart()" title="Show/hide the 9 / 21 / 50 EMAs">EMAs</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showVolume?'bg-accent text-white':'bg-panel2 text-slate-400'"
@@ -1256,6 +1294,7 @@
         EMAs <span style="color:#eab308">9</span>/<span style="color:#f59e0b">21</span>/<span style="color:#5b8cff">50</span> ·
         AVWAP <span style="color:#a855f7">ATH</span>/<span style="color:#22d3ee">earnings</span> ·
         <span style="color:#3b82f6">channel</span> · <b>volume</b> bars at the base (green up / red down).
+        <span x-show="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">When a name has two setups, the buttons above switch which one is drawn solid (the other shows faint). </span>
         Exit on a close under the <b>9 EMA</b>. EOD data.
       </div>
     </div>

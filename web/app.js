@@ -110,7 +110,7 @@ function dataCenter() {
     showFilters: false,
     showAllSug: false,
     calcModal: { open: false, ticker: '' },
-    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null },
+    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null, entryIdx: 0 },
     tradeModal: { open: false, mode: 'take', ticker: '' },
     _pollTimer: null,
 
@@ -206,6 +206,12 @@ function dataCenter() {
       if (!q || q.price == null) return;
       const lb = cm._bars[cm._bars.length - 1];
       try { cm._series.update({ time: lb.time, open: lb.open, high: Math.max(lb.high, q.price), low: Math.min(lb.low, q.price), close: q.price }); } catch (e) {}
+      // live rotation: keep the stop pinned to today's low as the session builds
+      if (cm._rotStop && cm._rotEntry && q.day_low != null) {
+        let st = q.day_low;
+        if (cm._rotEntry - st < 0.3 * cm._rotAdrPx) st = cm._rotEntry - 0.3 * cm._rotAdrPx;
+        try { cm._rotStop.applyOptions({ price: +st.toFixed(2) }); } catch (e) {}
+      }
     },
     async tickLive() {
       if (!this.liveOn) return;
@@ -311,13 +317,18 @@ function dataCenter() {
       (this.suggestions.items || []).forEach(s => {
         const q = px[s.ticker]; if (!q || q.price == null) return;
         s.close = q.price; s._livechg = q.change_pct;
+        // mirror the scanner's chase guard — a parabolic-extended (non-patient) name, a
+        // distribution bar, or a stretched setup is NOT "buyable now" even if price sits in
+        // the zone (the NBIS case). Without this, the live tick would wipe the scan's guard.
+        const chase = (s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended;
         if (s.zone_bottom != null && s.zone_top != null) {
-          // mirror the scanner's chase guard — a parabolic-extended (non-patient) name, a
-          // distribution bar, or a stretched setup is NOT "buyable now" even if price sits in
-          // the zone (the NBIS case). Without this, the live tick would wipe the scan's guard.
-          const chase = (s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended;
           s.buyable_now = (q.price >= s.zone_bottom && q.price <= s.zone_top) && !chase;
         }
+        // each entry option has its own zone — recompute its live buyability too
+        (s.entries || []).forEach(e => {
+          if (e.zone_bottom != null && e.zone_top != null)
+            e.buyable_now = (q.price >= e.zone_bottom && q.price <= e.zone_top) && !chase;
+        });
         s._liveStopped = s.stop != null && q.price <= s.stop;
       });
       if (this.live.posture) {
@@ -325,11 +336,12 @@ function dataCenter() {
         this.marketRegime.label = this.live.posture.label;
         if (this.live.posture.indexes) this.marketRegime.indexes = this.live.posture.indexes;
       }
-      // live re-rank: names that have pulled INTO their buy zone float to the top (live actionability).
+      // live re-rank: within each GRADE band, names that have pulled INTO their buy zone float up
+      // (live actionability). Grade still dominates — a buyable C never outranks a B (sugRank).
       // NOTE: this is intentionally a LIVE view and will differ intraday from the frozen forward
       // snapshot — that's by design (see the roadmap item to reconcile/label the two). Don't remove it.
       if (this.suggestions.items) {
-        this.suggestions.items.sort((a, b) => (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0) || (b.rating || 0) - (a.rating || 0));
+        this.suggestions.items.sort((a, b) => this.sugRank(a, b));
       }
       this.updateChartLive();
       // live pre-market movers (during the pre-market session, on that tab)
@@ -498,6 +510,14 @@ function dataCenter() {
     },
     wl(r) { return this.wlData[r.ticker] || {}; },
     get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected').slice(0, 8); },
+    // grade band from the rating (A+ 5 … D 1) — used so the sort respects GRADE first:
+    // a buyable C must never rank above a B. Buyable-now only floats WITHIN a grade band.
+    gradeBand(s) { const r = s.rating || 0; return r >= 82 ? 5 : r >= 73 ? 4 : r >= 63 ? 3 : r >= 52 ? 2 : 1; },
+    sugRank(a, b) {
+      return this.gradeBand(b) - this.gradeBand(a)
+        || (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0)
+        || (b.rating || 0) - (a.rating || 0);
+    },
     get filteredSuggestions() {
       let items = (this.suggestions.items || []);
       if (this.filter === 'pending') items = items.filter(s => s.status === 'pending');
@@ -521,7 +541,7 @@ function dataCenter() {
       if (this.vcpFilter) items = items.filter(s => s.vcp);
       if (this.newsFilter) items = items.filter(s => s.news_flag);
       if (this.buyableFilter) items = items.filter(s => this.inZone(s));
-      return items;
+      return [...items].sort((a, b) => this.sugRank(a, b));
     },
     get activeFilterCount() {
       return [this.setupFilter !== 'All', this.momFilter !== 'All',
@@ -570,6 +590,8 @@ function dataCenter() {
           ticker: tk, headline: n.title, link: n.link, sentiment: n.sentiment, trump: n.trump, published: n.published,
           grade: s && s.grade, setup: s && s.setup_type, why: s && s.why,
           zone_bottom: s && s.zone_bottom, zone_top: s && s.zone_top, entry: s && s.entry,
+          entry_type: s && s.entry_type,
+          trigger_note: s && s.entries && s.entries[0] ? s.entries[0].trigger_note : null,
           buyable: s ? this.inZone(s) : false, _sug: s,
         };
       }).sort((a, b) => (a.grade ? 0 : 1) - (b.grade ? 0 : 1) || this._pubTime(b.published) - this._pubTime(a.published));
@@ -888,6 +910,72 @@ function dataCenter() {
       if ((s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended) return false;
       return s.entry_type === 'limit' ? s.close <= s.entry : s.close >= s.entry;
     },
+    // typed status line for an entry plan: a buy-STOP is an upside trigger ("break above"),
+    // a LIMIT is a dip to support ("wait for the pullback") — never "pull back" for a stop.
+    // Prefer the plan's own trigger_note (set by the engine / the live rotation) when present.
+    entryHint(e, close) {
+      const now = close != null ? ` (now $${close})` : '';
+      if (e.trigger_note) return (e.entry_type === 'stop' ? '▲ ' : '⏳ ') + e.trigger_note + now;
+      if (e.entry_type === 'stop') return `▲ break above $${e.entry} to trigger${now}`;
+      return `⏳ wait for the pullback to $${e.entry}${now}`;
+    },
+    // LIVE intraday rotation: once the market's open and a (non-patient) name has broken out and
+    // sits ABOVE its daily pullback zone, the realistic pullback entry is the rotation — buy the
+    // reclaim of the PRIOR-DAY high, stop at TODAY's low (both update through the session). Returns
+    // the rotation levels for the name's pullback option, or null (keep the daily dip zone).
+    rotationFor(s) {
+      if (!s || s.worth_waiting || !s.prior_high) return null;        // patient deep-dip setups keep their zone
+      const q = (this.live.prices || {})[s.ticker];
+      if (!q || q.market_state !== 'REGULAR' || q.day_low == null || q.price == null) return null;
+      const pb = (s.entries || []).find(e => e.kind === 'pullback');
+      const zoneTop = pb ? (pb.zone_top != null ? pb.zone_top : pb.entry) : s.zone_top;
+      if (zoneTop != null && q.price <= zoneTop) return null;          // not above the dip zone → keep daily zone
+      const entry = s.prior_high;
+      const adrPx = entry * (s.adr || 0) / 100 || 0.01;
+      // it must actually be PULLING BACK to the prior-day high — i.e. price is at/below it (so the
+      // reclaim buy-stop sits above price). A name making new highs far above the prior-day high
+      // isn't pulling back, so no rotation (it keeps its breakout option / daily dip zone).
+      if (q.price > entry + 0.3 * adrPx) return null;
+      let stop = q.day_low;
+      if (entry - stop < 0.3 * adrPx) stop = +(entry - 0.3 * adrPx).toFixed(2);   // floor so a gap-up isn't ~0 risk
+      stop = +stop.toFixed(2);
+      const riskPs = +(entry - stop).toFixed(2);
+      if (riskPs <= 0) return null;
+      const status = q.price < entry ? 'below' : (q.price <= entry + 0.3 * adrPx ? 'reclaim' : 'extended');
+      return {
+        entry: +entry.toFixed(2), stop, risk_ps: riskPs, wide: riskPs > 1.0 * adrPx,
+        zone_bottom: +entry.toFixed(2), zone_top: +(entry + 0.3 * adrPx).toFixed(2),
+        target: +(entry + 2 * riskPs).toFixed(2),
+        buyable_now: status === 'reclaim', status,
+      };
+    },
+    // merge a live rotation onto the pullback entry for display (entry/stop/zone/sizing + phrasing)
+    _applyRot(s, e, rot) {
+      const acct = this.settings.account_size, rp = this.settings.risk_pct || 1, mp = this.settings.max_position_pct || 15;
+      let shares = null;
+      if (acct && rot.risk_ps > 0) shares = Math.max(0, Math.min(
+        Math.floor(acct * rp / 100 / rot.risk_ps), Math.floor(acct * mp / 100 / rot.entry), Math.floor(acct / rot.entry)));
+      const note = rot.status === 'reclaim'
+        ? `rotating above the prior-day high $${rot.entry} — reclaim · stop = day low $${rot.stop}`
+        : rot.status === 'below'
+          ? `buy the reclaim of the prior-day high $${rot.entry} · stop = day low $${rot.stop}`
+          : `above the prior-day-high trigger $${rot.entry} — wait for a pullback to it · stop = day low $${rot.stop}`;
+      return { ...e, ...rot, entry_type: 'stop', rotation: true, shares,
+        trigger_note: note, entry_note: 'intraday rotation: reclaim the prior-day high, stop at the day low' };
+    },
+    // the entries to render for a card/chart — the pullback option swapped for the live rotation
+    // when one applies. Falls back to a single synthesized entry for legacy items without `entries`.
+    displayEntries(s) {
+      const entries = (s.entries && s.entries.length) ? s.entries : [{
+        kind: (s.entry_type === 'stop' ? 'breakout' : 'pullback'), entry_type: s.entry_type,
+        entry: s.entry, stop: s.stop, target: s.target, zone_bottom: s.zone_bottom,
+        zone_top: s.zone_top, buyable_now: s.buyable_now, shares: s.shares, risk_ps: s.risk_ps,
+        trigger_note: s.trigger_note,
+      }];
+      const rot = this.rotationFor(s);
+      if (!rot) return entries;
+      return entries.map(e => e.kind === 'pullback' ? this._applyRot(s, e, rot) : e);
+    },
 
     // ---------- watchlist ----------
     async saveWatchlist() {
@@ -978,9 +1066,27 @@ function dataCenter() {
     flash(m) { this.savedMsg = m; setTimeout(() => this.savedMsg = '', 1500); },
 
     // ---------- charts ----------
-    async showChart(ticker, obj) {
+    // % actually made on a forward pick (the trader thinks in % gained, not R). The sim gives R =
+    // (exit − entry)/risk, so % = R × (entry − stop)/entry × 100. null until it matures.
+    fwdPct(R, entry, stop) {
+      if (R == null || !entry || !stop || entry <= stop) return null;
+      return +(R * (entry - stop) / entry * 100).toFixed(1);
+    },
+    // average % across a day's picks that actually filled (null until at least one fills)
+    fwdAvgPct(picks) {
+      const ps = (picks || []).map(p => this.fwdPct(p.R, p.entry, p.stop)).filter(v => v != null);
+      if (!ps.length) return null;
+      return +(ps.reduce((a, b) => a + b, 0) / ps.length).toFixed(1);
+    },
+    // `meta` (optional) flags a FORWARD-TEST snapshot view: {frozen:true, date, frozenAt, status, R, ...}.
+    // It makes the chart show the ORIGINAL frozen levels with a signal marker + outcome, so it reads as
+    // "here's the setup I gave you and how it did", not a fresh live setup.
+    async showChart(ticker, obj, meta) {
       this.chartModal.open = true; this.chartModal.ticker = ticker;
       this.chartModal._obj = obj || null;
+      this.chartModal._meta = meta || null;
+      this.chartModal._showLive = false;            // forward snapshots default to the FROZEN view
+      this.chartModal.entryIdx = 0;                 // default to the primary setup
       await this.$nextTick();
       this.chartModal._data = await this.api('/chart/' + ticker);
       this.renderChart();
@@ -993,6 +1099,11 @@ function dataCenter() {
       if (this.chartModal._chart) { try { this.chartModal._chart.remove(); } catch (e) {} this.chartModal._chart = null; }
       box.innerHTML = '';
       const data = this.chartModal._data;
+      // Forward-snapshot view: FROZEN draws the entry/stop I gave; LIVE drops the setup and instead
+      // compares the ENTRANCE (frozen entry) to where price is NOW — the idea's progress.
+      const meta = this.chartModal._meta;
+      const isSnapshot = !!(meta && meta.frozen);
+      const showLive = isSnapshot && this.chartModal._showLive;
       const obj = this.chartModal._obj;
       const chart = LightweightCharts.createChart(box, {
         width: box.clientWidth, height: box.clientHeight,
@@ -1057,16 +1168,70 @@ function dataCenter() {
         chLine(data.channel.lower, 2, 0);
         chLine(data.channel.mid, 1, 2);   // dashed midline
       }
-      // buy-zone band (green) + stop (red)
-      const pl = (p, c, w, style, title) => { if (p) series.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: style, axisLabelVisible: true, title }); };
-      if (obj) {
-        if (obj.zone_top && obj.zone_bottom) {
-          pl(obj.zone_top, '#22e0a1', 1, 2, 'Buy ≤');
-          pl(obj.zone_bottom, '#22e0a1', 2, 0, 'Buy ≥');
-        } else if (obj.entry || obj.planned_entry) {
-          pl(obj.entry || obj.planned_entry, '#22e0a1', 2, 0, 'Entry');
+      // buy-zone band (green) + stop (red) for the SELECTED setup; the other setup(s) drawn faint.
+      // The pullback option may be a LIVE rotation (reclaim the prior-day high, stop = day low) —
+      // its stop line is tracked so the live tick can move it with today's low.
+      const pl = (p, c, w, style, title) => p ? series.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: style, axisLabelVisible: true, title }) : null;
+      const faint = (p, c) => { if (p) series.createPriceLine({ price: p, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' }); };
+      this.chartModal._rotStop = null;
+      // signal bar = the prior close the snapshot was frozen at (last bar BEFORE the act-session date)
+      let sigTime = null;
+      if (isSnapshot && meta.date) {
+        const prior = bars.filter(b => b.time < meta.date);
+        sigTime = prior.length ? prior[prior.length - 1].time : meta.date;
+      }
+      const lastT = bars.length ? bars[bars.length - 1].time : null;
+      // draw a level as a RAY from the signal forward (the actionable window only) — so candles BEFORE
+      // the freeze don't look like fills (the entry/stop only apply after the setup was frozen). This is
+      // the confusion: a pullback's dip to the entry often happened on/before the signal day, not after.
+      const ray = (val, color, title) => {
+        if (val == null || !sigTime || !lastT) return;
+        chart.addLineSeries({ color, lineWidth: 2, lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, title })
+          .setData([{ time: sigTime, value: val }, { time: lastT, value: val }]);
+      };
+      if (isSnapshot) {
+        // FROZEN = the entry/stop I gave; LIVE = entrance vs current price (the idea's PROGRESS, no setup)
+        const entry = meta.entry, stop = meta.stop;
+        const cur = ((this.live.prices || {})[this.chartModal.ticker] || {}).price
+          || (bars.length ? bars[bars.length - 1].close : null);
+        if (!showLive) {
+          ray(entry, '#22e0a1', 'Snapshot entry');
+          ray(stop, '#ff5d73', 'Snapshot stop');
+        } else {
+          ray(entry, '#22e0a1', 'Entrance');
+          if (cur && entry) {
+            const prog = +(((cur - entry) / entry) * 100).toFixed(1);
+            pl(+cur.toFixed(2), '#22d3ee', 2, 0, 'Now (' + (prog >= 0 ? '+' : '') + prog + '%)');
+          }
         }
-        pl(obj.stop, '#ff5d73', 1, 2, 'Stop');
+      } else if (obj) {
+        const dEntries = this.displayEntries(obj);
+        const idx = dEntries.length ? Math.min(this.chartModal.entryIdx || 0, dEntries.length - 1) : 0;
+        const e = dEntries.length ? dEntries[idx] : obj;
+        // faint markers for the OTHER live setup(s)
+        dEntries.forEach((o, oi) => {
+          if (oi === idx) return;
+          faint(o.zone_bottom || o.entry, 'rgba(34,224,161,.35)');
+          faint(o.zone_top, 'rgba(34,224,161,.22)');
+          faint(o.stop, 'rgba(255,93,115,.35)');
+        });
+        if (e.zone_top && e.zone_bottom) {
+          pl(e.zone_top, '#22e0a1', 1, 2, e.rotation ? 'Reclaim ≤' : 'Buy ≤');
+          pl(e.zone_bottom, '#22e0a1', 2, 0, e.rotation ? 'Reclaim (prior-day high)' : 'Buy ≥');
+        } else if (e.entry || obj.entry || obj.planned_entry) {
+          pl(e.entry || obj.entry || obj.planned_entry, '#22e0a1', 2, 0, 'Entry');
+        }
+        const stopLine = pl(e.stop || obj.stop, '#ff5d73', 1, 2, e.rotation ? 'Stop (day low)' : 'Stop');
+        if (e.rotation && stopLine) {
+          this.chartModal._rotStop = stopLine;
+          this.chartModal._rotEntry = e.entry;
+          this.chartModal._rotAdrPx = (e.entry || 0) * (obj.adr || 0) / 100 || 0.01;
+        }
+      }
+      // forward-test snapshot: drop a marker at the SIGNAL bar so you can watch the price action AFTER it
+      // (the entry/stop rays start here — fills only count from this bar forward).
+      if (isSnapshot && sigTime) {
+        try { series.setMarkers([{ time: sigTime, position: 'belowBar', color: '#22d3ee', shape: 'arrowUp', text: 'signal' }]); } catch (e) {}
       }
       chart.timeScale().fitContent();
       this.chartModal._chart = chart;
@@ -1074,7 +1239,8 @@ function dataCenter() {
     closeChart() {
       if (this.chartModal._ro) { try { this.chartModal._ro.disconnect(); } catch (e) {} this.chartModal._ro = null; }
       if (this.chartModal._chart) { this.chartModal._chart.remove(); this.chartModal._chart = null; }
-      this.chartModal._series = null; this.chartModal._bars = null;
+      this.chartModal._series = null; this.chartModal._bars = null; this.chartModal._rotStop = null;
+      this.chartModal._meta = null; this.chartModal._showLive = false;
       this.chartModal.open = false;
     },
   };

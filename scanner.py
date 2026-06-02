@@ -208,6 +208,11 @@ def fetch_quotes(symbols, max_age=30):
                                "ext_change_pct": round(ext_chg, 2) if ext_chg is not None else None,
                                "prev_close": q.get("regularMarketPreviousClose"),
                                "change_pct": round(chg, 2) if chg is not None else None,
+                               # today's regular-session range — feeds the intraday rotation entry
+                               # (buy the reclaim of the prior-day high, stop at the day's low)
+                               "day_high": q.get("regularMarketDayHigh"),
+                               "day_low": q.get("regularMarketDayLow"),
+                               "day_open": q.get("regularMarketOpen"),
                                "market_state": ms, "_t": now}
                         _QUOTE_CACHE[sym] = rec
                         out[sym] = rec
@@ -290,6 +295,81 @@ def _swing_highs(h, left=3, right=3, lookback=60):
         if h[i] == max(h[i - left:i + right + 1]):
             out.append((i, h[i]))
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Entry-plan builders. A suggestion can carry up to two entry options (a buy-stop
+# BREAKOUT above a pivot, and/or a buy-the-dip PULLBACK to support below price).
+# Each returns a self-contained plan dict (entry/stop/zone/sizing-ready) or None
+# when the option doesn't make sense — so we "show two only where it makes sense."
+# --------------------------------------------------------------------------- #
+def _breakout_plan(pivot, close, adr, note="buy-stop above the pivot high"):
+    """Buy-STOP above an upside pivot, 1x-ADR stop. The pivot must sit at/above the
+    current price (a genuine upside trigger), else there's nothing to break out over."""
+    if not pivot or pivot <= 0 or pivot < close:
+        return None
+    entry = round(pivot, 2)
+    e_adr = entry * adr / 100 or 0.01
+    stop = round(entry * (1 - adr / 100), 2)
+    risk_ps = round(entry - stop, 2)
+    if risk_ps <= 0:
+        return None
+    zone_bottom = round(entry, 2)
+    zone_top = round(entry + 0.5 * e_adr, 2)
+    buf = 0.3 * e_adr
+    return {
+        "kind": "breakout", "entry_type": "stop", "entry": entry, "stop": stop,
+        "stop_basis": "1x ADR below the trigger", "inval": stop,
+        "risk_ps": risk_ps, "target": round(entry + 2 * risk_ps, 2),
+        "zone_bottom": zone_bottom, "zone_top": zone_top,
+        "buyable_now": (zone_bottom - buf) <= close <= (zone_top + buf),
+        "entry_note": note, "trigger_note": f"break above ${entry} to trigger",
+    }
+
+
+def _pullback_plan(close, adr, supports, recent_low, sh_prices):
+    """Buy-LIMIT into the nearest meaningful support BELOW price. `supports` is a list
+    of (label, price); we pick the highest one that's at least ~0.4x ADR under the close
+    (so it's a real, distinct dip — not basically today's price). Stop anchors to the
+    tighter of the 5-day structure low / a reclaimed swing high, clamped 0.45-1.2x ADR.
+    Returns None when no support sits meaningfully below price (don't force a 2nd option)."""
+    adr_px = close * adr / 100 or 0.01
+    below = [(lbl, v) for lbl, v in supports if v and v <= close - 0.4 * adr_px]
+    if not below:
+        return None
+    lbl, sup = max(below, key=lambda x: x[1])          # nearest support beneath price
+    entry = round(sup, 2)
+    e_adr = entry * adr / 100 or 0.01
+    wide_floor = entry - 1.2 * e_adr
+    tight_cap = entry - 0.45 * e_adr
+    struct = recent_low - 0.15 * e_adr
+    reclaimed = [p for p in sh_prices if p < entry - 0.02 * e_adr]
+    sh_stop = (max(reclaimed) - 0.10 * e_adr) if reclaimed else None
+    cands = []
+    if struct >= wide_floor:
+        cands.append((struct, "5-day structure low"))
+    if sh_stop is not None and sh_stop >= wide_floor:
+        cands.append((sh_stop, f"reclaimed swing high ${round(max(reclaimed), 2)} (close below)"))
+    if cands:
+        raw, basis = max(cands, key=lambda x: x[0])
+    else:
+        raw, basis = max(wide_floor, struct), "1.2x ADR limit"
+    stop = round(min(raw, tight_cap), 2)
+    risk_ps = round(entry - stop, 2)
+    if risk_ps <= 0:
+        return None
+    zone_top = round(entry + 0.6 * e_adr, 2)
+    zone_bottom = round(entry - 0.25 * e_adr, 2)
+    buf = 0.3 * e_adr
+    return {
+        "kind": "pullback", "entry_type": "limit", "entry": entry, "stop": stop,
+        "stop_basis": basis, "inval": round(recent_low, 2),
+        "risk_ps": risk_ps, "target": round(entry + 2 * risk_ps, 2),
+        "zone_bottom": zone_bottom, "zone_top": zone_top,
+        "buyable_now": (zone_bottom - buf) <= close <= (zone_top + buf),
+        "entry_note": f"buy the pullback into the {lbl} (limit, below ${round(close, 2)})",
+        "trigger_note": f"wait for the pullback to ${entry}",
+    }
 
 
 def _vcp(bars, lookback=60):
@@ -469,8 +549,10 @@ def analyze(sym, bars, settings=None):
         gap5 = max((o[k] / c[k - 1] - 1) * 100 for k in range(-5, 0))
         move5 = max((c[k] / c[k - 1] - 1) * 100 for k in range(-5, 0))
         recent_gap = round(max(gap5, move5), 1)
+        gap_up = round(gap5, 1)                  # the TRUE open gap (catalyst tell) — not an intraday run
     else:
         recent_gap = 0.0
+        gap_up = 0.0
     news_move = recent_gap >= 8
 
     uptrend = close > s50 and above >= 2
@@ -510,7 +592,11 @@ def analyze(sym, bars, settings=None):
         setup_type = "AVWAP reclaim (earnings)"
     elif is_deep_pullback:
         setup_type = "Deep Pullback"
-    elif max_day >= 10 and dist_hi <= 1.5 * adr:
+    elif gap_up >= 8 and dist_hi <= 1.5 * adr:
+        # Episodic Pivot = a TRUE open gap on a catalyst (not just any big intraday run into
+        # the highs — that's a Breakout). The "+ fresh news" half is confirmed in the app layer
+        # (grade_suggestions), which has the news feed; a gap with no material catalyst gets
+        # relabeled Breakout there. Same buy-stop mechanics either way.
         setup_type = "Episodic Pivot"
     else:
         setup_type = "Breakout"
@@ -720,6 +806,37 @@ def analyze(sym, bars, settings=None):
     if parabolic and not worth_waiting:
         buyable_now = False
 
+    # ----- entry options (1-2 plans) -----
+    # entries[0] mirrors the primary computed above (so grading / sizing / forward-test / coach
+    # are unchanged); entries[1] is the alternative, shown only when it's a real, distinct option:
+    #  - a BREAKOUT/EP also offers the PULLBACK (buy the dip to the nearest support below price)
+    #  - a patient dip-buy (Pullback / Deep Pullback / Consolidation / AVWAP) also offers the
+    #    BREAKOUT of the prior-day high (buy the strength instead of waiting on support)
+    breakout_setup = setup_type in ("Breakout", "Episodic Pivot")
+    primary = {
+        "kind": "breakout" if breakout_setup else "pullback",
+        "entry_type": entry_type, "entry": entry, "stop": stop, "stop_basis": stop_basis,
+        "inval": inval, "risk_ps": risk_ps, "target": target,
+        "zone_bottom": zone_bottom, "zone_top": zone_top, "buyable_now": buyable_now,
+        "entry_note": entry_note,
+        "trigger_note": (f"break above ${entry} to trigger" if entry_type == "stop"
+                         else f"wait for the pullback to ${entry}"),
+    }
+    sh_prices = [p for _, p in _swing_highs(h)]
+    if breakout_setup:                                   # alt = wait for the pullback to support
+        supports = [("breakout level", p) for p in sh_prices]
+        supports += [("10-EMA", e10), ("20-EMA", e20), ("50-MA", s50), ("AVWAP (ATH)", avwap_ath)]
+        if avwap_earn:
+            supports.append(("AVWAP (earnings)", avwap_earn))
+        alt = _pullback_plan(close, adr, supports, min(l[-5:]), sh_prices)
+    else:                                                # alt = break above the prior-day high
+        alt = _breakout_plan(max(h[-2:]), close, adr, "buy-stop above the prior-day high")
+    entries = [primary]
+    if alt and abs(alt["entry"] - primary["entry"]) >= 0.4 * (entry * adr / 100 or 0.01):
+        if distribution_today or extended or (parabolic and not worth_waiting):
+            alt["buyable_now"] = False                   # never flag an alt buyable into a hot/extended move
+        entries.append(alt)
+
     # ----- sizing -----
     acct = settings.get("account_size")
     risk_pct = settings.get("risk_pct", 1.0)
@@ -778,6 +895,12 @@ def analyze(sym, bars, settings=None):
         "entry_quality": entry_quality, "worth_waiting": worth_waiting,
         "zone_top": zone_top, "zone_bottom": zone_bottom, "buyable_now": buyable_now,
         "parabolic": parabolic, "ext50_adr": round(ext50_adr, 1),
+        "entries": entries, "gap_up": gap_up,
+        # inputs for the date-correct "prior-day high" (the level a live rotation entry reclaims).
+        # During a live session the cached daily series' last bar is TODAY, so the prior day is
+        # prev_high; the app (grade_suggestions) decides via _session_date() and sets prior_high.
+        "last_bar_date": bars[-1].get("time"), "last_high": round(h[-1], 2),
+        "prev_high": round(h[-2], 2) if len(h) >= 2 else round(h[-1], 2),
         "recent_gap": recent_gap, "news_move": news_move,
         "vol_signal": vol_signal, "vol_note": vol_note,
         "distribution_today": distribution_today,

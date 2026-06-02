@@ -1,5 +1,5 @@
 {
-  "computed_at": "2026-06-02 12:32",
+  "computed_at": "2026-06-02 14:18",
   "sectors": [
     {
       "sector": "Software/Cloud/Cyber",
@@ -782,16 +782,16 @@
     {
       "sector": "IP",
       "count": 5,
-      "perf_1d": 6.35,
-      "perf_1w": 11.44,
-      "perf_1mo": 34.64,
-      "perf_3mo": 114.8,
-      "perf_6mo": 185.02,
+      "perf_1d": 6.33,
+      "perf_1w": 11.43,
+      "perf_1mo": 34.62,
+      "perf_3mo": 114.78,
+      "perf_6mo": 184.99,
       "breadth": 80,
       "streak": 8,
       "trend": "Rising",
       "fresh": false,
-      "score": 17.74,
+      "score": 17.72,
       "members": [
         {
           "ticker": "ARM",
@@ -811,10 +811,10 @@
         },
         {
           "ticker": "ADEA",
-          "close": 28.61,
-          "perf_1d": 7.11,
-          "perf_1w": 6.52,
-          "perf_1mo": -10.17,
+          "close": 28.59,
+          "perf_1d": 7.04,
+          "perf_1w": 6.44,
+          "perf_1mo": -10.24,
           "above20": false
         },
         {

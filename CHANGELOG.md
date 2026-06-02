@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-06-02 (Dual entries, live rotation, forward-test fixes — session)
+
+### Dual entry options + EP relabel (`scanner.py`, `app.py`, `web/`)
+- Every suggestion now carries an **`entries` list** (1–2 plans): a **Breakout** (buy-stop above a pivot) and/or
+  a **Pullback** (buy the dip to the best support below price). `entries[0]` mirrors the legacy primary so
+  grade/sizing/forward/coach are unchanged. Helpers `_breakout_plan`/`_pullback_plan`; each plan typed +
+  phrased (**"break above $X"** vs **"wait for the pullback to $Y"** — never "pull back" for a buy-stop).
+  Patient setups also offer "break above the prior-day high"; shown only when distinct (≥0.4×ADR). Cards
+  render both options with per-option sizing; chart has a **▲ Breakout / ⏳ Pullback** switch (other drawn faint).
+- **Episodic Pivot now requires a TRUE open gap** (`gap_up`≥8, gated in scanner) **AND a fresh good-news
+  catalyst** (confirmed in `grade_suggestions`); a multi-day run into a base high = **Breakout** (fixes the
+  long-flagged ONDS/INOD relabel).
+- Coach docs (`CLAUDE.md`, `find-setups`) updated with the EP rule + dual-option phrasing.
+
+### Suggestions sort: grade dominates (`web/app.js`)
+- `sugRank`/`gradeBand`: order is **grade band → buyable-now → rating**, so a buyable **C never outranks a B**
+  (the "press show-all to find hidden B's" bug). Buyable-now still floats up, but only *within* a grade band.
+
+### Live intraday ROTATION pullback (`scanner.py`, `app.py`, `web/`)
+- During REGULAR hours, when a non-patient name has broken out and is **pulling back to its prior-day high**,
+  the Pullback option becomes a live rotation: **buy the reclaim of the prior-day high, stop at TODAY's low**
+  (both update each tick; ⚠ flag if risk > 1×ADR). `fetch_quotes` now returns `day_high/low/open`; `analyze`
+  exposes `last_bar_date/last_high/prev_high`; `grade_suggestions` computes a date-correct `prior_high` via
+  `_session_date()`; frontend `rotationFor`/`displayEntries`; chart tracks the rotation stop to the live low.
+
+### EOD jobs are POST-CLOSE only — calendar/forward no longer corrupted mid-session (`app.py`)
+- `record_daily_pnl` + the forward snapshot capture were firing on **every launch / 30-min heartbeat / scan**
+  (not gated), so dev restarts wrote a stale mid-session value into today's P&L cell and re-froze the next
+  snapshot from re-scanned data. New `_after_close_today()` (weekday, ET≥16:00) gates both — never pre-market/
+  mid-session. Snapshots now carry `logged_at` + `frozen_at_close_of`. Cleaned the bogus 06-02 P&L cell + the
+  premature 06-03 snapshot (backed up first).
+
+### Forward-test chart + readout (`app.py`, `web/`)
+- Forward-pick chart shows the **FROZEN snapshot levels** (not recomputed), a ▲ **signal marker at the freeze
+  bar**, and a 🔬 **Snapshot badge**. **🔬 Frozen ⇄ 📈 Live** toggle: Live drops the setup and compares the
+  **Entrance to current price** (the idea's progress). **No target line.** Metric is **% made, not R**
+  (`fwdPct`/`fwdAvgPct`); day header shows "+X% avg". Levels drawn as **rays from the signal forward** so
+  pre-freeze candles don't look like fills. Status labels: "filled · open" / "stopped out" / **"no fill yet"** /
+  **"never triggered"**. Every pick carries **`progress_pct`** (entry → latest close) so a name that ran without
+  giving its dip still shows the move (un-filled shown muted).
+- **Snapshot date = the session you TRADE the picks; sim fills from that day inclusive.** The 06-02 snapshot
+  held 06-01's traded picks (RGTI/CIFR filled on 06-01) — relabeled **06-02 → 06-01** so the fills show, and
+  created today's **06-02** snapshot. (Open follow-up: track the breakout leg in the forward test too — on
+  up-days the pullback leg misses moves a breakout would catch.)
+
 ## 2026-06-02 (Prediction now reads pre/after-hours SECTOR movement)
 - User: the prediction's rotation (Into/Out of) is the EOD multi-day trend and ignored premarket — e.g.
   Photonics/Optics was popping pre-market two days running but still showed as "cooling."

@@ -1043,9 +1043,15 @@ def grade_suggestions(items, settings):
     news_data = read_json(NEWS_F, {})
     news_map = news_data.get("ticker_news", {})
     theme_news = news_data.get("theme_news", {})
+    sd = _session_date()                                  # the live/most-recent session date (SPY-derived)
     for it in items:
         apply_sizing(it, settings)
         it["worth_waiting"] = it.get("setup_type") in ("Deep Pullback", "Consolidation")
+        # date-correct "prior-day high" the live rotation entry reclaims: if the scan's last daily
+        # bar IS the current session (today's forming bar), the prior day is prev_high; otherwise
+        # the last bar is already a completed prior session and IS the prior-day high.
+        it["prior_high"] = (it.get("prev_high") if it.get("last_bar_date") == sd
+                            else it.get("last_high"))
         # earnings proximity — a binary print within ~1 week is a reason to skip a fresh entry
         ed = days_until(it.get("earnings_date"))
         it["earnings_days"] = ed
@@ -1075,6 +1081,13 @@ def grade_suggestions(items, settings):
             it["news_headline"] = it["news_link"] = it["news_dir"] = it["news_scope"] = None
             it["news_trump"] = False
         it["news_flag"] = bool(nm or tn or it.get("recent_gap", 0) >= 12)
+        # EP = a TRUE gap (gated in scanner) AND a fresh material catalyst. With the gap but no
+        # good-news catalyst attached, it's just a base breakout — relabel so card/coach/grade agree.
+        if it.get("setup_type") == "Episodic Pivot" and it.get("news_dir") != "good":
+            it["setup_type"] = "Breakout"
+        # size every entry option (each plan carries its own entry/risk_ps), not just the primary
+        for e in it.get("entries", []):
+            apply_sizing(e, settings)
     # ---- leader-in-group: within each theme, rank names by relative strength so the
     # strongest stock of a hot group gets a 🥇 mark (like the Sector Heat awards) ----
     groups = {}
@@ -1189,7 +1202,9 @@ def log_forward_picks(date_key=None):
               "theme_trend": s.get("theme_trend"), "close_at_signal": s.get("close")}
              for s in graded]
     log.setdefault("snapshots", {})[day] = {
-        "posture": read_json(MARKET_F, {}).get("posture"), "picks": picks}
+        "posture": read_json(MARKET_F, {}).get("posture"), "picks": picks,
+        "logged_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),  # provenance: when frozen
+        "frozen_at_close_of": _session_date()}                                    # the session whose close this is
     write_json(FORWARD_F, log)
 
 
@@ -1202,6 +1217,18 @@ def _market_closed():
         return True
     hm = et.hour + et.minute / 60.0
     return hm < 9.5 or hm >= 16.0
+
+
+def _after_close_today():
+    """True ONLY after today's regular-session close (weekday, ET >= 16:00) — NOT pre-market.
+    The end-of-day jobs (day-P&L finalize + forward snapshot) must run only once the session has
+    actually CLOSED. `_market_closed()` alone is wrong for this: it's also true PRE-market, and
+    pre-market the forming daily bar rolls `_session_date()` ahead to today, so the jobs would
+    finalize today's P&L and freeze the NEXT session's snapshot before the session even traded
+    (the mid-session/premature-capture bug)."""
+    from datetime import timedelta
+    et = datetime.now(timezone.utc) - timedelta(hours=4)
+    return et.weekday() < 5 and (et.hour + et.minute / 60.0) >= 16.0
 
 
 def _session_date():
@@ -1261,9 +1288,11 @@ def run_forward_eod():
     if HOSTED:
         return
     _refresh_forward_bars()                                # pull latest bars so EVERY snapshot's status re-scores
-    record_daily_pnl(_session_date())                      # day P&L keyed by the latest PRINTED session bar
-    if not _market_closed():
-        return                                             # only snapshot once the session has closed
+    if not _after_close_today():
+        return                                             # day-P&L + snapshot are END-OF-DAY only — never
+                                                           # pre-market or mid-session (would write a stale/
+                                                           # premature value, the bug the user hit)
+    record_daily_pnl(_session_date())                      # finalize the just-closed session's day P&L
     trade_day = _next_session_date()                       # the upcoming session these picks are FOR (the label)
     log = read_json(FORWARD_F, {"snapshots": {}})
     if trade_day in log.get("snapshots", {}):
@@ -1273,9 +1302,11 @@ def run_forward_eod():
 
 
 def record_daily_pnl(session):
-    """Record (and keep updating) the day's account equity + day P&L into the personal calendar.
-    day_pnl = today's total equity − the last recorded prior day's equity (realized + unrealized move).
-    Re-runs each cycle so today's entry converges to the close. Local-only."""
+    """Record the day's account equity + day P&L into the personal calendar, keyed by the just-closed
+    session. day_pnl = today's total equity − the last recorded prior day's equity (realized + unrealized
+    move). Called ONLY post-close (gated by `_after_close_today()` in run_forward_eod) so each cell is a
+    finalized close value — the in-progress day is shown live by the "Today's P&L" tile, not here.
+    Local-only."""
     if HOSTED:
         return
     eq = compute_equity()
@@ -1386,8 +1417,15 @@ def score_forward():
             r = _sim_forward(bars, date, p.get("entry"), p.get("stop"), p.get("entry_type")) if bars else None
             status = r["status"] if r else "no-data"
             R = r["R"] if r else None
+            # idea PROGRESS: how far price has moved from the frozen entry to the latest close, regardless
+            # of whether the strict (pullback/breakout) trigger filled — so a name that ran without ever
+            # giving its dip still shows "the idea is +X%" (the user wants entrance-vs-now, not just fills).
+            cur = bars[-1]["close"] if bars else None
+            entry = p.get("entry")
+            progress = round((cur - entry) / entry * 100, 1) if (cur and entry) else None
             picks_out.append({**p, "R": R, "matured": bool(r and r["matured"]),
-                              "exit": r["exit"] if r else None, "fstatus": status})
+                              "exit": r["exit"] if r else None, "fstatus": status,
+                              "cur": cur, "progress_pct": progress})
             if r and r["matured"]:
                 scored.append({**p, "date": date, "R": r["R"], "win": r["R"] > 0, "exit": r["exit"]})
             elif r and r["status"] == "open":
@@ -1521,7 +1559,9 @@ def run_scan(screener_id, max_age=12):
                            "screener_name": sc["name"], "failed": out["failed"],
                            "hot_sectors": hot, "items": items})
     try:
-        log_forward_picks()          # snapshot today's A/A+ for the forward/paper test
+        if _after_close_today():      # freeze the forward snapshot ONLY from a post-close scan (the
+            log_forward_picks()       # CLOSING picture) — never from a mid-session/pre-market re-scan,
+                                      # which would regenerate the frozen record with intraday data
     except Exception:
         pass
     SCAN.update(running=False, finished_at=out["scanned_at"], current="")
@@ -1565,8 +1605,13 @@ def _top_lessons(n=3):
 
 
 def _sug_compact(s):
+    entries = s.get("entries") or []
     return {"ticker": s["ticker"], "grade": s.get("grade"), "setup_type": s.get("setup_type"),
             "theme": s.get("theme"), "entry": s.get("entry"), "entry_type": s.get("entry_type"),
+            "trigger_note": (entries[0].get("trigger_note") if entries else None),
+            "entries": [{"kind": e.get("kind"), "entry_type": e.get("entry_type"),
+                         "entry": e.get("entry"), "trigger_note": e.get("trigger_note")}
+                        for e in entries],
             "zone_bottom": s.get("zone_bottom"), "zone_top": s.get("zone_top"),
             "close": s.get("close"), "earnings_days": s.get("earnings_days"),
             "rating": s.get("rating"), "why": s.get("why")}
@@ -2129,9 +2174,11 @@ class Handler(BaseHTTPRequestHandler):
                        if quotes.get(s.upper())), None)
             prices = {k: {kk: v.get(kk) for kk in ("price", "reg_price", "ext_price",
                                                    "ext_change_pct", "prev_close", "change_pct",
+                                                   "day_high", "day_low", "day_open",
                                                    "market_state")}
                       for k, v in quotes.items()}
             self._json({"updated_at": time.strftime("%H:%M:%S"), "market_state": ms,
+                        "session_date": _session_date(),
                         "prices": prices, "posture": live_posture(quotes)})
         elif route == "analyze" and len(parts) > 2:
             t = parts[2].upper()
