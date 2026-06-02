@@ -29,6 +29,12 @@ here to match how you actually trade.
 - **Earnings:** not an automatic trim â€” a binary event I decide to hold through or reduce case by case.
 - **Exit (momentum):** I ride winners and **exit when price closes under the 9 EMA.** Charts show
   the **9 / 21 / 50 EMA**; the 9 EMA is my trailing line.
+- **Exit OUTLIER â€” the deep-pullback LONG HOLD (50-EMA trail):** the one exception to the 9-EMA exit.
+  When I catch a **strong long-term leader (consistent uptrend ~6+ months) in a DEEP PULLBACK down to the
+  50 EMA** (grabbed at/near the 50, like LITE), it's a long play â€” I **hold until it closes under the 50
+  EMA**, NOT the 9. These setups sit below the 9 EMA by design, so a close under the 9 is normal and not an
+  exit. (Applies to **Deep Pullback / Consolidation** â€” the patient "worth-waiting" dip-buys at the 50. The
+  position coach and the forward test both trail the 50 for these.)
 - **Minimum R to first target:** 2.
 
 ## Hard "don'ts" (seed list â€” `/review-trades` will add to this)

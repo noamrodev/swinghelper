@@ -1,9 +1,41 @@
 {
-  "computed_at": "2026-06-02 19:06",
+  "computed_at": "2026-06-03 01:02",
   "sections": [
     {
       "name": "\ud83c\uddfa\ud83c\uddf8 Trump & policy",
       "items": [
+        {
+          "title": "Trump administration proposes 25% tariffs on Brazil despite US trade surplus",
+          "source": "The Guardian",
+          "published": "Tue, 02 Jun 2026 18:56:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMijAFBVV95cUxORlVLaW05eDZwN1pwV25HMDI5VXFHWGh5X1JaUWN4Y3l0eElSM0ZoaWgyNllvQ3RWZktHQ1p0emFEV0U3UWx4eExYdmJUQWFBWWdJMzBlUl9iWTNrLWRMN2prZkpqUktnUTV2Y0VFRk41Ti1Jd0xveUJsazFVZWRIaWVLc18tWEhGNmtMaQ?oc=5",
+          "sentiment": "neutral",
+          "_ep": 1780426560.0
+        },
+        {
+          "title": "Trump makes changes to steel, aluminum and copper tariffs",
+          "source": "AP News",
+          "published": "Tue, 02 Jun 2026 16:59:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQclhrdWxIZk4yY2xtZUFjRjFCM000T3JMUWJxQTFQNTBSOTlSazNDWGZoYjlFcEhIX0VKeEliajlKWTd6MERPVzY4emFoNy00ZUwxOTFyak1JYlBQVUVxMDF5QnJvWFByR3pDMWRrb05fbURFek5oM1VtaGE0LUs0Rk1rZ3haamFHUHE3VEQ1US1LZw?oc=5",
+          "sentiment": "neutral",
+          "_ep": 1780419540.0
+        },
+        {
+          "title": "Trump administration proposes 25% tariffs on Brazil, citing \"unreasonable'' trade practices - ABC News",
+          "source": "Breaking News, Latest News and Videos",
+          "published": "Tue, 02 Jun 2026 16:32:38 GMT",
+          "link": "https://news.google.com/rss/articles/CBMitwFBVV95cUxPWjl2TEtyNVdPWm9kTDFfVmx5M0RSd20tTG1qRFhOT0x2aC15cWlKQ29zNDVuNHd0RFRFLUk0LTczTFhfYU54dVhNQkFIQWVjeERmeFNUSHJPMGVJNm5iSlVsanhtQ3B4bFdwOEZfRHp6cXRSR0plbHgxNlRHN3M1OU9FYkZmajlpZXF6amg0a0ZfdHJWaUJ2NEJ6S3FWanBDaVd3U21kRThzMzhLb25jYVhvRTRMeWPSAbwBQVVfeXFMTnNuV1lKRUxTME5JSFRRaEpvZVN1Mmt4X1ZVRUVIY2djZXFRVHFxSmdJS01kZnhaMHZsakdiMnBHSWE0NDFvSkNoazVKX1NIYXNHS0xEZHBuZ2c2QmlYVUFmUVpMRlJDaFpEZjZFdkpRVlVWTnZzMXFWdlUtamxNMGJCZlMtRVVGNWVNd1lydnRWNFJKMXpyMWJlSTlVbVVOS3ZOenZDeWhSaEdsdk5xRHA5VVpuU2lHRmMtY0k?oc=5",
+          "sentiment": "neutral",
+          "_ep": 1780417958.0
+        },
+        {
+          "title": "Trump further tweaks steel, aluminum, copper tariffs",
+          "source": "Supply Chain Dive",
+          "published": "Tue, 02 Jun 2026 15:34:15 GMT",
+          "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOLXlwdXotVmFzNFY4UnpjRUI3WllETW1ielZBSmMzeFlVYkFIMVRNdWV5TFRjenY0MGhYNjEyOWh2a1BEaWV1T0dPM2g5ZXE0YTRYMUtISzJESHE1YVlwc0w5NVlkUVJLdkJvNmRKM1g2SjZLSnNKMTlrNmI0T1JwZUEzenY1Sk1BcVI1dkhuUWZiYjluY3dzckpwcw?oc=5",
+          "sentiment": "neutral",
+          "_ep": 1780414455.0
+        },
         {
           "title": "Trump amends tariffs on imported steel, aluminum, copper",
           "source": "The Hill",
@@ -13,20 +45,12 @@
           "_ep": 1780406760.0
         },
         {
-          "title": "Trump Cuts Tariffs on Ag Equipment to 15%",
-          "source": "Farm Policy News",
-          "published": "Tue, 02 Jun 2026 11:53:16 GMT",
-          "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxQSHpoOXJ2SHFoNHRMTkpFempqOENXQ1dLZEdnUlRUSDJ0RVJMMGNmOGV4T3BDQjZucS1abFpZRGs2ZzJaS0w3d09CVy16NTlNSWt1SmZNT2oxUEdtOUdhRmZrVjhYT1VfOTZIZXg1b3lZWXlnUkU3bjcxRlZGbk0wbzlCWE95a0FtSUVuSy13?oc=5",
-          "sentiment": "neutral",
-          "_ep": 1780401196.0
-        },
-        {
           "title": "Trump Targets Brazil With 25% Tariff, Citing Unfair Trade Practices",
           "source": "The New York Times",
-          "published": "Tue, 02 Jun 2026 07:23:07 GMT",
+          "published": "Tue, 02 Jun 2026 13:24:40 GMT",
           "link": "https://news.google.com/rss/articles/CBMieEFVX3lxTE9RMkthSDVDei1xTDRDa29PLVYxaThnNEYtaENxb1hyVXJKdjE5S3doamJWclF5bHBzUFRHWXhQc3NNNnJnNUJzVDM1Mkhnd3hDaUZIYklBcnlocmlnQUFfcmQ4MU1WNDNQaXF5R054WFZlNzhQN0xBQQ?oc=5",
           "sentiment": "neutral",
-          "_ep": 1780384987.0
+          "_ep": 1780406680.0
         },
         {
           "title": "Opinion | Trump drags out his losing tariff refund fight",
@@ -37,36 +61,12 @@
           "_ep": 1780379310.0
         },
         {
-          "title": "Trump administration proposes 25% tariff on Brazilian goods over unfair trade practices",
-          "source": "CNBC",
-          "published": "Tue, 02 Jun 2026 04:13:10 GMT",
-          "link": "https://news.google.com/rss/articles/CBMie0FVX3lxTE9VN1o4ZXh6dGdsbkRJeUlTS01fTkpCUGdUcjQ4OVQ4Z0VMR3V2T0NGV2dZbkpXNnlDRFdrbFBKRzNiX3dlSDZSRnBhR3ZnQW1iVGRjTTBFTDRacWo2WUxRS05VaVM3QlY1VGFzaVA3VUowdGxYSzJlSlRUTdIBgAFBVV95cUxQMWdST2RZdkMzLUVqWFNTWW1tM0xONlM1ODhtRWRXQThZek51UlVyR29VR3NUR1VqeVFhOExBTURVSVQ1cTl0NnBZT1hia3FsNlJzSjdkd0ZrTEdyYVhQZk1KRGxocHllMFZJWnNLRGFPVmV1QnpuQWRxN3BkcUVYaw?oc=5",
-          "sentiment": "neutral",
-          "_ep": 1780373590.0
-        },
-        {
           "title": "Trump administration proposes 25% tariff to punish Brazil over trade practices",
           "source": "Reuters",
           "published": "Tue, 02 Jun 2026 03:42:00 GMT",
           "link": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOOXpNRzl3THdVZXgyd0xJX0M5U09rdWpOb2RxaUNETjFMV3VlRnBaeUh5Zm9MSEtndDNBUVB5NXhGWk5HR09Tc1hwMFdsbHBLVEthVnpHdGd0dHVFczFjNUtDZHhwYkxMNWEyUEpEZE9zdEhFWlBIY21MWjgydlJxUjFWSVBZNndmTnFkYkllczlxMjA4ZlNnZ1VTQlpsTUE0c1VvRFVPYkVWdjhsdXFZY0thcW54Nl9kb05MOTFBTzBMR2s?oc=5",
           "sentiment": "neutral",
           "_ep": 1780371720.0
-        },
-        {
-          "title": "Trump signs proclamation amending tariffs on steel, aluminum and copper imports",
-          "source": "Reuters",
-          "published": "Tue, 02 Jun 2026 01:44:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMitwFBVV95cUxPNlNFZU5LUi02WFE5WjRfNmRCMEtBWGlOa2VwMjlDY25yUWdETHcyM2xrOFR6VVF1UWxjS1JxWkhRXy1pczB0Z0RwcFBIMG9FZnVNYWlqd21rZGl5NV9CSDNLc25NVnlDZ3UtYWpfN3o3ZVF0T2Y1RU9rVjk4V2ppZVExRVIzT2ktYTZyVEhRSHRVYWt3emxQRmVTZjQ1QlZkaEhlTFNZVjZ3T2d4WmdsY1lfWFBESkU?oc=5",
-          "sentiment": "neutral",
-          "_ep": 1780364640.0
-        },
-        {
-          "title": "After issuing more than $20 billion in tariff refunds, the Trump administration is now pursuing legal action to bring the process to a standstill",
-          "source": "Fortune",
-          "published": "Mon, 01 Jun 2026 17:00:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMipgFBVV95cUxNOGhBcWFaemhvWWVNWnI0ZHBEX0c4NmJrWi1nYUZCQmFHdEd3b2ticWk2cERpUGpMNkZzVWluRndTWkpRTld3VnAyQXlsS25LbXc2dzlvbHpadWJtei1WcE5aX29icGZKaW1vM3BySE1mbEJBQVRnUzd6Ukc0UWRJQ2tPMnFQSEwtT3dJYlkxb0JGX1FlbHUydC11djhuc0pUX2NIX01n?oc=5",
-          "sentiment": "neutral",
-          "_ep": 1780333200.0
         }
       ]
     },
@@ -74,127 +74,82 @@
       "name": "\ud83d\udcf0 Market catalysts",
       "items": [
         {
-          "title": "Verra Mobility Stock Tumbles. It\u2019s Searching for a New CEO After Contract Turmoil.",
+          "title": "Sportsman's Warehouse Stock Soars After Q1 Earnings",
+          "source": "Benzinga",
+          "published": "Tue, 02 Jun 2026 21:15:25 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxQdl9jUUlySU5rYVZZM0c0VmtDZmlna2ZWRG0wTG1RRG1qMk1OblpxZGlCbE01UWc1cDY4OXNQOVlYaEF5X1hLMExIVUdUaTkyY1E1SVdYVXZhMFJ3SFVyaEpHeW9mR3JBUzhDVmFkSzhHdXd3WXk4aDhZNTN1b21VeXQ2blcta0xwaGJleEo0bHhkUU1jWmxLYUlQWW9hSFhBRTZWWnczSU1ySG8?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780434925.0
+        },
+        {
+          "title": "Palo Alto Networks (NASDAQ:PANW) Exceeds Q1 CY2026 Expectations, Stock Soars",
+          "source": "StockStory",
+          "published": "Tue, 02 Jun 2026 20:28:10 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiywFBVV95cUxNRVBpcFR2WEw0Sm9WOGRxbXFPR1VVYXgyV3R2a0xJMnJtcFdGdUdyNE5NYXFhVWhBd1ZnV0o5SGpEMGNybkxUMDQwazlXbTVsYVNyMnhkMFN3SHRVRWVnSnBGV052NncxMWhQRDlNNzUzWVotVTJIT0EtNHUwUWtXbVZIX1FYZ1hmTFd4UW13bXAycjlwTnV4RkhnS3ZsMVZmQzRRclJMaVFlR3Q2QVhqOFpIU2NtTnBSQ3QyQ0xydjBlcjJndmFoUF9icw?oc=5",
+          "sentiment": "good",
+          "_ep": 1780432090.0
+        },
+        {
+          "title": "Berkshire Hathaway Got a Sweet Deal on Alphabet Stock",
           "source": "Barron's",
-          "published": "Tue, 02 Jun 2026 15:42:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMiigFBVV95cUxNNkZwUUctTjNKRTQyZFJsWEZ1b0ZfSFctc1NyYnYybFBMcTBXQU02ajJEUWszU25WYlE3OUJNTEVKUjhrQ1pHLTlfLUdYbERxMkpyLTdYdVNUckFDM2dPdTVQXzBEaXB5bmtZUnM3NjVqYzF4M0wwOEZQSGJydVhOOW5uS3gyNHc3WGc?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780414920.0
+          "published": "Tue, 02 Jun 2026 20:25:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMikwFBVV95cUxOdVdqNE5TN0V5RTN6c0pEN3B5c0ZmZ25ZZFlGUmc4QjlnS2Zacjdfb0pjY3VIZlgwdnZqT3F1VFlLQmtZdzAzR0M0X3lReElDSV9mSjVMSEx0dllmVEpvaThxRGxPemJWSXo3YjMtXzlSTGZISDNjRG9xVzN2X2Q4VnEwZjJIZW95VVJfRHRnUjRQLTg?oc=5",
+          "sentiment": "good",
+          "_ep": 1780431900.0
         },
         {
-          "title": "Figma Stock Plunges 27.4% YTD: Should Investors Buy, Sell or Hold?",
-          "source": "Zacks Investment Research",
-          "published": "Tue, 02 Jun 2026 14:52:59 GMT",
-          "link": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOWWtEcV9JZ3dnXzRTS2JIcW1vYndPSktCSHRScVJxNS1GRnhGTDk4bUZYMVYtWE9IV19nOGdSalRqQXRIQkpuYV95Vk5yM05nb2lTWFdTSklESFptMXozMXVqd0xiN29wZHV0UXhQY0xrM2llTzJwNkZKMDJfRTltV0RpMnAxMUg5bnVESFIxUnVGajJlNXZWeUx1YUhGMjVnRkxZNw?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780411979.0
-        },
-        {
-          "title": "UBS Downgrades Verra Mobility Corporation (VRRM) Following Avis Budget Contract Termination",
+          "title": "GitLab\u2019s (NASDAQ:GTLB) Q1 CY2026 Sales Beat Estimates, Stock Soars",
           "source": "Yahoo Finance",
-          "published": "Tue, 02 Jun 2026 14:50:32 GMT",
-          "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNR0ltRm9VanFESHMyOGt6LVRSLVZQMkhkOW9zQVp1YUo1UldyM19NdklCU3RhQm1IUlhkWFZzNHd3YlIwYjFNcHlzODBkdm9GSlQ1dGJpSzFDMHR4cWdjMlR1SEhuNUw2UXRFZ2tReTRFZExQNGpVeEg0cktvTWUwVGxMY05vZ2tBLU1pandBRlFrdEpCTU5zM0lwUmVJQjNoYnFWSFVEQko1QQ?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780411832.0
-        },
-        {
-          "title": "Abivax stock plunges on cancer signal in ulcerative colitis trial",
-          "source": "qz.com",
-          "published": "Tue, 02 Jun 2026 14:47:06 GMT",
-          "link": "https://news.google.com/rss/articles/CBMifkFVX3lxTE1acDF4d0syaDB2TEJjV2dYUDl5Zzdha3NSa19sc1c1WFB5dHpsU0tLenJQQlJ5MVdHNzBQNnNHRGQ2dUFYSFpHaTB4SXRrd01YS0FuZVphWGFEZEpOVGZoZHg5N1hNMUxZamtXVVVheU1vcFlNcUJ0RGhmcFYyZw?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780411626.0
-        },
-        {
-          "title": "Marvell Stock Soars 25%. Why Nvidia CEO Says It Will Join the $1 Trillion Club.",
-          "source": "Barron's",
-          "published": "Tue, 02 Jun 2026 14:10:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxPQ3h2cUU0djdFYVhYLW9aWG1PS1pTMVpJMW5ka3J1a0s1MlpOdWh5djVCeS1hNVBVOE9nZDlzS1lZRk1wRFNlOU9PNFZ5MGlTNndmY0ZHZ3RRMkxUbFJ1T2R1N3lYTlFwMDBWMTFZQWplQjZQc1hibS15Y3VadGUwMEs0RThJTFEySWpieHhveklNUGg1YjZRWkR3?oc=5",
+          "published": "Tue, 02 Jun 2026 20:17:32 GMT",
+          "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxORDI5X1RKa0RMRzhxYkMzbFFmVzJTYm1VbzF4NzEtZkNSbWlMSWhQR2tPUXpwWlNMVXhibUI2TzREYWlvWFdFblhxYkt6cnQzN2plOWtUeVlnM1ZiU1R2dVhwTEZaTGVCblJKbWo0X3dOTmJNQVpJS3liWXV0eDZfdmxaTDZDSUhoOVkwRERNbHlnQXJiOC1EZQ?oc=5",
           "sentiment": "good",
-          "_ep": 1780409400.0
+          "_ep": 1780431452.0
         },
         {
-          "title": "This Biotech Stock Plunges 51%. Its Sickle Cell Drug Has \u2018No Viable Path Forward.\u2019",
-          "source": "Barron's",
-          "published": "Tue, 02 Jun 2026 14:01:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxOajlSd1VyakZ4SC1sOV9TRnNqdTZVbGxSRkRmQlFvMGo1WXFoSDdxUG1zRXJWLURiQTVFQkZiT2hLNTctU0JtcWxEbGt6bzFDNC1YbHRjVENjTzJTcGYyM3FTZWRMZVYtMEFxNFV1LWV4NmlOSTlsbFJYczJJVFRBaWc1UjRxLWdKNnJrVHJn?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780408860.0
-        },
-        {
-          "title": "ONDS Stock In The Spotlight After New Navy Contract \u2013 Everything To Know About The Deal",
+          "title": "Marvell stock soars as Nvidia CEO calls chipmaker 'the next trillion-dollar company'",
           "source": "Yahoo Finance",
-          "published": "Tue, 02 Jun 2026 13:58:17 GMT",
-          "link": "https://news.google.com/rss/articles/CBMioAFBVV95cUxPc0ZlUkxudm5fSHRqanRISjBpX050VExuVUZVLXE3TXNnb29rTjF6RTlrTGVYTmJFalNKby04YkFBVjFPdUxJc2h1NjJfcWN4S19qV3RBX3hiR3lORGsyMnFOUUl6YUJxOUluWHVQb0NzaWZfd25rUTY3VXNFSnk0QXdiU2RvS1JWUm5IMGdSVjVvZjZjQzl3Qy1hUFpwV0ZJ?oc=5",
+          "published": "Tue, 02 Jun 2026 20:16:33 GMT",
+          "link": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxQbi1yZm0yVkRpQWprcFJIenFuRVBhX0hWYlJRY0ZVeVZuZGt3czFQOGExMkdZc24yLUZMVkVlSzFySjg4LUxZRlZqWmtZVlRiVkY2Vjh3S0lUTnRyZlkwSzl3ZTRRcnhrNm9ucXhYZmUyOWRfTmVaSWtsQW1lYm10dDgxV2JiZ0g1UlhxX0l3SXJMaE5OQk5nV2wyLUtoRmRHSVF1REF6bThhMnFMZmRMdGlna3YyN1BhcTJ4OFBDZEk3UXRkZDlfVmZVaDFSb2wwV3hab1FuY1cwR0FJeWNJ?oc=5",
           "sentiment": "good",
-          "_ep": 1780408697.0
+          "_ep": 1780431393.0
         },
         {
-          "title": "S&P 500, Nasdaq dip after record highs; HPE soars",
-          "source": "Reuters",
-          "published": "Tue, 02 Jun 2026 13:54:14 GMT",
-          "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQUEQyRmFWdG5VaUVWRUI3a3BEWGIwRlZUeHVmckpoSjNMdjdBdmk5T0g1TFB2U0pWUnFfdmdnUUhJcDZEeDItRzFHU25Vd0ROckhEQjVhQ2lvMm9CSC01T1BtenlYTk95YUVILVVsMGZLN2Fob2FMUjJwd3BIb2Z3eEpDM0xmSGt4SHlRRUtDeHl0QkdzeGhQLS1wRWdkNlgtT2JMZzYwdw?oc=5",
+          "title": "PANW stock soars after Q3 revenue tops estimates at $3.0B",
+          "source": "eciks.org",
+          "published": "Tue, 02 Jun 2026 20:16:09 GMT",
+          "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxPRkZQbFNrY0dERVU0ZzdLQUZpTFNQZVl4Z3ZOb3JPRDlDczNxYVlIVnpnZmtaR0d5ZjZBMzVtYU5WWjY0Vzg1SUwtUDBCb3RDOWpkZVk3Nzg5SF9UUHIwUzBEQ2dyWjdZSXpsVWR1bk1acFRzS21qU2dCTnJudWxJem5OMEs2QWhIWGtnNTVR?oc=5",
           "sentiment": "good",
-          "_ep": 1780408454.0
-        }
-      ]
-    },
-    {
-      "name": "\ud83d\udd25 Software/Cloud/Cyber",
-      "items": [
-        {
-          "title": "AI is multiplying the cybersecurity threat, and Palo Alto Networks and CrowdStrike are the main beneficiaries",
-          "source": "Yahoo Finance UK",
-          "published": "Tue, 02 Jun 2026 13:04:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMikwFBVV95cUxPQ05lcXhXWEphLVlOWmk4eDJSOTNSdFF4RXpDUG9Ub0x1WjYxeTJzemFkb1dGTFowczZXRzZoQU5mUkRwYU41Yk8wUlB1ZkJXNGs2a3pOdndIbVZ5TnBWVEdHN3k1c0ZXMXNpcjVmakY1bDJZX09Cb0NLaEVVR19YdnM4cVBmMmZBdDZka3UxdjBaSW8?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780405440.0
+          "_ep": 1780431369.0
         },
         {
-          "title": "Cyber Security Cloud, Inc. Hits Day High with 7.61% Surge",
-          "source": "Markets Mojo",
-          "published": "Mon, 01 Jun 2026 18:54:14 GMT",
-          "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxORmJjMmNXVUpIVlF0c19ydDJXX1FFRENCVkwzQVNFYlgxVmVVWDBTM2FGdE5sVzl4NE9YeTQ1YXBBRjlCWWNVbHVyMlZxcndLX2FfVlUxZnhwcXR5OExHT2FSamk4VmxTSlZ1NDZaNkluXzdzYy1nd3lzSDJZNXhlQ1dIVUZZYTBsRnlQRTZURldFaVNOUDNBTHdiNG4tTWk3aG9sQVZDc0lUdUJQNlVkRQ?oc=5",
+          "title": "HPE stock soars on record backlog, booming AI server business",
+          "source": "Yahoo Finance",
+          "published": "Tue, 02 Jun 2026 20:15:04 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQM3E5aVAtTVVUdkdOVDFfU1NKWWNWWGE3VXdHUHFCN2ZpN1ZDZ200WktUZXpsRnJzcHhqQ2xJM2JxTlpKNnpESXU2TGZfR3BiWlgybXFvREdZa0k1RGVwZ2M5RU04MkZid3RHdTVKS1ctbkpvaGNiQkxIN1ZWNXpaazJfREc2Y3B0emdnVGg4MmxrNktFOEU0RXczWGkwblRIMHk2ZGRxWWs5b012MnpIMDM3RU9oSlpa?oc=5",
           "sentiment": "good",
-          "_ep": 1780340054.0
+          "_ep": 1780431304.0
         },
         {
-          "title": "SaaS and software infra companies\u2019 stocks bounce back",
-          "source": "Cloud Computing News",
-          "published": "Mon, 01 Jun 2026 13:50:26 GMT",
-          "link": "https://news.google.com/rss/articles/CBMirAFBVV95cUxNdXZISG5URUxDUG5vZ0U3bFcxeGo3eXZSVVY0ekpFb3p2ajZ2cVN2LVFURW9wUERSaGJyUDFTRF9CYWlUYlZXVHRHODZjMHpsOWdGemM5Y05Rd3hMcmNoSHVzU1dTQ0wxYjdGR0ZMWldicUdQSEhJcUEzb2Q0bjNjSWhwOWotRFllZ0RqNkhBcGZjYmJsZHdKSEg5SGlYczVDdTZWX2ZJU1RheEhI?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780321826.0
-        },
-        {
-          "title": "Assessing Radware (RDWR) Valuation After A Strong Year Of Share Price Momentum",
-          "source": "simplywall.st",
-          "published": "Sun, 31 May 2026 04:23:02 GMT",
-          "link": "https://news.google.com/rss/articles/CBMiygFBVV95cUxPZXpBNWphcUptNzU4S3pkOUdvWFN6RExoYnFrMUw4QXZLUUh6YjlEMGVPeG5JQnVMeGtMQy11eVFmNjcyQTF4NUpoVThCQi16RVh3V1FmRDBvZTFCTkh5dkc2d01MUGtuZ1laNTk4Y0dUM2h1aGRRdkJzcEUzWGZGOHB0SmoyblpXX2cyZFRJTGFGOTVLZkNYUm5mR0laMkZqUUNDQ2R3eGR3ZHRtRGpvQWJfZ1NBRVlpWmw4TmdRd090bUVZRk1CM3RB0gHKAUFVX3lxTE9lekE1amFxSm03NThLemQ5R29YU3pETGhicWsxTDhBdktRSHpiOUQwZU94bklCdUx4a0xDLXV5UWY2NzJBMXg1SmhVOEJCLXpFWHdXUWZEMG9lMUJOSHl2RzZ3TUxQa25nWVo1OThjR1QzaHVoZFF2QnNwRTNYZkY4cHRKajJuWldfZzJkVElMYUY5NUtmQ1hSbmZHSVoyRmpRQ0NDZHd4ZHdkdG1Eam9BYl9nU0FFWWlabDhOZ1F3T3RtRVlGTUIzdEE?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780201382.0
-        },
-        {
-          "title": "CrowdStrike, Cisco, and Palo Alto hit records as cyber stocks outrun chips: Chart of the Day",
-          "source": "AOL.com",
-          "published": "Sat, 30 May 2026 19:25:38 GMT",
-          "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxPY1VXTWk3bzZaLTBGTVdZNGd0YW9wb2tPWXAtUnktYTViLWJDb2lCcnV2OHlyQzV6TVRSRFZVeHhlMVMxTFB0TXpEQXM0SkxxQXBhQko2ZlhCTHhtWFpzbERvRXdERE9PNTRONEYtOGdnNkpVQ1d0aERZdXR3cU5JejdGWm9aaTRTXzJkUkNmYw?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780169138.0
-        },
-        {
-          "title": "Smallcap Software Names Power Fresh Growth Stories",
-          "source": "Kalkine Media",
-          "published": "Fri, 29 May 2026 21:24:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxOMmZfZ0NVdDZSYTJkUGtZM00zam55bHk1SjhybUI4U2FmMUdNZjJBcHBna3FJMDB1NlNIVTVETWhOTlo5SFIzeS1YTDJKZEh3Qy1DcHhYNC1vWDk5T1EyaFQycTg4WlNSOXZoV2hnclRmWU5mOWUzZGtmdzU5THVOdHlmUGhMWmJoTnFNc2ZMY1d6bkFubzN2TDJn?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780089840.0
+          "title": "Alphabet\u2019s $15 Billion Equity Deal; $15 Billion of Converts to Price After Close Tuesday",
+          "source": "Barron's",
+          "published": "Tue, 02 Jun 2026 19:44:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMidEFVX3lxTE41N3pjZHV1TklyZ09mRjRBOVkzVmQzaWU4Q3RHUzV1VlNQY2ZXNlJfU2dXM1BHTUFYNVkxM1htME9oN3prWWdGTGt3aS14V0xuU2RwR0xjRTdVbGlWUENsZWNkNmNIdW9oY0RlbDdDNDAza0Ew?oc=5",
+          "sentiment": "good",
+          "_ep": 1780429440.0
         }
       ]
     },
     {
       "name": "\ud83d\udd25 AI Networking/Hardware",
       "items": [
+        {
+          "title": "Why Coherent and Lumentum stocks jumped on Tuesday",
+          "source": "Invezz",
+          "published": "Tue, 02 Jun 2026 19:11:10 GMT",
+          "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxON2pXSVRWckw2QndMVDZ5eU04MGNhV3ZTeF9tTmtWVVFpTnNDazV0enBnS2pBOFoxOHo4ck5uUW5jZTBJazNraVB6anUzbzA0cEx5a3dWNmpwM1R5OXNLam9OUUl1MWdYLUY5Z0hWTFd3dDV1WUh1OUQ3am5hWEliWGM2Q1ZoQU5mTUNhRVhORQ?oc=5",
+          "sentiment": "good",
+          "_ep": 1780427470.0
+        },
         {
           "title": "HPE Q1 Deep Dive: AI Demand, Networking Synergies, and Upgraded Full-Year Outlook",
           "source": "StockStory",
@@ -226,14 +181,59 @@
           "link": "https://news.google.com/rss/articles/CBMipgFBVV95cUxNN1lpb1gtMzVFWGoxT2NvUk1RQXVfbUNZT2k0TDBXc1J6eXNUblJwNlgzNXdpd09qUERLenFUbGxwWnVmYWhzMDZwRmg1VDU3WmFvZzRrZWY5STRyaUk0azZaYWtCc1NFNFFuR1FBNjVmZjdpbk5BZ3NrazVOU3dNNklPSnlTSmc3LURsaVpXRy1DcFloSWRqaWxZMzNKSy1kTC1xcWRR?oc=5",
           "sentiment": "good",
           "_ep": 1779893381.0
+        }
+      ]
+    },
+    {
+      "name": "\ud83d\udd25 Software/Cloud/Cyber",
+      "items": [
+        {
+          "title": "Major earnings reports from cybersecurity giants CrowdStrike and Palo Alto Networks are here! The software sector's 'comeback rally' faces a critical test.",
+          "source": "\u5bcc\u9014\u725b\u725b",
+          "published": "Tue, 02 Jun 2026 13:13:38 GMT",
+          "link": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPM1NJWURoRVFPQlpMMXFNN3VhSjN5S0tUbVU5MnpmYkhmc2FZdXE1WERzS0g4eld5Uy1vUDI1TGRqMkxLMTQtMjNZVUVWWHdpQUVzVlpXZ1VUSWZFREhDMDlTaU9pT29mdXNGRjlWbXpoUW10Y0RiY1ltX3gxQkUwQjBHT0FPSGpZYUtyNk1Dc2VNeXRRa1JBT0FjV05uV2hhUjFCN1Fab0VVMGRXcFR2R1pBQkc2QQ?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780406018.0
         },
         {
-          "title": "Nokia stock surges 140% year-to-date as AI demand lifts network gear demand",
-          "source": "eciks.org",
-          "published": "Wed, 27 May 2026 14:06:30 GMT",
-          "link": "https://news.google.com/rss/articles/CBMipgFBVV95cUxOc05xV0Z2cXoxRlVjYkxzNFpQenpFYXhwZzNQelZNeE4wSVA4UFV1X0NEbXZCb0ctN2lfbzFQdmtJQTZRTENGb0o4T2FmdV9iT3J1V0h4cFFTNjNITTFacE5zWlJzN0NwaExvWTBJdTRlS3Z6bTlTY3cxRHJ2Y0xxNUc3czFzOElOUW85eHZ1RGlpWGx5aEIwOEhETXRDdmxxNUh6WHhB?oc=5",
-          "sentiment": "good",
-          "_ep": 1779890790.0
+          "title": "Palo Alto, CrowdStrike earnings to put 37% cyber rally to test",
+          "source": "The Malaysian Reserve",
+          "published": "Tue, 02 Jun 2026 13:12:37 GMT",
+          "link": "https://news.google.com/rss/articles/CBMirAFBVV95cUxOM2l4b20xb1FKYjk2cFhCRDR1dmhrdUpxZDZ5a3Z0YXRCZXVCWTl6eE9NMHh2cUFpSmF5bjA5TWc5Q0pDUGQ3U3J4Q1RFZlp3aDRPMlVxeUpqZVNmV3RHejVHTVpWMDkzSDU3QW0yWmFhaGF5YVhiSVdXXzJWWFo0RmRhWFlOeklCOWFJR1lHTU12dUhEZGFuTkZmSnRzRVVnTUppZDFfSU9tQWlY?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780405957.0
+        },
+        {
+          "title": "SaaS and software infra companies\u2019 stocks bounce back",
+          "source": "Cloud Computing News",
+          "published": "Mon, 01 Jun 2026 13:50:26 GMT",
+          "link": "https://news.google.com/rss/articles/CBMirAFBVV95cUxNdXZISG5URUxDUG5vZ0U3bFcxeGo3eXZSVVY0ekpFb3p2ajZ2cVN2LVFURW9wUERSaGJyUDFTRF9CYWlUYlZXVHRHODZjMHpsOWdGemM5Y05Rd3hMcmNoSHVzU1dTQ0wxYjdGR0ZMWldicUdQSEhJcUEzb2Q0bjNjSWhwOWotRFllZ0RqNkhBcGZjYmJsZHdKSEg5SGlYczVDdTZWX2ZJU1RheEhI?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780321826.0
+        },
+        {
+          "title": "Assessing Radware (RDWR) Valuation After A Strong Year Of Share Price Momentum",
+          "source": "simplywall.st",
+          "published": "Sun, 31 May 2026 05:19:14 GMT",
+          "link": "https://news.google.com/rss/articles/CBMixAFBVV95cUxOcFVBWDFSYmR6TUg2X21aZW5TVnBpdlNkR0tqNW9wX0dJUnE3Q0dIb0tWeTQ1aldFQ3BVNFFtdWtlN2lMbW9qY3ZmOVVNN0w2QWlCOGVYNUE1Mk5FcUtVek03Mkp3YXRZa0VNMjNQUkF4a1RMb2U4LXZhWTNWd3hzaHV2aUtYcnpjQTAtOTdHc0swbjFqTXRzN0lYcE8xemFOajQyazJfaEtHWnloSkVodGh4ZnZHdmI0ZlBGS2p6b21rOTRi0gHKAUFVX3lxTE9lekE1amFxSm03NThLemQ5R29YU3pETGhicWsxTDhBdktRSHpiOUQwZU94bklCdUx4a0xDLXV5UWY2NzJBMXg1SmhVOEJCLXpFWHdXUWZEMG9lMUJOSHl2RzZ3TUxQa25nWVo1OThjR1QzaHVoZFF2QnNwRTNYZkY4cHRKajJuWldfZzJkVElMYUY5NUtmQ1hSbmZHSVoyRmpRQ0NDZHd4ZHdkdG1Eam9BYl9nU0FFWWlabDhOZ1F3T3RtRVlGTUIzdEE?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780204754.0
+        },
+        {
+          "title": "CrowdStrike, Cisco, and Palo Alto hit records as cyber stocks outrun chips: Chart of the Day",
+          "source": "MSN",
+          "published": "Thu, 28 May 2026 21:56:14 GMT",
+          "link": "https://news.google.com/rss/articles/CBMi6wFBVV95cUxNcHBWaVhUZ2tTc3ZGbWw2R0tISjN4ai1JVllKZE95aEwtanZzNUJlNHVxYW1GUVlXTEdTdjNnTXVjVVBGdEtVMlBwMENqOVhYT05iOHJHTTNZSEFzcVpmRFhTQmxfT2FFNVRBMndVdjZYVTBWNWtlc0NZNFZzZ1RrbjV0cmN0ZUJGWnVSXzNtbWR1MUZKSHhSbnNldGoxWjBTczcyNllkOHRocXZSa2E3dnNfTUtPdl9qbkw2a1pMV1R6NEV1WjdzdXREM2h5eUNzcTlibXFUUVk2YnE0b3FxcURYZkxSc0dubUFR?oc=5",
+          "sentiment": "bad",
+          "_ep": 1780005374.0
+        },
+        {
+          "title": "A British software stock bouncing off the AI boom",
+          "source": "Investors' Chronicle",
+          "published": "Thu, 28 May 2026 15:24:01 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxQS2NqXy1SOF9fQXJ6QVNnQURSSlBMNENwc0xCWThzYkRoa2Q1V0NzempGZWlMN1VuU093YmxRZ2dSMnBHaFlKSGRJYldaVXREeW9LY3BJRkwweDYxVnpOeFVkTkFFVGxra0tfTU00LVhyVHltWW8zNmFEY1ZsakFvZXRleWpXNlNH?oc=5",
+          "sentiment": "bad",
+          "_ep": 1779981841.0
         }
       ]
     },
@@ -241,20 +241,20 @@
       "name": "\ud83d\udd25 HPC",
       "items": [
         {
+          "title": "PENG Soars 215% in 3 Months: Is the Stock Still Worth Betting?",
+          "source": "TradingView",
+          "published": "Tue, 02 Jun 2026 15:38:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPd1E1MncteDhWdF9rOXNIVDBtbGs0ZnZGbDhmTnZXZ1kxMnBkVnp2Z0pWWFFxcVF1SlhUdXVvdUM5RG1pdlExX3E3QmFrVzFDaEtFRWVHVXZlT05rTEFHdnQ3dTB2WEZpOWlqMU9ZNnkwUDJQY3dDRTd1emJpcXB6NDZ3Z1ZXQzRqZ3FPeFZMMjBOLWFKb0U0OHZheDBLdGpRVXgtM2M4Y01uNzJRdFVJY29vbHhkQQ?oc=5",
+          "sentiment": "good",
+          "_ep": 1780414680.0
+        },
+        {
           "title": "KEEL stock jumps onto retail radar as investors eye first data center lease announcement",
           "source": "MSN",
           "published": "Mon, 01 Jun 2026 07:56:50 GMT",
           "link": "https://news.google.com/rss/articles/CBMi7wJBVV95cUxPUTRnVHpTZ1Z5dWJDSzNBVGFoMDUwUzRUTDZ1ekVRYWZNajIxTm9kMElWNVRCbVlTSTlqVWF6RmoxcFp3X2JzTkdnNXVLU056c3ZGWTg3RXI0MjFHUDBxNDVGYmc2WlNBZFhUbUhkVUNmeW9aLTVLc1ctVzZLcWJRWENrQjN3eXEzcnBjLWxQb2pnQ29CNnVQMUNYbXJxbUFwY21aV1IwQ0M2N3Z3UDBBdzhDYUx3WTJvaWREdFFlYmtaaURNX3RXRnlmODVrZV93eHZRTG9qMmRjbk1pRGdRTHFiRTYya1JNaml4MXBRTlE0NXhBTHBzSXo3Qm9SV0FRZVg5SkpxZS1ST3U5Vk41U3dIeGlyUGhSRk44cmxvaUQzdk9DMFFUU1pnM19LWDNSZ2ZqRnhjeEVrNjEzLXZkeHdIeU1Sa2hHMHVPQXZBUmFCQ1NYazRoZTBEUlUzdm9YUjA2RHd3TVlfbmZMak1v?oc=5",
           "sentiment": "good",
           "_ep": 1780300610.0
-        },
-        {
-          "title": "Is Canaan Inc. (CAN) Shifting from Hardware to Hashrate",
-          "source": "Kavout",
-          "published": "Sat, 30 May 2026 01:06:24 GMT",
-          "link": "https://news.google.com/rss/articles/CBMikAFBVV95cUxQRE5TbkhOQVI4VFA1TUUzXzNJcTNKODRScS1yMjBOZFFzRXZ2NEJVTkUweGxvUUY1aU5OUmwwUjZaT29pWUhjZ2JFOVJMN3JoVFp6ekZqNlp0T1dGemlHUHBvRGFjclhKM3JXNXJTTWxjODZSeExMZVhaeTQzczVpakgxY2hoR2htdDBueExuTEM?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780103184.0
         },
         {
           "title": "25 Japanese Quantum-Related Stocks! The Next National Strategy After AI? Massive U.S. Government Investment Fuels Surge, Some Stocks Doubling in Price",
@@ -281,31 +281,17 @@
           "_ep": 1779912120.0
         },
         {
-          "title": "Strategy vs. TeraWulf: Which Bitcoin Stock Is a Safe Investment Bet?",
-          "source": "TradingView",
-          "published": "Wed, 27 May 2026 15:07:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMivgFBVV95cUxQRlg4dlRzdTg2aDBZWGZKa3lJanBGWkhaOElDLVFrN3I2VVE0b05fMk9QSzBhRWNSaG5KcEZrdG82YnVyRE9HeS03blRYRUtmcmxucWdBZU91dTBkYnBfM3dBXzNhMFNYSFZYd1RSaHNCYXpnU0owVkhqNExla1FlZmdtaFpiOXNmcEtzSEtZU0xpQjBZbGNDaktsWmZGR0pjalpxM2RqcTBzeDVwd2VWOUg1RTZuWnJmSGJUZEl3?oc=5",
+          "title": "Applied Digital Soars On 250% Revenue Surge \u2013 AI Goldmine Ahead! APLD Stock Analysis First Light 007 (prZo1YCKBe)",
+          "source": "Mshale",
+          "published": "Wed, 27 May 2026 17:45:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiW0FVX3lxTE56NG5iY3ExRUZiS2p3N0ZRTVVLdFBkbXpIb2JsWGNjNmtsNUZLOFZERmxIazVKT3BKa3NjbW5SLWpjNjFGMGFfeFNJNndjVXJtLUtVZnd2Ylo3ZlE?oc=5",
           "sentiment": "good",
-          "_ep": 1779894420.0
+          "_ep": 1779903900.0
         }
       ]
     }
   ],
   "ticker_news": {
-    "INOD": {
-      "title": "Innodata Stock (INOD) Opinions on AI Training Surge",
-      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxOSXRzLXh1Nml0N0pjc0gyTUJrR0VHZmRHT1h4VS1RQjBIVWpCU2JseDNwLTVVRy1aS0lmSXVWSTZDaHJWQkY3andyeF90WXBGek9XREN0WHJKS20yMEl2Ty12RTR2SkRscGJKdEx2RzVnTWhWeUZUcHhfdjV4Y050OXBRSWtZVmFkem5yaXN1Z3QtQQ?oc=5",
-      "published": "Wed, 27 May 2026 17:32:00 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "AEHR": {
-      "title": "A Look At Aehr Test Systems (AEHR) Valuation After Recent Share Price Surge",
-      "link": "https://news.google.com/rss/articles/CBMi2gFBVV95cUxQTFJWRG8wS0xMRjdJUDR6dl9CVTMycy1tVjAwWXNkWDBSdUFEZ19mZnlRN2MyeHRmOHV4UWJSc3lXNEQ1R1hWb1kwcVBGd01ReUVCS3hJYWNtVkJnVzQwS0xuOGhWRDFaRjhYVHg1RnU2bnNnc3RMUnBfSDgyeVV6RVh4bzdoYUlOc1A1UmJmWUlrdHNvcGNBdDY5aHRPQjRpaUFwaUdIdUpJMWFUN09XRVFaanV0bHQtUDI2YWEwV05LWFo5eE5YQW9wNzc3LWNsWm1jNy1RVzRWQdIB3wFBVV95cUxPMlktSUJwTTU5MFQ3WmxPZFRUOHo4SHVkSURQd0lkVENTc3NhTkxpUzhhYXRzWVdqb3VtV2hIM3hRWTFWS1M4a2E4QVNBcXYyQjlFNTBQbnBLM0ZPMlBNQ1UxMEMyY2djNVBaaGtnYjhCRVVSS2prQlJVRU5xM2tkLTJ1Mk5mYjNLbExGdGVxLVA4NVUxdnpsVDZQZDAtaFlwQjBrakJDYmtSRFRhNHM3WVY2SGYxQnExTTdaYTR6RjhZTlVVZHdGbkhNU0tlTnVDUi1YaFRjS3BtLXdkOU1F?oc=5",
-      "published": "Tue, 02 Jun 2026 13:32:42 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
     "LITE": {
       "title": "Applied Optoelectronics Tumbles 9%, Coherent Sinks 8%, Lumentum Falls 4% as Optics Stocks Cool Off",
       "link": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxNZGxTRkdjU3Rua0syNnBOd0ozeDZUYWVZWk1HRzV1VEljVzZoMWh6endZVW9IeFZBTmdyWDdmaWF5b1V6RXBQek9CVHpKUTY5M3htb0xnTlV4eEZWVldGVVFEeXBLeE9fWUFpemluVHdGQ0NxWjlWc1h0RXNKaDFaeDZ2dUpmVnlmc1B0RVhuT2N4cmIwODgxVVNDQTJ5Sm5qWUFrYTNtVi1uOTlteUo3SFg5bFpycEp2dVhoSmRJQnkxMVZFMkJiREYwNVltMEJERy1J?oc=5",
@@ -314,16 +300,23 @@
       "trump": false
     },
     "BE": {
-      "title": "BE Stock Is Up Nearly 3x This Year: Bloom Energy\u2019s AI Boom Is Funding Itself, CEO Reportedly Suggests",
-      "link": "https://news.google.com/rss/articles/CBMi1AFBVV95cUxQU2NicDZuejdkU19MeUJ0dXlkanljc2s4dlpxV25LcXZMNlBUbUxwcWJSeF9iM25wQ29pX3VyMzZtUC1ZMkNVcXFqTGFRdG42LVlqWTdES2FMck1EeDI0ajJPMXRRNkRpWE5VRlZBNU52bzRGVlVVX2J0ZS1yT1M3N3NMX3pwTXRFYkJ4ZXc5ajUxeDF5MXJaRnUzNmhxX0NRd01RRXdsRjhzQ3hzRUNDTm9SUnJSaXhzdTNwM3o0NDAwTVRjSW0zZHVzNF9kdXBRamg2aA?oc=5",
-      "published": "Tue, 02 Jun 2026 07:09:00 GMT",
+      "title": "Bloom Energy Stock Doubles Q1 Revenue With AI Deals: Here\u2019s What TIKR Model Says",
+      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQaVdjQlF4RXZZMFkwclBqQXFzY3MtTlpmZTBFSkdsZG5LRThpM1k5bWV6UEt3eEtFb0RzXzdhcndvdWtDeEs5cl9nTGVHRldTWUNHQk1tRkp5dDBKSmJvdDltQlR1UnlmVnl4T3FFN1lCUTdfcGhZVTdoQW5YcWNfMWhqUWl1SHJzM2dXeXlOZVI0SEZvT24xVjgtYTFiOElzZVo3X2c2WQ?oc=5",
+      "published": "Tue, 02 Jun 2026 11:44:48 GMT",
       "sentiment": "good",
       "trump": false
     },
-    "AMKR": {
-      "title": "FormFactor, Amkor, and Teradyne Shares Are Soaring, What You Need To Know",
-      "link": "https://news.google.com/rss/articles/CBMizAFBVV95cUxPNnRtZldxUXZvZ2VsSnVjU242clRTMnRFNV9TajBoWUlOWWliZXpCbHV5Q2hPME1HNGU4YVFUMUJuanpVSkowTjBDMnlBUmhOQVZsYlYxZ1BWcHFlaEF6OHZxbUxjalE3cUdBV3hlLTNCNEdDYnluS2tuQ1RreDR0RFZVR3RKblNaVWJKd0IyeWRCaGIzWFE2RDVldHBKcWpCb29tZWNFdTFTREl0YXc5ZFNGbUlMcGt6MUpQTTRSZllKXy1XX0VYOTZjRk8?oc=5",
-      "published": "Wed, 27 May 2026 07:08:44 GMT",
+    "LUNR": {
+      "title": "LUNR stock jumps on winning NASA lunar imaging contracts worth $20M",
+      "link": "https://news.google.com/rss/articles/CBMi8AJBVV95cUxOQ3VmVnl3M3R6Z3FuX1FpODcxNEZ5ZFlkVnZSUTBUQ2dzYWQ5Uy1jV0swT0N0R0IzY3ZpYTBaTVQweExtaUJlclJ0bnk1akg0ZERVd1hrdHdnLTBGc1BVb0x1Q01wSnhfYzhiNk93cjZCNzRyZ3VKQlhZZHJDWm5icWRXVGdNcGlRSFZfeUNNMi1lUlhxS2lPVDhURXpfRVNJRTNDdXhmQkdELV9DOHZUalRsNHJiazd5TFBHOEZ2eURaSWdTUWc3bFE2Z3BWSkEwdXV6NC1qNWhwaW5JUDVyTTNScVVEWVQ0NDVtUTBwSngxX29tWUQtS29PV3NFMmtiN1FzQ25YTlp3ZkFDM2FIOW9MRzRrM0h5MXpGYVY0bG9yTzJhZ3FJaWNDU0E4U3hzNE43cXdUbzJPZXMtNFpZNzR2aWhEdnF1bG14cDRDcGoxNVNmYmNHNktFZWFWRkowSVZRbVNORkFYRTMwWktSdQ?oc=5",
+      "published": "Tue, 02 Jun 2026 01:26:29 GMT",
+      "sentiment": "good",
+      "trump": false
+    },
+    "INOD": {
+      "title": "Innodata Stock (INOD) Opinions on AI Training Surge",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxOSXRzLXh1Nml0N0pjc0gyTUJrR0VHZmRHT1h4VS1RQjBIVWpCU2JseDNwLTVVRy1aS0lmSXVWSTZDaHJWQkY3andyeF90WXBGek9XREN0WHJKS20yMEl2Ty12RTR2SkRscGJKdEx2RzVnTWhWeUZUcHhfdjV4Y050OXBRSWtZVmFkem5yaXN1Z3QtQQ?oc=5",
+      "published": "Wed, 27 May 2026 17:32:00 GMT",
       "sentiment": "good",
       "trump": false
     },
@@ -334,6 +327,13 @@
       "sentiment": "good",
       "trump": false
     },
+    "AAOI": {
+      "title": "AAOI Stock Surges As Wall Street Backs AI Datacenter Ramp",
+      "link": "https://news.google.com/rss/articles/CBMiigFBVV95cUxNZDBMczNucTFTWEFGekZoOUo5VDdHd0xQMUxRZjZydmNFejh5TVJLa200M3RzRU9WZEhSaWN4MGthQ2dLWXhpMTFYSVdrWkhSSUVRNnd1Qmc5WWhHZHRuZE1DTVRlYkNBanZzd2xkSGY2QmV1TmR2TDR3VlBhdVZpamtxSWpCSzlDM0E?oc=5",
+      "published": "Mon, 01 Jun 2026 20:04:00 GMT",
+      "sentiment": "good",
+      "trump": false
+    },
     "DOCN": {
       "title": "DigitalOcean jumps 13.3% as AI-native cloud momentum and analyst optimism fuel rally",
       "link": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxOYmJNM3h3Vm5vZGhaaEF6SS1YbWxJOHV5RTNtLTJ0akxUZDdOV2M4TFRqUklnRTdRaXpfaFM1VnF4LVhfallJSE1rZUdXdWR3MDJHc2djano4dTZ5Qm1tV3ZSV2xzUUdYWVRJZmctbTRoZFNqNWNkd0M3Vko0WUdabV8tQkhQUG9qdXpUOEwtZ3BqbHVpZUE1X3J4azVZTUV5d1dNWWlaS2N4YWEzOFhuckRLal8wcDhRVUQw?oc=5",
@@ -341,10 +341,10 @@
       "sentiment": "good",
       "trump": false
     },
-    "QUBT": {
-      "title": "QUBT Stock Jumps As Quantum Earnings Beat Fuels Momentum",
-      "link": "https://news.google.com/rss/articles/CBMif0FVX3lxTE00bzU5UzY4dmoxanp6VW9FNjRjQ3hCVk5kSUhCelh0ZFZILTZYR0JucFlRcVRQRks0a29samU4ak1wWjNmaEo3T1YxQ0xjSXVuWTZ5TWxXNVhkV1poYS01bWZDMHFtZGFMcVFtOEE0eWppbWJsejdRVGNNRGJrVGc?oc=5",
-      "published": "Mon, 01 Jun 2026 20:04:00 GMT",
+    "FLY": {
+      "title": "FLY Stock Beats The Dilution Blues \u2014 Retail Bulls See Tailwinds From Blue Origin's Rocket Mishap",
+      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxQZ3QyOUdrQXNvWXl4d1VhblpYVktRd1JXcjNFUGlXcDRRcFB4UmNpc3IydTlndFc2bFVKWkhuZUJxcVNDME5ZSGNrQWZzUXFfc2R2bkhVNzljclRhNFF5anh3cGNGay1mT1ZKRzBxRUhJczRuakQ4Y1Z2ZFFhOVVWOXE0cWJxeG55OGRaNm5yblcxZ05QVVlIanpOSEdiZTU2cnNOdFhCRTdVZw?oc=5",
+      "published": "Fri, 29 May 2026 06:27:16 GMT",
       "sentiment": "good",
       "trump": false
     },
@@ -355,54 +355,40 @@
       "sentiment": "bad",
       "trump": false
     },
-    "FLNC": {
-      "title": "FLNC Stock Extends Rally Overnight On Nvidia Partnership: Retail Calls It Next Bloom Energy",
-      "link": "https://news.google.com/rss/articles/CBMioAFBVV95cUxQQlJwazJUTHl3Y0pKZXZNZmVkTElxQk5UcUhEdDZfQzFubnlWSUd3Y09PLXcycWw5VVFnVDVZX0k1dzhpeldKT2xkdXJiMlVUNVYxbDlsYndJRkxHVV9FU1pybTFpZ3RGQjlCRmdqWjRhY0gtb0pvZ3dfeDIwSW9iT0FBSFdrb1Z0SUxKa1hBblgyZXdZcHhRWmpnN3NQYTZt?oc=5",
-      "published": "Tue, 02 Jun 2026 02:22:00 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
     "TSEM": {
-      "title": "Tower Semiconductor (TSEM) Is Up 14.8% After Securing Major 2027 Silicon Photonics Contracts - What's Changed",
-      "link": "https://news.google.com/rss/articles/CBMi3AFBVV95cUxOa2R6cmE4SjRwOUNYejQ0UWh3c1NZT21oS0MyZzVIbW5neGRlbjIyaUF2OGp5ajBKZ09DbXdDX1JNYy1JamNURzB4bGFkTDlibU0ydVpHYUNiMkdwWUI5UEhVTW0zMmZpMy1IN1pvbGc4RDFxNlJWVjFmYk53bGVTZkRzMk0wTFNXSHFYd3U4QUFLWmlwVVF2RXBNYVNrRFltdU5kOWh6QmdDR3Q3aEJaRW0yUy0ycEM4QnRGZDk0YS1Ub2VCT1E4YlRxdU1TOEEzRVo1OHkzN1RvZC1H0gHiAUFVX3lxTE1uZlJ0cG9ZV0F2RmVnNFE1R0VmMkRSNlhtclg0bnUzbkx2T2NSNHpVQlEzVi12aWpMU1RvT1hzbGRXLXBDcnJCUHZTV0NyR2NkYUZKVlFNeWRvbDZHb2RVS2lzUkstTEswenlkRU9Uemcyd0t4TUxIZXZMa2ZVWlk5NEVjY3E5ZGVCREw4cGd1NFFnUU1hRTRTaDQta1BpdDFJMUZTaHFOcEExbFgxd1pjUjFkMVV6dDBURkZxTmtrY3F1T25xYmU5NlFqU2RWUXh0MURTd0s0Q21ITDZ4c0MweUE?oc=5",
-      "published": "Wed, 27 May 2026 02:34:08 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "GLW": {
-      "title": "Corning Stock Is Up 288% in One Year: Here\u2019s What\u2019s Driving the Rally",
-      "link": "https://news.google.com/rss/articles/CBMilgFBVV95cUxQMkNRNGp0c1JRUWgzOGZLQlZrWGgyQjkybHpWdXhWcDVFU0VLSGxPTG1nQ3RXRjdoSi1kZ05BOC1Rb0xyczhBaHVDak55c2pOMkJnWFZ4MUdaNG9JalBCeFU0cTljMS15c1drTDJDUW9DTUVBandzVHNLM3RuVDl5NHMxazc5bm8yaThMSFE1dDhNUklNeVE?oc=5",
-      "published": "Thu, 28 May 2026 14:33:27 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "NBIS": {
-      "title": "Why Is NBIS Stock Soaring Over 10% In Overnight Trading?",
-      "link": "https://news.google.com/rss/articles/CBMiugFBVV95cUxQbGtOX09fek0wTnVlUGkzQjJIYlVUaF90YThzMTVER25tdGs0ZXFNcHRBQkVOdWp1UFIzUURFMUNya0RjMXNzY2VNQV9WMTNhdTl1bmUwS3FpMVdwUEUwd2JSODZSU3NPeWo5c253N2NxRDY4Q1RhSi0xaUE2bF9ENUpxbS1ZczhSdV9WWUdmRmNrS0pSd0l3dHoyZE1HdUZWdzNubUNteVFrdmNNRHc5Q0t3Y0RjdVNaRVE?oc=5",
-      "published": "Sun, 31 May 2026 05:33:27 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "FIG": {
-      "title": "Figma Stock Plunges 27.4% YTD: Should Investors Buy, Sell or Hold?",
-      "link": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOWWtEcV9JZ3dnXzRTS2JIcW1vYndPSktCSHRScVJxNS1GRnhGTDk4bUZYMVYtWE9IV19nOGdSalRqQXRIQkpuYV95Vk5yM05nb2lTWFdTSklESFptMXozMXVqd0xiN29wZHV0UXhQY0xrM2llTzJwNkZKMDJfRTltV0RpMnAxMUg5bnVESFIxUnVGajJlNXZWeUx1YUhGMjVnRkxZNw?oc=5",
-      "published": "Tue, 02 Jun 2026 14:52:59 GMT",
+      "title": "Tower Semiconductor (TSEM) director discloses RSU share awards and vesting",
+      "link": "https://news.google.com/rss/articles/CBMiywFBVV95cUxQLWJpa0lkUTl4bzJncTROS0VXLXR2eXdtaGI4TC1yWkN3bFpCLS1OWDlMRkprVDlGVkQwb2Y1RU9iRnJDaWNZbG1jb0ZrNFFJMXFzNXpvYllySUZLaFhYQmFmZHh1anpTQWRzYUZOeGRra094ZGlJdXR4ZGdwMFNSaF9IZEY4TkNwSnhiR0M0aWxoTGNydnV1bWg1WF9LWDJ2OG05TkVZWVMtMlhsOUVWNm1IdVhsdVJDcFVVZUpwYk1rcW5hWHlYRjNkcw?oc=5",
+      "published": "Thu, 28 May 2026 11:36:13 GMT",
       "sentiment": "bad",
+      "trump": false
+    },
+    "QUBT": {
+      "title": "QUBT Stock Soars with Bullish Options Activity",
+      "link": "https://news.google.com/rss/articles/CBMingFBVV95cUxPWnF0SThXNmtyODNlVVNNd05seVZ6RnFQTXUwcXRFekplS3pNY1RFNG9GcHJTS2JWOHV2bE9ua3N4Z1ZFMTYtdVY5elRadXl2QnliN1czR0FnTVlXZGtCcm1CdEtQSmNLQnNtXzZjN0dJbnFiLWxoRDRpNTVUZmhDbzhRaWluYXFvNWxDWW5OWDN1TjJCd1dPZkMwX1Fkdw?oc=5",
+      "published": "Tue, 02 Jun 2026 01:07:30 GMT",
+      "sentiment": "good",
+      "trump": false
+    },
+    "PANW": {
+      "title": "Palo Alto Networks (NASDAQ:PANW) Exceeds Q1 CY2026 Expectations, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMiywFBVV95cUxNRVBpcFR2WEw0Sm9WOGRxbXFPR1VVYXgyV3R2a0xJMnJtcFdGdUdyNE5NYXFhVWhBd1ZnV0o5SGpEMGNybkxUMDQwazlXbTVsYVNyMnhkMFN3SHRVRWVnSnBGV052NncxMWhQRDlNNzUzWVotVTJIT0EtNHUwUWtXbVZIX1FYZ1hmTFd4UW13bXAycjlwTnV4RkhnS3ZsMVZmQzRRclJMaVFlR3Q2QVhqOFpIU2NtTnBSQ3QyQ0xydjBlcjJndmFoUF9icw?oc=5",
+      "published": "Tue, 02 Jun 2026 20:28:10 GMT",
+      "sentiment": "good",
+      "trump": false,
+      "from_feed": true
+    },
+    "GTLB": {
+      "title": "GitLab\u2019s (NASDAQ:GTLB) Q1 CY2026 Sales Beat Estimates, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxORDI5X1RKa0RMRzhxYkMzbFFmVzJTYm1VbzF4NzEtZkNSbWlMSWhQR2tPUXpwWlNMVXhibUI2TzREYWlvWFdFblhxYkt6cnQzN2plOWtUeVlnM1ZiU1R2dVhwTEZaTGVCblJKbWo0X3dOTmJNQVpJS3liWXV0eDZfdmxaTDZDSUhoOVkwRERNbHlnQXJiOC1EZQ?oc=5",
+      "published": "Tue, 02 Jun 2026 20:17:32 GMT",
+      "sentiment": "good",
       "trump": false,
       "from_feed": true
     },
     "MRVL": {
-      "title": "Marvell Stock Soars 25%. Why Nvidia CEO Says It Will Join the $1 Trillion Club.",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxPQ3h2cUU0djdFYVhYLW9aWG1PS1pTMVpJMW5ka3J1a0s1MlpOdWh5djVCeS1hNVBVOE9nZDlzS1lZRk1wRFNlOU9PNFZ5MGlTNndmY0ZHZ3RRMkxUbFJ1T2R1N3lYTlFwMDBWMTFZQWplQjZQc1hibS15Y3VadGUwMEs0RThJTFEySWpieHhveklNUGg1YjZRWkR3?oc=5",
-      "published": "Tue, 02 Jun 2026 14:10:00 GMT",
-      "sentiment": "good",
-      "trump": false,
-      "from_feed": true
-    },
-    "ONDS": {
-      "title": "ONDS Stock In The Spotlight After New Navy Contract \u2013 Everything To Know About The Deal",
-      "link": "https://news.google.com/rss/articles/CBMioAFBVV95cUxPc0ZlUkxudm5fSHRqanRISjBpX050VExuVUZVLXE3TXNnb29rTjF6RTlrTGVYTmJFalNKby04YkFBVjFPdUxJc2h1NjJfcWN4S19qV3RBX3hiR3lORGsyMnFOUUl6YUJxOUluWHVQb0NzaWZfd25rUTY3VXNFSnk0QXdiU2RvS1JWUm5IMGdSVjVvZjZjQzl3Qy1hUFpwV0ZJ?oc=5",
-      "published": "Tue, 02 Jun 2026 13:58:17 GMT",
+      "title": "Marvell stock soars as Nvidia CEO calls chipmaker 'the next trillion-dollar company'",
+      "link": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxQbi1yZm0yVkRpQWprcFJIenFuRVBhX0hWYlJRY0ZVeVZuZGt3czFQOGExMkdZc24yLUZMVkVlSzFySjg4LUxZRlZqWmtZVlRiVkY2Vjh3S0lUTnRyZlkwSzl3ZTRRcnhrNm9ucXhYZmUyOWRfTmVaSWtsQW1lYm10dDgxV2JiZ0g1UlhxX0l3SXJMaE5OQk5nV2wyLUtoRmRHSVF1REF6bThhMnFMZmRMdGlna3YyN1BhcTJ4OFBDZEk3UXRkZDlfVmZVaDFSb2wwV3hab1FuY1cwR0FJeWNJ?oc=5",
+      "published": "Tue, 02 Jun 2026 20:16:33 GMT",
       "sentiment": "good",
       "trump": false,
       "from_feed": true
@@ -410,15 +396,31 @@
     "HPE": {
       "title": "HPE stock soars on record backlog, booming AI server business",
       "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQM3E5aVAtTVVUdkdOVDFfU1NKWWNWWGE3VXdHUHFCN2ZpN1ZDZ200WktUZXpsRnJzcHhqQ2xJM2JxTlpKNnpESXU2TGZfR3BiWlgybXFvREdZa0k1RGVwZ2M5RU04MkZid3RHdTVKS1ctbkpvaGNiQkxIN1ZWNXpaazJfREc2Y3B0emdnVGg4MmxrNktFOEU0RXczWGkwblRIMHk2ZGRxWWs5b012MnpIMDM3RU9oSlpa?oc=5",
-      "published": "Tue, 02 Jun 2026 11:12:52 GMT",
+      "published": "Tue, 02 Jun 2026 20:15:04 GMT",
       "sentiment": "good",
       "trump": false,
       "from_feed": true
     },
     "NVDA": {
-      "title": "Marvell stock soars 20% as Nvidia's Huang says it could be the next trillion-dollar company",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQYTMtR2pPU3JFdFNmZlA5NEw0YWM2aFFBZVdPNGYxX202dmdFTjVVdGZ4b3poZ2htaWh6eHhWMTFqRHBZdDR4VGE0ZTBPWDYzd05vOEQ4akVXbmZ5LTR2RF9DM1hTS1h5ZlNXUldiUXpod0IzU3BTMGlaVjIybUc0YmVCSzRFOVBBWU5jclVLS2l2bEZMSVl6b1NB0gGfAUFVX3lxTE5MUG1BMGkxV2dSR2ZPQ2ZHV0t1aTZqTlJqcmVJcHNfOEdxbzZCMzJIaEh2aVFZcHVGZzYyQUtaNTZISktWUVRGa0FGOTdneXphdHRFaWhacjhYQmdXZUo0TkxMSWNpZi1ZRzUtRkpKNGNnckczX3RaZS1oZU4yYVFIS3JSUFZxb1JDaExVcGUtZHc0dUtSOWtNaEdUXzI0cw?oc=5",
-      "published": "Tue, 02 Jun 2026 10:10:27 GMT",
+      "title": "Marvell Stock Soars on NVIDIA's Trillion-Dollar Nod",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQdjZQaUhJaEF3V0hLYzY2d3U1YjRibUduLWpYQTFiLTBUYlBJLW5JNldTQlVBMGMyaHg5aFhuejNoYjRoWS1LM1pSd1gtY3IzQkhBZ1RBZlYxelpaZlo2ZmpUV2pSazNrcHZzWGhJY3lpTkd2R0N1X2pmaHhyQ2FyNUxSc05jOVBpcEl6Vy1acWk0Zw?oc=5",
+      "published": "Tue, 02 Jun 2026 18:59:43 GMT",
+      "sentiment": "good",
+      "trump": false,
+      "from_feed": true
+    },
+    "FIG": {
+      "title": "Figma Stock Plunges 27.4% YTD: Should Investors Buy, Sell or Hold?",
+      "link": "https://news.google.com/rss/articles/CBMifkFVX3lxTE5yY0NlWmNndnFyRUZtR19jTEc3d0h4aEtaSGx5WjRaZnR3NjRwTDViQ2hBMDRTWmtwRDFVTnRSQUszYkZtaHlSSzFoOHRmT2JobVczVEVBa1htOFpNQXUzdnF3LVd1aUVVa00zdmpYSXlEeG44cEd6ZERMZFM2Zw?oc=5",
+      "published": "Tue, 02 Jun 2026 15:34:00 GMT",
+      "sentiment": "bad",
+      "trump": false,
+      "from_feed": true
+    },
+    "APLD": {
+      "title": "Applied Digital Soars On 250% Revenue Surge \u2013 AI Goldmine Ahead! APLD Stock Analysis First Light 007 (prZo1YCKBe)",
+      "link": "https://news.google.com/rss/articles/CBMiW0FVX3lxTE56NG5iY3ExRUZiS2p3N0ZRTVVLdFBkbXpIb2JsWGNjNmtsNUZLOFZERmxIazVKT3BKa3NjbW5SLWpjNjFGMGFfeFNJNndjVXJtLUtVZnd2Ylo3ZlE?oc=5",
+      "published": "Wed, 27 May 2026 17:45:00 GMT",
       "sentiment": "good",
       "trump": false,
       "from_feed": true
@@ -432,9 +434,9 @@
       "sentiment": "good"
     },
     "Defence & Drones": {
-      "title": "Dell inks $9.7 billion Pentagon contract after Trump acquires stock, praises company",
-      "link": "https://news.google.com/rss/articles/CBMizgFBVV95cUxORmJhdjhBVXhqTHFWamJqMTQ0YzI3em5pZ0V3Nkp1R2c4b0l4b2VOdEpHRkplM0VmNEtsMnVCRWU4aFVsN3JNbUpCd1pvcHZYQTNPX2pNVGZaSnFGRnZ3cWdVb1JuRWJNX0Zlb0l2UWpsZEJjSE53SkVKU1NnM3hESWZoSUV6Q3VBSUpuUVNXMXNlVkZldEpaRU1UX1RIZWdLeUFmeXdDSGtVTEJCeFktYWFzU2hGYkVpQVJKRDZEMHBNSFRPaTJIdV94ZXlBUQ?oc=5",
-      "published": "Fri, 29 May 2026 05:45:31 GMT",
+      "title": "Trump praised Dell, bought its stock \u2014 now the company has landed a $9.7B Pentagon contract and shares are up 255%",
+      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQOE5BamlfOUlfalNFc3ZZcW9pNWRpWVUtUEJuQmpBV0JzclRydlJyMjhnaUdVMm5FQ0ZBY2xEdS0yQ0xJTFk5cTNTWjJOWF81dHVjemxUZW1HZ3M5ckw4aHA1a0NYVHE0S1J2b2huY0Y0bXROOXJzOXFKWjh3TldCZHlGWFJtOV9ZQU53UUNpMTI0T1pqeEdKdWVR?oc=5",
+      "published": "Sun, 31 May 2026 14:15:00 GMT",
       "sentiment": "good"
     },
     "Crypto": {
@@ -444,21 +446,9 @@
       "sentiment": "good"
     },
     "Aluminum": {
-      "title": "Trump amends tariffs on imported steel, aluminum, copper",
-      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxOcjdxOTRiTXE3TE1lb0tzU3hFRE0yS1Vvd1d3dG92TDBYcGNNSm9uYUM2SWF3S004STdwRER2NlFTUXNvLTZoVzJfUXpVVTBQNzJmLTRaeWpDQ01YV0tyXy1JQkNZQjU4RkhRazZRNnR1MWFVU2R1TFRodnpLVGhoczhwMmlJVk5ZMnZNLXZJbEYtZ9IBlwFBVV95cUxNamhzNVZnOURSckNIUmdJX2drdW5WbHBmWTlxc1g3QmFZbnlPazQzbXpZYml5aWR0R09sYXZQZ19kMmRtY3l5bHJzSk51ZUF0UmIwU3NFSnNtaXMxYWRuMGJaTC0xWHBYSmpIRmFXSlpNcHhJdE51YjlUcjRQR2tFVEgzRXdxQzBuU0VqUHoxak5RX3phTk8w?oc=5",
-      "published": "Tue, 02 Jun 2026 13:26:00 GMT",
-      "sentiment": "neutral"
-    },
-    "Gas/Oil": {
-      "title": "Verra Mobility Stock Tumbles. It\u2019s Searching for a New CEO After Contract Turmoil.",
-      "link": "https://news.google.com/rss/articles/CBMiigFBVV95cUxNNkZwUUctTjNKRTQyZFJsWEZ1b0ZfSFctc1NyYnYybFBMcTBXQU02ajJEUWszU25WYlE3OUJNTEVKUjhrQ1pHLTlfLUdYbERxMkpyLTdYdVNUckFDM2dPdTVQXzBEaXB5bmtZUnM3NjVqYzF4M0wwOEZQSGJydVhOOW5uS3gyNHc3WGc?oc=5",
-      "published": "Tue, 02 Jun 2026 15:42:00 GMT",
-      "sentiment": "bad"
-    },
-    "China": {
-      "title": "China Eliminates Tariffs on Africa to Outmaneuver Trump",
-      "link": "https://news.google.com/rss/articles/CBMib0FVX3lxTE82bzZZRUg1VllYVk1iWTd2SWdSZVR5T2ZmN0k2ZEdTeEtiLWZ1RFdSQ2E3bE9XR052bHluTDFmU0JlcVJkSnp4QTlxLXk2R0NrM3F1QkYzMUd5aDJ2QzBMOWN4bkpPMEZILU9NWGd0NA?oc=5",
-      "published": "Tue, 26 May 2026 21:19:00 GMT",
+      "title": "Trump makes changes to steel, aluminum and copper tariffs",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQclhrdWxIZk4yY2xtZUFjRjFCM000T3JMUWJxQTFQNTBSOTlSazNDWGZoYjlFcEhIX0VKeEliajlKWTd6MERPVzY4emFoNy00ZUwxOTFyak1JYlBQVUVxMDF5QnJvWFByR3pDMWRrb05fbURFek5oM1VtaGE0LUs0Rk1rZ3haamFHUHE3VEQ1US1LZw?oc=5",
+      "published": "Tue, 02 Jun 2026 16:59:00 GMT",
       "sentiment": "neutral"
     },
     "AI/Data Center": {
@@ -468,9 +458,9 @@
       "sentiment": "good"
     },
     "Software/Cloud/Cyber": {
-      "title": "AI is multiplying the cybersecurity threat, and Palo Alto Networks and CrowdStrike are the main beneficiaries",
-      "link": "https://news.google.com/rss/articles/CBMikwFBVV95cUxPQ05lcXhXWEphLVlOWmk4eDJSOTNSdFF4RXpDUG9Ub0x1WjYxeTJzemFkb1dGTFowczZXRzZoQU5mUkRwYU41Yk8wUlB1ZkJXNGs2a3pOdndIbVZ5TnBWVEdHN3k1c0ZXMXNpcjVmakY1bDJZX09Cb0NLaEVVR19YdnM4cVBmMmZBdDZka3UxdjBaSW8?oc=5",
-      "published": "Tue, 02 Jun 2026 13:04:00 GMT",
+      "title": "Major earnings reports from cybersecurity giants CrowdStrike and Palo Alto Networks are here! The software sector's 'comeback rally' faces a critical test.",
+      "link": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPM1NJWURoRVFPQlpMMXFNN3VhSjN5S0tUbVU5MnpmYkhmc2FZdXE1WERzS0g4eld5Uy1vUDI1TGRqMkxLMTQtMjNZVUVWWHdpQUVzVlpXZ1VUSWZFREhDMDlTaU9pT29mdXNGRjlWbXpoUW10Y0RiY1ltX3gxQkUwQjBHT0FPSGpZYUtyNk1Dc2VNeXRRa1JBT0FjV05uV2hhUjFCN1Fab0VVMGRXcFR2R1pBQkc2QQ?oc=5",
+      "published": "Tue, 02 Jun 2026 13:13:38 GMT",
       "sentiment": "bad"
     }
   },
@@ -478,34 +468,34 @@
     {
       "dir": "buy",
       "scope": "stock",
+      "title": "PANW",
+      "headline": "Palo Alto Networks (NASDAQ:PANW) Exceeds Q1 CY2026 Expectations, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMiywFBVV95cUxNRVBpcFR2WEw0Sm9WOGRxbXFPR1VVYXgyV3R2a0xJMnJtcFdGdUdyNE5NYXFhVWhBd1ZnV0o5SGpEMGNybkxUMDQwazlXbTVsYVNyMnhkMFN3SHRVRWVnSnBGV052NncxMWhQRDlNNzUzWVotVTJIT0EtNHUwUWtXbVZIX1FYZ1hmTFd4UW13bXAycjlwTnV4RkhnS3ZsMVZmQzRRclJMaVFlR3Q2QVhqOFpIU2NtTnBSQ3QyQ0xydjBlcjJndmFoUF9icw?oc=5",
+      "published": "Tue, 02 Jun 2026 20:28:10 GMT",
+      "tickers": [
+        "PANW"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "stock",
+      "title": "GTLB",
+      "headline": "GitLab\u2019s (NASDAQ:GTLB) Q1 CY2026 Sales Beat Estimates, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxORDI5X1RKa0RMRzhxYkMzbFFmVzJTYm1VbzF4NzEtZkNSbWlMSWhQR2tPUXpwWlNMVXhibUI2TzREYWlvWFdFblhxYkt6cnQzN2plOWtUeVlnM1ZiU1R2dVhwTEZaTGVCblJKbWo0X3dOTmJNQVpJS3liWXV0eDZfdmxaTDZDSUhoOVkwRERNbHlnQXJiOC1EZQ?oc=5",
+      "published": "Tue, 02 Jun 2026 20:17:32 GMT",
+      "tickers": [
+        "GTLB"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "stock",
       "title": "MRVL",
-      "headline": "Marvell Stock Soars 25%. Why Nvidia CEO Says It Will Join the $1 Trillion Club.",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxPQ3h2cUU0djdFYVhYLW9aWG1PS1pTMVpJMW5ka3J1a0s1MlpOdWh5djVCeS1hNVBVOE9nZDlzS1lZRk1wRFNlOU9PNFZ5MGlTNndmY0ZHZ3RRMkxUbFJ1T2R1N3lYTlFwMDBWMTFZQWplQjZQc1hibS15Y3VadGUwMEs0RThJTFEySWpieHhveklNUGg1YjZRWkR3?oc=5",
-      "published": "Tue, 02 Jun 2026 14:10:00 GMT",
+      "headline": "Marvell stock soars as Nvidia CEO calls chipmaker 'the next trillion-dollar company'",
+      "link": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxQbi1yZm0yVkRpQWprcFJIenFuRVBhX0hWYlJRY0ZVeVZuZGt3czFQOGExMkdZc24yLUZMVkVlSzFySjg4LUxZRlZqWmtZVlRiVkY2Vjh3S0lUTnRyZlkwSzl3ZTRRcnhrNm9ucXhYZmUyOWRfTmVaSWtsQW1lYm10dDgxV2JiZ0g1UlhxX0l3SXJMaE5OQk5nV2wyLUtoRmRHSVF1REF6bThhMnFMZmRMdGlna3YyN1BhcTJ4OFBDZEk3UXRkZDlfVmZVaDFSb2wwV3hab1FuY1cwR0FJeWNJ?oc=5",
+      "published": "Tue, 02 Jun 2026 20:16:33 GMT",
       "tickers": [
         "MRVL"
-      ]
-    },
-    {
-      "dir": "buy",
-      "scope": "stock",
-      "title": "ONDS",
-      "headline": "ONDS Stock In The Spotlight After New Navy Contract \u2013 Everything To Know About The Deal",
-      "link": "https://news.google.com/rss/articles/CBMioAFBVV95cUxPc0ZlUkxudm5fSHRqanRISjBpX050VExuVUZVLXE3TXNnb29rTjF6RTlrTGVYTmJFalNKby04YkFBVjFPdUxJc2h1NjJfcWN4S19qV3RBX3hiR3lORGsyMnFOUUl6YUJxOUluWHVQb0NzaWZfd25rUTY3VXNFSnk0QXdiU2RvS1JWUm5IMGdSVjVvZjZjQzl3Qy1hUFpwV0ZJ?oc=5",
-      "published": "Tue, 02 Jun 2026 13:58:17 GMT",
-      "tickers": [
-        "ONDS"
-      ]
-    },
-    {
-      "dir": "buy",
-      "scope": "stock",
-      "title": "AEHR",
-      "headline": "A Look At Aehr Test Systems (AEHR) Valuation After Recent Share Price Surge",
-      "link": "https://news.google.com/rss/articles/CBMi2gFBVV95cUxQTFJWRG8wS0xMRjdJUDR6dl9CVTMycy1tVjAwWXNkWDBSdUFEZ19mZnlRN2MyeHRmOHV4UWJSc3lXNEQ1R1hWb1kwcVBGd01ReUVCS3hJYWNtVkJnVzQwS0xuOGhWRDFaRjhYVHg1RnU2bnNnc3RMUnBfSDgyeVV6RVh4bzdoYUlOc1A1UmJmWUlrdHNvcGNBdDY5aHRPQjRpaUFwaUdIdUpJMWFUN09XRVFaanV0bHQtUDI2YWEwV05LWFo5eE5YQW9wNzc3LWNsWm1jNy1RVzRWQdIB3wFBVV95cUxPMlktSUJwTTU5MFQ3WmxPZFRUOHo4SHVkSURQd0lkVENTc3NhTkxpUzhhYXRzWVdqb3VtV2hIM3hRWTFWS1M4a2E4QVNBcXYyQjlFNTBQbnBLM0ZPMlBNQ1UxMEMyY2djNVBaaGtnYjhCRVVSS2prQlJVRU5xM2tkLTJ1Mk5mYjNLbExGdGVxLVA4NVUxdnpsVDZQZDAtaFlwQjBrakJDYmtSRFRhNHM3WVY2SGYxQnExTTdaYTR6RjhZTlVVZHdGbkhNU0tlTnVDUi1YaFRjS3BtLXdkOU1F?oc=5",
-      "published": "Tue, 02 Jun 2026 13:32:42 GMT",
-      "tickers": [
-        "AEHR"
       ]
     },
     {
@@ -514,7 +504,7 @@
       "title": "HPE",
       "headline": "HPE stock soars on record backlog, booming AI server business",
       "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQM3E5aVAtTVVUdkdOVDFfU1NKWWNWWGE3VXdHUHFCN2ZpN1ZDZ200WktUZXpsRnJzcHhqQ2xJM2JxTlpKNnpESXU2TGZfR3BiWlgybXFvREdZa0k1RGVwZ2M5RU04MkZid3RHdTVKS1ctbkpvaGNiQkxIN1ZWNXpaazJfREc2Y3B0emdnVGg4MmxrNktFOEU0RXczWGkwblRIMHk2ZGRxWWs5b012MnpIMDM3RU9oSlpa?oc=5",
-      "published": "Tue, 02 Jun 2026 11:12:52 GMT",
+      "published": "Tue, 02 Jun 2026 20:15:04 GMT",
       "tickers": [
         "HPE"
       ]
@@ -523,9 +513,9 @@
       "dir": "buy",
       "scope": "stock",
       "title": "NVDA",
-      "headline": "Marvell stock soars 20% as Nvidia's Huang says it could be the next trillion-dollar company",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQYTMtR2pPU3JFdFNmZlA5NEw0YWM2aFFBZVdPNGYxX202dmdFTjVVdGZ4b3poZ2htaWh6eHhWMTFqRHBZdDR4VGE0ZTBPWDYzd05vOEQ4akVXbmZ5LTR2RF9DM1hTS1h5ZlNXUldiUXpod0IzU3BTMGlaVjIybUc0YmVCSzRFOVBBWU5jclVLS2l2bEZMSVl6b1NB0gGfAUFVX3lxTE5MUG1BMGkxV2dSR2ZPQ2ZHV0t1aTZqTlJqcmVJcHNfOEdxbzZCMzJIaEh2aVFZcHVGZzYyQUtaNTZISktWUVRGa0FGOTdneXphdHRFaWhacjhYQmdXZUo0TkxMSWNpZi1ZRzUtRkpKNGNnckczX3RaZS1oZU4yYVFIS3JSUFZxb1JDaExVcGUtZHc0dUtSOWtNaEdUXzI0cw?oc=5",
-      "published": "Tue, 02 Jun 2026 10:10:27 GMT",
+      "headline": "Marvell Stock Soars on NVIDIA's Trillion-Dollar Nod",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQdjZQaUhJaEF3V0hLYzY2d3U1YjRibUduLWpYQTFiLTBUYlBJLW5JNldTQlVBMGMyaHg5aFhuejNoYjRoWS1LM1pSd1gtY3IzQkhBZ1RBZlYxelpaZlo2ZmpUV2pSazNrcHZzWGhJY3lpTkd2R0N1X2pmaHhyQ2FyNUxSc05jOVBpcEl6Vy1acWk0Zw?oc=5",
+      "published": "Tue, 02 Jun 2026 18:59:43 GMT",
       "tickers": [
         "NVDA"
       ]
@@ -534,11 +524,33 @@
       "dir": "buy",
       "scope": "stock",
       "title": "BE",
-      "headline": "BE Stock Is Up Nearly 3x This Year: Bloom Energy\u2019s AI Boom Is Funding Itself, CEO Reportedly Suggests",
-      "link": "https://news.google.com/rss/articles/CBMi1AFBVV95cUxQU2NicDZuejdkU19MeUJ0dXlkanljc2s4dlpxV25LcXZMNlBUbUxwcWJSeF9iM25wQ29pX3VyMzZtUC1ZMkNVcXFqTGFRdG42LVlqWTdES2FMck1EeDI0ajJPMXRRNkRpWE5VRlZBNU52bzRGVlVVX2J0ZS1yT1M3N3NMX3pwTXRFYkJ4ZXc5ajUxeDF5MXJaRnUzNmhxX0NRd01RRXdsRjhzQ3hzRUNDTm9SUnJSaXhzdTNwM3o0NDAwTVRjSW0zZHVzNF9kdXBRamg2aA?oc=5",
-      "published": "Tue, 02 Jun 2026 07:09:00 GMT",
+      "headline": "Bloom Energy Stock Doubles Q1 Revenue With AI Deals: Here\u2019s What TIKR Model Says",
+      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQaVdjQlF4RXZZMFkwclBqQXFzY3MtTlpmZTBFSkdsZG5LRThpM1k5bWV6UEt3eEtFb0RzXzdhcndvdWtDeEs5cl9nTGVHRldTWUNHQk1tRkp5dDBKSmJvdDltQlR1UnlmVnl4T3FFN1lCUTdfcGhZVTdoQW5YcWNfMWhqUWl1SHJzM2dXeXlOZVI0SEZvT24xVjgtYTFiOElzZVo3X2c2WQ?oc=5",
+      "published": "Tue, 02 Jun 2026 11:44:48 GMT",
       "tickers": [
         "BE"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "stock",
+      "title": "LUNR",
+      "headline": "LUNR stock jumps on winning NASA lunar imaging contracts worth $20M",
+      "link": "https://news.google.com/rss/articles/CBMi8AJBVV95cUxOQ3VmVnl3M3R6Z3FuX1FpODcxNEZ5ZFlkVnZSUTBUQ2dzYWQ5Uy1jV0swT0N0R0IzY3ZpYTBaTVQweExtaUJlclJ0bnk1akg0ZERVd1hrdHdnLTBGc1BVb0x1Q01wSnhfYzhiNk93cjZCNzRyZ3VKQlhZZHJDWm5icWRXVGdNcGlRSFZfeUNNMi1lUlhxS2lPVDhURXpfRVNJRTNDdXhmQkdELV9DOHZUalRsNHJiazd5TFBHOEZ2eURaSWdTUWc3bFE2Z3BWSkEwdXV6NC1qNWhwaW5JUDVyTTNScVVEWVQ0NDVtUTBwSngxX29tWUQtS29PV3NFMmtiN1FzQ25YTlp3ZkFDM2FIOW9MRzRrM0h5MXpGYVY0bG9yTzJhZ3FJaWNDU0E4U3hzNE43cXdUbzJPZXMtNFpZNzR2aWhEdnF1bG14cDRDcGoxNVNmYmNHNktFZWFWRkowSVZRbVNORkFYRTMwWktSdQ?oc=5",
+      "published": "Tue, 02 Jun 2026 01:26:29 GMT",
+      "tickers": [
+        "LUNR"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "stock",
+      "title": "QUBT",
+      "headline": "QUBT Stock Soars with Bullish Options Activity",
+      "link": "https://news.google.com/rss/articles/CBMingFBVV95cUxPWnF0SThXNmtyODNlVVNNd05seVZ6RnFQTXUwcXRFekplS3pNY1RFNG9GcHJTS2JWOHV2bE9ua3N4Z1ZFMTYtdVY5elRadXl2QnliN1czR0FnTVlXZGtCcm1CdEtQSmNLQnNtXzZjN0dJbnFiLWxoRDRpNTVUZmhDbzhRaWluYXFvNWxDWW5OWDN1TjJCd1dPZkMwX1Fkdw?oc=5",
+      "published": "Tue, 02 Jun 2026 01:07:30 GMT",
+      "tickers": [
+        "QUBT"
       ]
     },
     {
@@ -555,72 +567,211 @@
     {
       "dir": "buy",
       "scope": "stock",
-      "title": "NBIS",
-      "headline": "Why Is NBIS Stock Soaring Over 10% In Overnight Trading?",
-      "link": "https://news.google.com/rss/articles/CBMiugFBVV95cUxQbGtOX09fek0wTnVlUGkzQjJIYlVUaF90YThzMTVER25tdGs0ZXFNcHRBQkVOdWp1UFIzUURFMUNya0RjMXNzY2VNQV9WMTNhdTl1bmUwS3FpMVdwUEUwd2JSODZSU3NPeWo5c253N2NxRDY4Q1RhSi0xaUE2bF9ENUpxbS1ZczhSdV9WWUdmRmNrS0pSd0l3dHoyZE1HdUZWdzNubUNteVFrdmNNRHc5Q0t3Y0RjdVNaRVE?oc=5",
-      "published": "Sun, 31 May 2026 05:33:27 GMT",
+      "title": "AAOI",
+      "headline": "AAOI Stock Surges As Wall Street Backs AI Datacenter Ramp",
+      "link": "https://news.google.com/rss/articles/CBMiigFBVV95cUxNZDBMczNucTFTWEFGekZoOUo5VDdHd0xQMUxRZjZydmNFejh5TVJLa200M3RzRU9WZEhSaWN4MGthQ2dLWXhpMTFYSVdrWkhSSUVRNnd1Qmc5WWhHZHRuZE1DTVRlYkNBanZzd2xkSGY2QmV1TmR2TDR3VlBhdVZpamtxSWpCSzlDM0E?oc=5",
+      "published": "Mon, 01 Jun 2026 20:04:00 GMT",
       "tickers": [
-        "NBIS"
-      ]
-    },
-    {
-      "dir": "buy",
-      "scope": "sector",
-      "title": "Defence & Drones",
-      "headline": "Dell inks $9.7 billion Pentagon contract after Trump acquires stock, praises company",
-      "link": "https://news.google.com/rss/articles/CBMizgFBVV95cUxORmJhdjhBVXhqTHFWamJqMTQ0YzI3em5pZ0V3Nkp1R2c4b0l4b2VOdEpHRkplM0VmNEtsMnVCRWU4aFVsN3JNbUpCd1pvcHZYQTNPX2pNVGZaSnFGRnZ3cWdVb1JuRWJNX0Zlb0l2UWpsZEJjSE53SkVKU1NnM3hESWZoSUV6Q3VBSUpuUVNXMXNlVkZldEpaRU1UX1RIZWdLeUFmeXdDSGtVTEJCeFktYWFzU2hGYkVpQVJKRDZEMHBNSFRPaTJIdV94ZXlBUQ?oc=5",
-      "published": "Fri, 29 May 2026 05:45:31 GMT",
-      "tickers": [
-        "KRMN",
-        "RCAT",
-        "EH",
-        "ESLT",
-        "CW",
-        "UMAC"
-      ]
-    },
-    {
-      "dir": "buy",
-      "scope": "sector",
-      "title": "Quantum",
-      "headline": "25 Japanese Quantum-Related Stocks! The Next National Strategy After AI? Massive U.S. Government Investment Fuels Surge, Some Stocks Doubling in Price",
-      "link": "https://news.google.com/rss/articles/CBMirAFBVV95cUxOMWlIaHhCcnF2cnFSdExOcy0tMXpIWXc0c2lFaVJTNnp2STFDLVZ2OU05TFQ5aFdnU1gxbDdMVFgwOHhWWm80U0VrV2lrbXBYb1hSMVdwX09uQklUQmRwRlFnSFNfbkpsVExFTkNZYWstNlJjMDM3XzBDckZlYnRCc1hEZXMtNzhHUlF5SFZmQ2hIVmxldmdJUld5T0xlaWNhbDNOMUxibDRjSkto?oc=5",
-      "published": "Fri, 29 May 2026 05:27:58 GMT",
-      "tickers": [
-        "RGTI",
-        "IONQ",
-        "QUBT",
-        "QBTS",
-        "BTQ",
-        "INFQ"
+        "AAOI"
       ]
     }
   ],
   "feed": [
     {
-      "title": "Verra Mobility Stock Tumbles. It\u2019s Searching for a New CEO After Contract Turmoil.",
-      "link": "https://news.google.com/rss/articles/CBMiigFBVV95cUxNNkZwUUctTjNKRTQyZFJsWEZ1b0ZfSFctc1NyYnYybFBMcTBXQU02ajJEUWszU25WYlE3OUJNTEVKUjhrQ1pHLTlfLUdYbERxMkpyLTdYdVNUckFDM2dPdTVQXzBEaXB5bmtZUnM3NjVqYzF4M0wwOEZQSGJydVhOOW5uS3gyNHc3WGc?oc=5",
-      "source": "Barron's",
-      "published": "Tue, 02 Jun 2026 15:42:00 GMT",
-      "ep": 1780414920.0,
+      "title": "Sportsman's Warehouse Stock Soars After Q1 Earnings",
+      "link": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxQdl9jUUlySU5rYVZZM0c0VmtDZmlna2ZWRG0wTG1RRG1qMk1OblpxZGlCbE01UWc1cDY4OXNQOVlYaEF5X1hLMExIVUdUaTkyY1E1SVdYVXZhMFJ3SFVyaEpHeW9mR3JBUzhDVmFkSzhHdXd3WXk4aDhZNTN1b21VeXQ2blcta0xwaGJleEo0bHhkUU1jWmxLYUlQWW9hSFhBRTZWWnczSU1ySG8?oc=5",
+      "source": "Benzinga",
+      "published": "Tue, 02 Jun 2026 21:15:25 GMT",
+      "ep": 1780434925.0,
       "sentiment": "bad",
       "trump": false
+    },
+    {
+      "title": "Palo Alto Networks (NASDAQ:PANW) Exceeds Q1 CY2026 Expectations, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMiywFBVV95cUxNRVBpcFR2WEw0Sm9WOGRxbXFPR1VVYXgyV3R2a0xJMnJtcFdGdUdyNE5NYXFhVWhBd1ZnV0o5SGpEMGNybkxUMDQwazlXbTVsYVNyMnhkMFN3SHRVRWVnSnBGV052NncxMWhQRDlNNzUzWVotVTJIT0EtNHUwUWtXbVZIX1FYZ1hmTFd4UW13bXAycjlwTnV4RkhnS3ZsMVZmQzRRclJMaVFlR3Q2QVhqOFpIU2NtTnBSQ3QyQ0xydjBlcjJndmFoUF9icw?oc=5",
+      "source": "StockStory",
+      "published": "Tue, 02 Jun 2026 20:28:10 GMT",
+      "ep": 1780432090.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Berkshire Hathaway Got a Sweet Deal on Alphabet Stock",
+      "link": "https://news.google.com/rss/articles/CBMikwFBVV95cUxOdVdqNE5TN0V5RTN6c0pEN3B5c0ZmZ25ZZFlGUmc4QjlnS2Zacjdfb0pjY3VIZlgwdnZqT3F1VFlLQmtZdzAzR0M0X3lReElDSV9mSjVMSEx0dllmVEpvaThxRGxPemJWSXo3YjMtXzlSTGZISDNjRG9xVzN2X2Q4VnEwZjJIZW95VVJfRHRnUjRQLTg?oc=5",
+      "source": "Barron's",
+      "published": "Tue, 02 Jun 2026 20:25:00 GMT",
+      "ep": 1780431900.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "GitLab\u2019s (NASDAQ:GTLB) Q1 CY2026 Sales Beat Estimates, Stock Soars",
+      "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxORDI5X1RKa0RMRzhxYkMzbFFmVzJTYm1VbzF4NzEtZkNSbWlMSWhQR2tPUXpwWlNMVXhibUI2TzREYWlvWFdFblhxYkt6cnQzN2plOWtUeVlnM1ZiU1R2dVhwTEZaTGVCblJKbWo0X3dOTmJNQVpJS3liWXV0eDZfdmxaTDZDSUhoOVkwRERNbHlnQXJiOC1EZQ?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Tue, 02 Jun 2026 20:17:32 GMT",
+      "ep": 1780431452.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Marvell stock soars as Nvidia CEO calls chipmaker 'the next trillion-dollar company'",
+      "link": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxQbi1yZm0yVkRpQWprcFJIenFuRVBhX0hWYlJRY0ZVeVZuZGt3czFQOGExMkdZc24yLUZMVkVlSzFySjg4LUxZRlZqWmtZVlRiVkY2Vjh3S0lUTnRyZlkwSzl3ZTRRcnhrNm9ucXhYZmUyOWRfTmVaSWtsQW1lYm10dDgxV2JiZ0g1UlhxX0l3SXJMaE5OQk5nV2wyLUtoRmRHSVF1REF6bThhMnFMZmRMdGlna3YyN1BhcTJ4OFBDZEk3UXRkZDlfVmZVaDFSb2wwV3hab1FuY1cwR0FJeWNJ?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Tue, 02 Jun 2026 20:16:33 GMT",
+      "ep": 1780431393.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "PANW stock soars after Q3 revenue tops estimates at $3.0B",
+      "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxPRkZQbFNrY0dERVU0ZzdLQUZpTFNQZVl4Z3ZOb3JPRDlDczNxYVlIVnpnZmtaR0d5ZjZBMzVtYU5WWjY0Vzg1SUwtUDBCb3RDOWpkZVk3Nzg5SF9UUHIwUzBEQ2dyWjdZSXpsVWR1bk1acFRzS21qU2dCTnJudWxJem5OMEs2QWhIWGtnNTVR?oc=5",
+      "source": "eciks.org",
+      "published": "Tue, 02 Jun 2026 20:16:09 GMT",
+      "ep": 1780431369.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "HPE stock soars on record backlog, booming AI server business",
+      "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQM3E5aVAtTVVUdkdOVDFfU1NKWWNWWGE3VXdHUHFCN2ZpN1ZDZ200WktUZXpsRnJzcHhqQ2xJM2JxTlpKNnpESXU2TGZfR3BiWlgybXFvREdZa0k1RGVwZ2M5RU04MkZid3RHdTVKS1ctbkpvaGNiQkxIN1ZWNXpaazJfREc2Y3B0emdnVGg4MmxrNktFOEU0RXczWGkwblRIMHk2ZGRxWWs5b012MnpIMDM3RU9oSlpa?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Tue, 02 Jun 2026 20:15:04 GMT",
+      "ep": 1780431304.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Alphabet\u2019s $15 Billion Equity Deal; $15 Billion of Converts to Price After Close Tuesday",
+      "link": "https://news.google.com/rss/articles/CBMidEFVX3lxTE41N3pjZHV1TklyZ09mRjRBOVkzVmQzaWU4Q3RHUzV1VlNQY2ZXNlJfU2dXM1BHTUFYNVkxM1htME9oN3prWWdGTGt3aS14V0xuU2RwR0xjRTdVbGlWUENsZWNkNmNIdW9oY0RlbDdDNDAza0Ew?oc=5",
+      "source": "Barron's",
+      "published": "Tue, 02 Jun 2026 19:44:00 GMT",
+      "ep": 1780429440.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Victoria's Secret soars 50% as turnaround powers upbeat annual forecasts",
+      "link": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxPMldhT2VEWVZtRUJ2QUdzTXpTUDFxRUJMeXllVTF6Y3psX054bG1RUk9tbVh0bG5uYk5CMEJEM014QmVnV2Riald6c25hSnV1UGFaeHhFUzd6LVVQM0JiblN0Sk56dUxZdGdjRFJ6Mkl0SDM0bnYtZGtoVFBkekRhbmRQajJPRTBmZEw4NlI0cnZvdlBDZlhhNU42S1E0VFB4QjZCb3ZPS1hGWG1odVlHYklaMktFUkJwTU1v?oc=5",
+      "source": "Reuters",
+      "published": "Tue, 02 Jun 2026 19:25:44 GMT",
+      "ep": 1780428344.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Why Coherent and Lumentum stocks jumped on Tuesday",
+      "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxON2pXSVRWckw2QndMVDZ5eU04MGNhV3ZTeF9tTmtWVVFpTnNDazV0enBnS2pBOFoxOHo4ck5uUW5jZTBJazNraVB6anUzbzA0cEx5a3dWNmpwM1R5OXNLam9OUUl1MWdYLUY5Z0hWTFd3dDV1WUh1OUQ3am5hWEliWGM2Q1ZoQU5mTUNhRVhORQ?oc=5",
+      "source": "Invezz",
+      "published": "Tue, 02 Jun 2026 19:11:10 GMT",
+      "ep": 1780427470.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Marvell Stock Soars on NVIDIA's Trillion-Dollar Nod",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQdjZQaUhJaEF3V0hLYzY2d3U1YjRibUduLWpYQTFiLTBUYlBJLW5JNldTQlVBMGMyaHg5aFhuejNoYjRoWS1LM1pSd1gtY3IzQkhBZ1RBZlYxelpaZlo2ZmpUV2pSazNrcHZzWGhJY3lpTkd2R0N1X2pmaHhyQ2FyNUxSc05jOVBpcEl6Vy1acWk0Zw?oc=5",
+      "source": "MarketBeat",
+      "published": "Tue, 02 Jun 2026 18:59:43 GMT",
+      "ep": 1780426783.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Okta Stock Plunges After Mizuho Downgrade Flags Valuation Concerns",
+      "link": "https://news.google.com/rss/articles/CBMixAFBVV95cUxPUzVUREZmelpGZDhPZkUzTDNlYy16NFg2ZGRfeTBsM0Vod2h1Ym1qd2YxQjlkcmwyWVNNd3N5QXAzNWd4QzR5cVBrb0xSX3AyM2RfZFN3RnpWbVo0cXUtVkNhTzJyQmhqQW0tZU1HUEZ5YjJrTlB2OUJRV3M0RFNzZDRUM3dCVkNOZm9oNnh5UmtCWUJpZ3NKNFNCS0ttMGtnSmtFdTlzbVQ2S1dTY2JEeENiMGhjYXQzSkhlWEJ1ZVhiN0Ux?oc=5",
+      "source": "TradingView",
+      "published": "Tue, 02 Jun 2026 18:57:35 GMT",
+      "ep": 1780426655.0,
+      "sentiment": "bad",
+      "trump": false
+    },
+    {
+      "title": "Trump administration proposes 25% tariffs on Brazil despite US trade surplus",
+      "link": "https://news.google.com/rss/articles/CBMijAFBVV95cUxORlVLaW05eDZwN1pwV25HMDI5VXFHWGh5X1JaUWN4Y3l0eElSM0ZoaWgyNllvQ3RWZktHQ1p0emFEV0U3UWx4eExYdmJUQWFBWWdJMzBlUl9iWTNrLWRMN2prZkpqUktnUTV2Y0VFRk41Ti1Jd0xveUJsazFVZWRIaWVLc18tWEhGNmtMaQ?oc=5",
+      "source": "The Guardian",
+      "published": "Tue, 02 Jun 2026 18:56:00 GMT",
+      "ep": 1780426560.0,
+      "sentiment": "neutral",
+      "trump": true
+    },
+    {
+      "title": "MRVL Stock Soars As AI Momentum Ignites Wall Street Targets",
+      "link": "https://news.google.com/rss/articles/CBMihwFBVV95cUxOc2ctWDFnSkF2dlFHRWxHMlhGbEY1VllwUU1PUC02QXd3TDhSZ0JJZnlDemdmdnBScUVDWFhLLUJVcjdvZ2Eya1hnOG9YN05ZNUZWelZGbUtfVG04T2FIOWdqb2tmak9NZGtPTk5neUwxMllFQkx6YUhTQUdEbGloY0I3RXZJZWs?oc=5",
+      "source": "timothysykes.com",
+      "published": "Tue, 02 Jun 2026 18:33:00 GMT",
+      "ep": 1780425180.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Trump makes changes to steel, aluminum and copper tariffs",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxQclhrdWxIZk4yY2xtZUFjRjFCM000T3JMUWJxQTFQNTBSOTlSazNDWGZoYjlFcEhIX0VKeEliajlKWTd6MERPVzY4emFoNy00ZUwxOTFyak1JYlBQVUVxMDF5QnJvWFByR3pDMWRrb05fbURFek5oM1VtaGE0LUs0Rk1rZ3haamFHUHE3VEQ1US1LZw?oc=5",
+      "source": "AP News",
+      "published": "Tue, 02 Jun 2026 16:59:00 GMT",
+      "ep": 1780419540.0,
+      "sentiment": "neutral",
+      "trump": true
+    },
+    {
+      "title": "Trump administration proposes 25% tariffs on Brazil, citing \"unreasonable'' trade practices - ABC News",
+      "link": "https://news.google.com/rss/articles/CBMitwFBVV95cUxPWjl2TEtyNVdPWm9kTDFfVmx5M0RSd20tTG1qRFhOT0x2aC15cWlKQ29zNDVuNHd0RFRFLUk0LTczTFhfYU54dVhNQkFIQWVjeERmeFNUSHJPMGVJNm5iSlVsanhtQ3B4bFdwOEZfRHp6cXRSR0plbHgxNlRHN3M1OU9FYkZmajlpZXF6amg0a0ZfdHJWaUJ2NEJ6S3FWanBDaVd3U21kRThzMzhLb25jYVhvRTRMeWPSAbwBQVVfeXFMTnNuV1lKRUxTME5JSFRRaEpvZVN1Mmt4X1ZVRUVIY2djZXFRVHFxSmdJS01kZnhaMHZsakdiMnBHSWE0NDFvSkNoazVKX1NIYXNHS0xEZHBuZ2c2QmlYVUFmUVpMRlJDaFpEZjZFdkpRVlVWTnZzMXFWdlUtamxNMGJCZlMtRVVGNWVNd1lydnRWNFJKMXpyMWJlSTlVbVVOS3ZOenZDeWhSaEdsdk5xRHA5VVpuU2lHRmMtY0k?oc=5",
+      "source": "Breaking News, Latest News and Videos",
+      "published": "Tue, 02 Jun 2026 16:32:38 GMT",
+      "ep": 1780417958.0,
+      "sentiment": "neutral",
+      "trump": true
+    },
+    {
+      "title": "Kohl's Stock Soars After Better-Than-Feared Quarter",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxPV3pzZkd5amlvd0pSYW9VY3BSSHVPOE5MUFdHdjEzZDJqTFhKd1kzTnFRQm1YR3FrMDFJeDc1YjF2bWExcWFnRzZtcmVORFN5TVZRMEtEeXV3RjRPa3pyOGtzd3VGcm5WLTRnMjFEYXhzSUZiQ1FKNVlkWUs0VU51WUI2NFFiYlZ1c09ETUs2bkw1QQ?oc=5",
+      "source": "MarketBeat",
+      "published": "Tue, 02 Jun 2026 16:29:41 GMT",
+      "ep": 1780417781.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "This Biotech Stock Plunges 54%. Its Sickle Cell Drug Has \u2018No Viable Path Forward.\u2019",
+      "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxOajlSd1VyakZ4SC1sOV9TRnNqdTZVbGxSRkRmQlFvMGo1WXFoSDdxUG1zRXJWLURiQTVFQkZiT2hLNTctU0JtcWxEbGt6bzFDNC1YbHRjVENjTzJTcGYyM3FTZWRMZVYtMEFxNFV1LWV4NmlOSTlsbFJYczJJVFRBaWc1UjRxLWdKNnJrVHJn?oc=5",
+      "source": "Barron's",
+      "published": "Tue, 02 Jun 2026 16:13:00 GMT",
+      "ep": 1780416780.0,
+      "sentiment": "bad",
+      "trump": false
+    },
+    {
+      "title": "Nvidia CEO Endorses Marvell As Next Trillion-Dollar Giant. Stock Jumps 29%.",
+      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxNTXhreDcyWWlONjNaQnZENUxjcHNfdFlrQXZLVFV5QmRmNGNDR3BXeF9wdkplUV8xSEt2YkNNT1h3ZElmVWhHSDdTaVJ4WlhpcUFxcEhjV2xWaHQ1VnRaVWFhb1BXNjJzLWVab0pfeDZRdWt3WktCWTh1OF9kQTZ0RVZfYVNOQ1ZhQlhvckdxNEpkX0R4ZFJqRFdn?oc=5",
+      "source": "Investor's Business Daily",
+      "published": "Tue, 02 Jun 2026 15:46:00 GMT",
+      "ep": 1780415160.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "PENG Soars 215% in 3 Months: Is the Stock Still Worth Betting?",
+      "link": "https://news.google.com/rss/articles/CBMikgFBVV95cUxNVzVSejhsOTFsYzdFM3dYblgyLWt6clVjcXdFM3c3bExhb2hJWHlyUkllbjZVX1k2N1dXSjBwcmhJUm5RbXBSajZMQjZHQk51dzhreUV6V0NpUnhqR1VfVWN1RlBIRFY0OTN0Q21iNkV1dzJkbFp6T1RMdl9vbEcwU3FlWUNXOUVyeTYtY2owNnJMQQ?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Tue, 02 Jun 2026 15:38:00 GMT",
+      "ep": 1780414680.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Trump further tweaks steel, aluminum, copper tariffs",
+      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOLXlwdXotVmFzNFY4UnpjRUI3WllETW1ielZBSmMzeFlVYkFIMVRNdWV5TFRjenY0MGhYNjEyOWh2a1BEaWV1T0dPM2g5ZXE0YTRYMUtISzJESHE1YVlwc0w5NVlkUVJLdkJvNmRKM1g2SjZLSnNKMTlrNmI0T1JwZUEzenY1Sk1BcVI1dkhuUWZiYjluY3dzckpwcw?oc=5",
+      "source": "Supply Chain Dive",
+      "published": "Tue, 02 Jun 2026 15:34:15 GMT",
+      "ep": 1780414455.0,
+      "sentiment": "neutral",
+      "trump": true
     },
     {
       "title": "Figma Stock Plunges 27.4% YTD: Should Investors Buy, Sell or Hold?",
-      "link": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOWWtEcV9JZ3dnXzRTS2JIcW1vYndPSktCSHRScVJxNS1GRnhGTDk4bUZYMVYtWE9IV19nOGdSalRqQXRIQkpuYV95Vk5yM05nb2lTWFdTSklESFptMXozMXVqd0xiN29wZHV0UXhQY0xrM2llTzJwNkZKMDJfRTltV0RpMnAxMUg5bnVESFIxUnVGajJlNXZWeUx1YUhGMjVnRkxZNw?oc=5",
-      "source": "Zacks Investment Research",
-      "published": "Tue, 02 Jun 2026 14:52:59 GMT",
-      "ep": 1780411979.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "UBS Downgrades Verra Mobility Corporation (VRRM) Following Avis Budget Contract Termination",
-      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNR0ltRm9VanFESHMyOGt6LVRSLVZQMkhkOW9zQVp1YUo1UldyM19NdklCU3RhQm1IUlhkWFZzNHd3YlIwYjFNcHlzODBkdm9GSlQ1dGJpSzFDMHR4cWdjMlR1SEhuNUw2UXRFZ2tReTRFZExQNGpVeEg0cktvTWUwVGxMY05vZ2tBLU1pandBRlFrdEpCTU5zM0lwUmVJQjNoYnFWSFVEQko1QQ?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Tue, 02 Jun 2026 14:50:32 GMT",
-      "ep": 1780411832.0,
+      "link": "https://news.google.com/rss/articles/CBMifkFVX3lxTE5yY0NlWmNndnFyRUZtR19jTEc3d0h4aEtaSGx5WjRaZnR3NjRwTDViQ2hBMDRTWmtwRDFVTnRSQUszYkZtaHlSSzFoOHRmT2JobVczVEVBa1htOFpNQXUzdnF3LVd1aUVVa00zdmpYSXlEeG44cEd6ZERMZFM2Zw?oc=5",
+      "source": "Yahoo! Finance Canada",
+      "published": "Tue, 02 Jun 2026 15:34:00 GMT",
+      "ep": 1780414440.0,
       "sentiment": "bad",
       "trump": false
     },
@@ -628,63 +779,9 @@
       "title": "Abivax stock plunges on cancer signal in ulcerative colitis trial",
       "link": "https://news.google.com/rss/articles/CBMifkFVX3lxTE1acDF4d0syaDB2TEJjV2dYUDl5Zzdha3NSa19sc1c1WFB5dHpsU0tLenJQQlJ5MVdHNzBQNnNHRGQ2dUFYSFpHaTB4SXRrd01YS0FuZVphWGFEZEpOVGZoZHg5N1hNMUxZamtXVVVheU1vcFlNcUJ0RGhmcFYyZw?oc=5",
       "source": "qz.com",
-      "published": "Tue, 02 Jun 2026 14:47:06 GMT",
-      "ep": 1780411626.0,
+      "published": "Tue, 02 Jun 2026 14:14:15 GMT",
+      "ep": 1780409655.0,
       "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "Marvell Stock Soars 25%. Why Nvidia CEO Says It Will Join the $1 Trillion Club.",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxPQ3h2cUU0djdFYVhYLW9aWG1PS1pTMVpJMW5ka3J1a0s1MlpOdWh5djVCeS1hNVBVOE9nZDlzS1lZRk1wRFNlOU9PNFZ5MGlTNndmY0ZHZ3RRMkxUbFJ1T2R1N3lYTlFwMDBWMTFZQWplQjZQc1hibS15Y3VadGUwMEs0RThJTFEySWpieHhveklNUGg1YjZRWkR3?oc=5",
-      "source": "Barron's",
-      "published": "Tue, 02 Jun 2026 14:10:00 GMT",
-      "ep": 1780409400.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "This Biotech Stock Plunges 51%. Its Sickle Cell Drug Has \u2018No Viable Path Forward.\u2019",
-      "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxOajlSd1VyakZ4SC1sOV9TRnNqdTZVbGxSRkRmQlFvMGo1WXFoSDdxUG1zRXJWLURiQTVFQkZiT2hLNTctU0JtcWxEbGt6bzFDNC1YbHRjVENjTzJTcGYyM3FTZWRMZVYtMEFxNFV1LWV4NmlOSTlsbFJYczJJVFRBaWc1UjRxLWdKNnJrVHJn?oc=5",
-      "source": "Barron's",
-      "published": "Tue, 02 Jun 2026 14:01:00 GMT",
-      "ep": 1780408860.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "ONDS Stock In The Spotlight After New Navy Contract \u2013 Everything To Know About The Deal",
-      "link": "https://news.google.com/rss/articles/CBMioAFBVV95cUxPc0ZlUkxudm5fSHRqanRISjBpX050VExuVUZVLXE3TXNnb29rTjF6RTlrTGVYTmJFalNKby04YkFBVjFPdUxJc2h1NjJfcWN4S19qV3RBX3hiR3lORGsyMnFOUUl6YUJxOUluWHVQb0NzaWZfd25rUTY3VXNFSnk0QXdiU2RvS1JWUm5IMGdSVjVvZjZjQzl3Qy1hUFpwV0ZJ?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Tue, 02 Jun 2026 13:58:17 GMT",
-      "ep": 1780408697.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "S&P 500, Nasdaq dip after record highs; HPE soars",
-      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQUEQyRmFWdG5VaUVWRUI3a3BEWGIwRlZUeHVmckpoSjNMdjdBdmk5T0g1TFB2U0pWUnFfdmdnUUhJcDZEeDItRzFHU25Vd0ROckhEQjVhQ2lvMm9CSC01T1BtenlYTk95YUVILVVsMGZLN2Fob2FMUjJwd3BIb2Z3eEpDM0xmSGt4SHlRRUtDeHl0QkdzeGhQLS1wRWdkNlgtT2JMZzYwdw?oc=5",
-      "source": "Reuters",
-      "published": "Tue, 02 Jun 2026 13:54:14 GMT",
-      "ep": 1780408454.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Marvell stock soars as Nvidia CEO calls chipmaker 'the next trillion-dollar company'",
-      "link": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxQMUpUODI5ek5faEIyS2RwUnE2MFVmMVdxVno0ck1Hc296bnRiNmRyX0dZYlBXRVJ3NGVHck1CUW8xX09ONjFwcC1ra3ZtUlktZ3VjNG4zVE42NXRyVTlpTHpnaUR4ZFJ5VHhwWElZNjgyWnhwZnVJdFVITTZfUWhjN2NpT3cyUEVqMV96N2pjbEdQM0x0Yi15dEx5Zk9YRVZjeFdnNFp5aFlnYUFBZmZ2Mzh5VzVNZ0xEM2RnWGNNTnRsaUtwVnlfN2w5ZEpsdm9yQ0RDSWpB?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Tue, 02 Jun 2026 13:50:07 GMT",
-      "ep": 1780408207.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Marvell Stock Soars On Nvidia Endorsement, Computex News",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxNTXhreDcyWWlONjNaQnZENUxjcHNfdFlrQXZLVFV5QmRmNGNDR3BXeF9wdkplUV8xSEt2YkNNT1h3ZElmVWhHSDdTaVJ4WlhpcUFxcEhjV2xWaHQ1VnRaVWFhb1BXNjJzLWVab0pfeDZRdWt3WktCWTh1OF9kQTZ0RVZfYVNOQ1ZhQlhvckdxNEpkX0R4ZFJqRFdn?oc=5",
-      "source": "Investor's Business Daily",
-      "published": "Tue, 02 Jun 2026 13:44:00 GMT",
-      "ep": 1780407840.0,
-      "sentiment": "good",
       "trump": false
     },
     {
@@ -695,124 +792,16 @@
       "ep": 1780406760.0,
       "sentiment": "neutral",
       "trump": true
-    },
-    {
-      "title": "AI is multiplying the cybersecurity threat, and Palo Alto Networks and CrowdStrike are the main beneficiaries",
-      "link": "https://news.google.com/rss/articles/CBMikwFBVV95cUxPQ05lcXhXWEphLVlOWmk4eDJSOTNSdFF4RXpDUG9Ub0x1WjYxeTJzemFkb1dGTFowczZXRzZoQU5mUkRwYU41Yk8wUlB1ZkJXNGs2a3pOdndIbVZ5TnBWVEdHN3k1c0ZXMXNpcjVmakY1bDJZX09Cb0NLaEVVR19YdnM4cVBmMmZBdDZka3UxdjBaSW8?oc=5",
-      "source": "Yahoo Finance UK",
-      "published": "Tue, 02 Jun 2026 13:04:00 GMT",
-      "ep": 1780405440.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "Trump Cuts Tariffs on Ag Equipment to 15%",
-      "link": "https://news.google.com/rss/articles/CBMijgFBVV95cUxQSHpoOXJ2SHFoNHRMTkpFempqOENXQ1dLZEdnUlRUSDJ0RVJMMGNmOGV4T3BDQjZucS1abFpZRGs2ZzJaS0w3d09CVy16NTlNSWt1SmZNT2oxUEdtOUdhRmZrVjhYT1VfOTZIZXg1b3lZWXlnUkU3bjcxRlZGbk0wbzlCWE95a0FtSUVuSy13?oc=5",
-      "source": "Farm Policy News",
-      "published": "Tue, 02 Jun 2026 11:53:16 GMT",
-      "ep": 1780401196.0,
-      "sentiment": "neutral",
-      "trump": true
-    },
-    {
-      "title": "Marvell stock soars after Nvidia CEO's trillion-dollar praise",
-      "link": "https://news.google.com/rss/articles/CBMi9gFBVV95cUxNdXl6MXJvMS1xWFpoNmNGdE9scmNIQ1I3anJUbFdPWHdSNXlSa2duWU9rUjhFdm5sLTA1eldBeHlqSTNpa0JoN0JxUVA4Ykt4TDYtbWpuNVRMWW5VMjdHSU9OS2RKb0loaHBJejJEblM1OGI1bmRuQUN3YzQtRm11LTdlcGkzRzNUOGRJM3g0bVM1Q1J3WHFITlkzSEtMYW5OSmVJS3hZYUtDNFIzaWV3LTh6WTRGMlNRclVSX3Q5al8zVE5FUFhTaVFqSlZWdmlzNUFEbmhZZnBzM0g5NGdZbnBoa194U2tCcUYxUjV4UUlodWZUNVE?oc=5",
-      "source": "MSN",
-      "published": "Tue, 02 Jun 2026 11:49:55 GMT",
-      "ep": 1780400995.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "HPE posts Q2 2026 earnings beat as AI server demand surges",
-      "link": "https://news.google.com/rss/articles/CBMidEFVX3lxTE9NUHR1ZEcyeXZmNXEzSEhiN3dfV05WcGRzd0s0alhZREM2djlOTHdBc0hTUG5kUkFmbUZvYXlNMXlRNnFfWG5KdUZ4OUxraHlzdFFiTTltdnlNNHhuNXc3UW5Zc0JHdVhzOExHZ2xlV3F0UXNU?oc=5",
-      "source": "qz.com",
-      "published": "Tue, 02 Jun 2026 11:16:40 GMT",
-      "ep": 1780399000.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "HPE stock soars on record backlog, booming AI server business",
-      "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQM3E5aVAtTVVUdkdOVDFfU1NKWWNWWGE3VXdHUHFCN2ZpN1ZDZ200WktUZXpsRnJzcHhqQ2xJM2JxTlpKNnpESXU2TGZfR3BiWlgybXFvREdZa0k1RGVwZ2M5RU04MkZid3RHdTVKS1ctbkpvaGNiQkxIN1ZWNXpaazJfREc2Y3B0emdnVGg4MmxrNktFOEU0RXczWGkwblRIMHk2ZGRxWWs5b012MnpIMDM3RU9oSlpa?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Tue, 02 Jun 2026 11:12:52 GMT",
-      "ep": 1780398772.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Marvell Soars After Nvidia Chief\u2019s $1 Trillion Stock Call",
-      "link": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQUjlLUF9Fdkhxb2JVT041OVV3TzVIVVY3anlMc25HSi1jYjJ5TVZYUXE1d2JKMXhTaXNlVkY0OUpqSnpuLXJnZ1lwYjVuNnh1Z1BwYV9TU3pJM2FzR3JTdDlJQ3B2NU1aX1BuZWc0RmQyT05Pb1E4cjU1Z2VJRFNNS3B6by0tejhpeFBjYUZGNXB4R1IyVTVwNVFacWw3WFJDYmJaakpYOUVpNGFDUVQwRW4xaG0?oc=5",
-      "source": "Bloomberg.com",
-      "published": "Tue, 02 Jun 2026 10:41:53 GMT",
-      "ep": 1780396913.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Abivax stock plunges 32% as rare malignancy events cloud solid colitis trial data",
-      "link": "https://news.google.com/rss/articles/CBMizgFBVV95cUxQbEdKR2JFRTJuVDV2Q2doVFQydDk5SXBPbTJ3MmN2am9JOEtXdWZwbTl6R3p2ckdUbVBaQ2duMkJBZXcwMzI5TFltUnNPNWZTazZsbXgyaU8xcGtiRUtKMzlRdVJVOUxpaDdaVkhVOUV0UERPMW9VVDc5Rlg2ZEZpY1R6SEsyV3owT3RqT3BPaHVCb0NSMFVBR2hfcW5lM1Z4c3RMMGFjSHJrTnYwMlRkZDdLMFhxajBSdHViNHk5Z0FlOFhnOEZfQXYyNngwUQ?oc=5",
-      "source": "Investing.com",
-      "published": "Tue, 02 Jun 2026 10:29:28 GMT",
-      "ep": 1780396168.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "Marvell stock soars 20% as Nvidia's Huang says it could be the next trillion-dollar company",
-      "link": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQYTMtR2pPU3JFdFNmZlA5NEw0YWM2aFFBZVdPNGYxX202dmdFTjVVdGZ4b3poZ2htaWh6eHhWMTFqRHBZdDR4VGE0ZTBPWDYzd05vOEQ4akVXbmZ5LTR2RF9DM1hTS1h5ZlNXUldiUXpod0IzU3BTMGlaVjIybUc0YmVCSzRFOVBBWU5jclVLS2l2bEZMSVl6b1NB0gGfAUFVX3lxTE5MUG1BMGkxV2dSR2ZPQ2ZHV0t1aTZqTlJqcmVJcHNfOEdxbzZCMzJIaEh2aVFZcHVGZzYyQUtaNTZISktWUVRGa0FGOTdneXphdHRFaWhacjhYQmdXZUo0TkxMSWNpZi1ZRzUtRkpKNGNnckczX3RaZS1oZU4yYVFIS3JSUFZxb1JDaExVcGUtZHc0dUtSOWtNaEdUXzI0cw?oc=5",
-      "source": "CNBC",
-      "published": "Tue, 02 Jun 2026 10:10:27 GMT",
-      "ep": 1780395027.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Warren Buffett's successor is finally putting his nearly $400 billion cash pile to work",
-      "link": "https://news.google.com/rss/articles/CBMisgFBVV95cUxNTzJlN2ZOOUo2RlJfTzJBWl94TGI3emQ1WnZxN0RnRUhaR2dVMEhTUE9oXzhmRkY5STdqVnpyb0VvS1ByUkEzSGhZTlRDb3FmVG9sVnFPdkxfa0k5ak9xVUt3MnNzQ2RyRVNOcXNLbUlQZ2JPb09nbzZUZGV6WTVTeVdYc2xjNWVwTkVJXzBhVEtmci05X3p2Y0I5RGptYk1GS3ZwU0NrZ3F5Njc0cjRBVTlR?oc=5",
-      "source": "Business Insider",
-      "published": "Tue, 02 Jun 2026 10:07:20 GMT",
-      "ep": 1780394840.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "Marvell Stock Soars 24%. Why Nvidia CEO Says It Will Hit $1 Trillion.",
-      "link": "https://news.google.com/rss/articles/CBMifEFVX3lxTE9xLUE3MXZpUGRUdUFNWDlSbUNuZE5GWlhENnRwNEgweTZTQlJfbC0xV21VOF9tRjNGcGctVnhaSEEzT0tCVlZHYXp0RW9FWkdJZmp2WGxtNDZqZUd1bkpJZmoyQ01JOGlXRzVXbktkWGJuZkVnVkNna3FIM0g?oc=5",
-      "source": "Barron's",
-      "published": "Tue, 02 Jun 2026 08:48:00 GMT",
-      "ep": 1780390080.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "HPE Q1 Deep Dive: AI Demand, Networking Synergies, and Upgraded Full-Year Outlook",
-      "link": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxNLUJyMnNEUlppbEU4MmN0WFBtTjBwYVVIZ0pzdGxnUWVuSEdmU2FMczR1UmloVnlyNHdlcmdndmhUXzZ5WW5OM3J1d2FfT0hJWFJHbDl0NG5tZjlEeUp5aFpXNV9LN2JPcGs4MUZfZFA3cUg1SlJyZGRpa0l2a3Vid0NoU0xPS3E2cDl2UWh5NjR0WVpSWGNvVlFPZjM3VjNTdmRTZFJ6Nzlmb2Z4TXB4X1RldV9DNFBuZnJHTVZiVmJzY1R1MU0xM29oR1paNmNhSXJCNUh3?oc=5",
-      "source": "StockStory",
-      "published": "Tue, 02 Jun 2026 08:45:36 GMT",
-      "ep": 1780389936.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Trump Targets Brazil With 25% Tariff, Citing Unfair Trade Practices",
-      "link": "https://news.google.com/rss/articles/CBMieEFVX3lxTE9RMkthSDVDei1xTDRDa29PLVYxaThnNEYtaENxb1hyVXJKdjE5S3doamJWclF5bHBzUFRHWXhQc3NNNnJnNUJzVDM1Mkhnd3hDaUZIYklBcnlocmlnQUFfcmQ4MU1WNDNQaXF5R054WFZlNzhQN0xBQQ?oc=5",
-      "source": "The New York Times",
-      "published": "Tue, 02 Jun 2026 07:23:07 GMT",
-      "ep": 1780384987.0,
-      "sentiment": "neutral",
-      "trump": true
-    },
-    {
-      "title": "Opinion | Trump drags out his losing tariff refund fight",
-      "link": "https://news.google.com/rss/articles/CBMinwFBVV95cUxPSnlsSjlnZWVMa091cnZKYmxpWGJ0TkhaUlU3am5vV1FCY0ozbm9FalRtbXBCc1VvaldXaDlFemNTVXVpRms0b3ZWbWtUWjh5LXRmbDV6dDA2RHN2Nzd1Z0J3UHBGaUEzenhmYXYwNG5JMHAxVnc4UHhxYzFCeWtWX3FkSUFSZXYydVczVEh3OHV2ZVA1Wk53dGlqbzRiRGM?oc=5",
-      "source": "The Washington Post",
-      "published": "Tue, 02 Jun 2026 05:48:30 GMT",
-      "ep": 1780379310.0,
-      "sentiment": "neutral",
-      "trump": true
     }
   ],
-  "macro": []
+  "macro": [
+    {
+      "label": "\ud83d\udcc9 Market crash / halt",
+      "title": "Here\u2019s how investors can protect their portfolios from the next stock-market crash",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxPWkdKYTkzYUJzcHZ3LWtKTFd0ejlVN3k1QkhNS1V1ZUdmZlV0bGZrU05XVUpvWXRsZVZpUEJmb2laa0h1Y1BmTnExcUp0bWpwNVZ6MDV2YlFEdEY1ZlpwWndOQ1Y5cmtydU0yX2JLckNmbVVXUl9MdnQwMEhLcGRrUWJaZXpLajZ1U2J3VlN0UHhVTTREOTZpeVpQbTZzWW9CRjg5WVFzZVVod1NuM3lXNW4ybGFiWllUakhtdXQ5TWlHZw?oc=5",
+      "published": "Tue, 02 Jun 2026 21:14:00 GMT",
+      "source": "MarketWatch",
+      "_ep": 1780434840.0
+    }
+  ]
 }

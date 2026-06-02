@@ -112,6 +112,9 @@
           <div class="flex items-center gap-3 flex-wrap">
             <div class="text-xs text-slate-500" x-show="suggestions.scanned_at">Data as of <span class="text-slate-400 font-semibold" x-text="suggestions.scanned_at"></span></div>
             <div class="flex items-center gap-2 ml-auto">
+              <button x-show="!hosted" class="btn-sm" @click="backupData()" title="Copy your data (account, trades, watchlist + market data) to a timestamped backups/ folder — one click before risky changes.">
+                <span x-text="backupMsg || '💾 Backup'"></span>
+              </button>
               <button class="btn-sm" @click="buildUniverse()" :disabled="universe.status && universe.status.running"
                 :title="universe.kept ? ('Scanning the top '+universe.kept+' most-liquid names of '+universe.passed_filter+' that pass your Market Leaders filter (mkt cap > $300M · price > $10 · $vol > $10M), from '+universe.universe_total+' US-listed stocks'+(universe.built_at?' · built '+universe.built_at:'')) : 'Re-scan all US-listed stocks and rebuild the Market Leaders universe'">
                 <span x-show="!(universe.status && universe.status.running)">🌐 Rebuild universe</span>
@@ -213,7 +216,6 @@
                             <span class="badge" x-show="t.low_grade" style="color:#ffb53d;border-color:rgba(255,181,61,.5)" title="Below B at entry — worth reviewing why you took it">⚠ low</span>
                           </div>
                           <div class="text-xs text-slate-400">entry <span x-text="t.entry||t.planned_entry||'?'"></span> · stop <span x-text="t.stop"></span><span x-show="t.initial_stop!=null" :title="t.initial_stop!=t.stop ? 'initial stop (risk basis) — R is measured off this, not the raised stop' : 'risk basis (stop not yet moved)'"> · risk basis <span x-text="t.initial_stop"></span><span x-show="t.initial_stop!=t.stop" class="text-up"> 🔒</span></span> · <span x-text="t.shares||'?'"></span> sh · P&L <span x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'" x-text="(t.pnl>=0?'+':'')+cur+Math.round(t.pnl).toLocaleString()+' ('+t.pnl_pct+'%)'"></span><span x-show="t._extPct!=null" :class="t._extPct>=0?'text-up':'text-down'"> · 🌙 <span x-text="extLabel.replace(' P&L','')"></span> <span x-text="(t._extPct>=0?'+':'')+t._extPct+'%'"></span><span x-show="t._extImpact!=null" x-text="' ('+(t._extImpact>=0?'+$':'-$')+Math.abs(Math.round(t._extImpact)).toLocaleString()+')'"></span></span></div>
-                          <div x-show="t._hitTarget" class="text-xs"><span class="badge font-bold" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">🎯 hit target (<span x-text="cur"></span><span x-text="t.target"></span>) — trim / trail the rest</span></div>
                           <template x-if="(t._liveCoach||t.coach)">
                             <div class="flex items-start gap-2 flex-wrap text-xs">
                               <span class="text-slate-400 flex-1 min-w-[180px]" x-text="(t._liveCoach&&t._liveCoach.reason)||((t.coach&&t.coach.reasons)?t.coach.reasons[0]:'')"></span>
@@ -237,41 +239,13 @@
                   </div>
                 </div>
 
-                <!-- New entries + Avoid -->
-                <div class="grid md:grid-cols-2 gap-4">
-                  <div class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
-                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🎯 New entries</div>
-                    <template x-if="!gameplan.buy_now.length && !gameplan.watch.length">
-                      <div class="text-sm text-slate-500">No clean A/A+ setups — patience.</div>
+                <!-- Avoid (the "New entries" list was removed — "Top suggestions today" below is the entry list) -->
+                <div x-show="gameplan.avoid.length" class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
+                  <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🛑 Avoid today</div>
+                  <div class="space-y-1">
+                    <template x-for="a in gameplan.avoid" :key="a.ticker">
+                      <div class="text-sm text-slate-400"><span class="font-bold text-slate-300" x-text="a.ticker"></span> — <span x-text="a.reason"></span></div>
                     </template>
-                    <div class="space-y-1.5">
-                      <template x-for="s in gameplan.buy_now" :key="'b'+s.ticker">
-                        <div class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/5 rounded px-1 py-0.5" @click="view='suggestions'">
-                          <span class="shrink-0">🟢</span>
-                          <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
-                          <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
-                          <span class="text-slate-400 text-xs flex-1">buy <span x-text="s.zone_bottom+'–'+s.zone_top"></span></span>
-                          <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
-                        </div>
-                      </template>
-                      <template x-for="s in gameplan.watch" :key="'w'+s.ticker">
-                        <div class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/5 rounded px-1 py-0.5 opacity-80" @click="view='suggestions'">
-                          <span class="shrink-0">⏳</span>
-                          <span class="w-7 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></span>
-                          <span class="font-bold w-16 shrink-0" x-text="s.ticker"></span>
-                          <span class="text-slate-400 text-xs flex-1" x-text="(s.trigger_note ? s.trigger_note.replaceAll('$',cur) : (s.entry_type==='stop' ? ('▲ break above '+cur+s.entry) : ('⏳ wait for pullback to '+cur+s.entry)))"></span>
-                          <span class="badge shrink-0" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                  <div x-show="gameplan.avoid.length" class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
-                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🛑 Avoid today</div>
-                    <div class="space-y-1">
-                      <template x-for="a in gameplan.avoid" :key="a.ticker">
-                        <div class="text-sm text-slate-400"><span class="font-bold text-slate-300" x-text="a.ticker"></span> — <span x-text="a.reason"></span></div>
-                      </template>
-                    </div>
                   </div>
                 </div>
                 <!-- reminders -->
@@ -289,13 +263,13 @@
           <!-- Top suggestions -->
           <div class="card">
             <div class="card-head flex items-center justify-between">
-              <span>Top suggestions today</span>
+              <span>Top suggestions today <span class="text-xs font-normal text-slate-500" title="Live view: buyable-now names float to the top intraday. The Forward test (Stats) freezes a stable static set by grade — they can differ in order by design.">· live order</span></span>
               <button class="btn-sm" @click="view='suggestions'">View all →</button>
             </div>
             <template x-if="topSuggestions.length===0"><div class="p-5 text-sm text-slate-500">No scan yet — go to Suggestions and run one.</div></template>
             <template x-for="s in topSuggestions" :key="s.ticker">
               <div class="flex items-center gap-3 px-5 py-2.5 border-t border-line text-sm">
-                <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
+                <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
                 <div class="w-20 font-bold flex items-center gap-1">
                   <span x-show="inZone(s)" title="buyable now">🟢</span><span x-text="s.ticker"></span>
                   <span x-show="groupMedal(s)" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme" x-text="groupMedal(s)"></span>
@@ -480,7 +454,7 @@
                         <span class="badge" x-show="ms[1]" :title="'Passes the '+ms[0]+' momentum screen'"
                           style="background:rgba(106,141,255,.18);color:#b8c8ff;border-color:rgba(106,141,255,.45)">🚀 <span x-text="ms[0]"></span></span>
                       </template>
-                      <span class="badge" x-show="s.worth_waiting" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA"
+                      <span class="badge" x-show="isWorthWaiting(s)" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA"
                         style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⏳ Worth waiting</span>
                       <span class="badge" x-show="s.trend_template" :title="'Minervini Trend Template '+(s.tt_count||8)+'/8 — confirmed Stage-2 uptrend leader (worth watching)'"
                         style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">✓ Trend Template</span>
@@ -492,8 +466,8 @@
                     </div>
                   </div>
                   <div class="text-right">
-                    <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(s.grade)" x-text="s.grade"></div>
-                    <div class="text-[10px] text-slate-500" x-text="s.rating+'/100 · ADR '+s.adr+'%'"></div>
+                    <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
+                    <div class="text-[10px] text-slate-500" x-text="cardGrade(s).rating+'/100 · ADR '+s.adr+'%'"></div>
                     <div class="text-xs font-bold" x-show="s._livechg!=null" :class="s._livechg>=0?'text-up':'text-down'">
                       <span class="text-up text-[9px]">●</span> <span x-text="cur"></span><span x-text="s.close"></span> <span x-text="(s._livechg>=0?'+':'')+s._livechg+'%'"></span>
                     </div>
@@ -505,29 +479,32 @@
                      a limit is "wait for the pullback", never "pull back toward" an upside trigger. -->
                 <div class="space-y-2">
                   <template x-for="(e,ei) in displayEntries(s)" :key="ei">
-                    <div class="rounded-xl p-2.5" :class="ei===0?'border border-white/10 bg-white/[0.03]':'border border-white/5 bg-white/[0.015]'">
+                    <div class="rounded-xl p-2.5" :class="(ei===0?'border border-white/10 bg-white/[0.03]':'border border-white/5 bg-white/[0.015]')+(e.stale?' opacity-60':'')">
                       <div class="flex items-center justify-between gap-2 mb-1.5">
                         <div class="flex items-center gap-1.5 flex-wrap">
                           <span class="badge shrink-0" :class="e.kind==='breakout'?'badge-ep':(e.kind==='confirm'?'':'badge-pullback')"
                             :style="e.kind==='confirm'?'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)':''"
                             :title="e.kind==='confirm'?'Confirmation entry — instead of catching the deep dip, buy once buyers prove themselves by reclaiming the 50 EMA (if price slid below it) or breaking the prior-day high. 1× ADR stop. Graded & forward-tested like any entry.':''"
                             x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))+(ei===0?'':' · alt')"></span>
+                          <span x-show="e.stale" class="badge shrink-0" title="Price has broken out and run far above this dip entry (more than ~1× ADR above the buy zone). A pullback this deep is unlikely, so this option is graded as a chase and no longer carries the card's grade. If price does correct back to support, it'll re-grade as a fresh dip setup." style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.5)">⛔ ran away</span>
                           <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
                           <span x-show="e.breakoutCatch" class="badge shrink-0" title="Market's open and this strong leader already BROKE OUT above its deep dip zone — a pullback all the way to the 50 EMA is unlikely now. The realistic dip is a shallow pullback to the nearest rising EMA; catch it there. Updates live." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">🎯 breakout catch</span>
                           <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                          <span class="font-extrabold text-base leading-none" x-show="e.grade" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100) — each setup is graded on its own entry'" x-text="e.grade"></span>
-                          <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="ei===0?'primary':'option'"></span>
+                          <span class="font-extrabold text-base leading-none" x-show="e.grade && !e.stale" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100) — each setup is graded on its own entry'" x-text="e.grade"></span>
+                          <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="e.stale?'ran away':(ei===0?'primary':'option')"></span>
                         </div>
                       </div>
-                      <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                      <!-- no take-profit target: we trail (exit on a close under the 9 EMA), aiming to ride for as much as possible -->
+                      <div class="grid grid-cols-2 gap-2 text-center text-sm">
                         <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
                         <div class="lvl"><div class="lvl-l" x-text="(e.rotation||e.dayLowStop)?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
-                        <div class="lvl"><div class="lvl-l">Target 2R</div><div class="font-bold" style="color:var(--cyan)" x-text="e.target"></div></div>
                       </div>
                       <div x-show="e.buyable_now" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · <span x-text="cur"></span><span x-text="s.close"></span> is in the zone</div>
                       <div x-show="!e.buyable_now" class="text-xs text-slate-500 mt-1.5" x-text="entryHint(e, s.close)"></div>
+                      <!-- confirmation context for a buy-zone (limit) entry: don't buy the first touch -->
+                      <div x-show="e.entry_type==='limit' && !e.stale" class="text-[11px] text-slate-400 mt-1.5 leading-snug px-2 py-1.5 rounded-lg" style="background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.2)">✋ <b class="text-slate-200">Confirm before buying</b> — don't grab the first touch. Either price <b>settles in the zone</b> for a bit, or it tags the zone and <b>reclaims the day's high</b> (a green candle off it = buyers stepping in, signaling the low).</div>
                       <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk <span x-text="cur"></span><span x-text="e.risk_ps"></span>/sh</div>
                     </div>
                   </template>
@@ -845,10 +822,9 @@
                   <button class="btn-ghost text-rose-400" @click="removeWatch(i)">✕</button>
                 </div>
                 <div :id="'wlc-'+r.ticker" class="w-full h-32 rounded-xl overflow-hidden" style="background:rgba(7,10,18,.5)"></div>
-                <div class="grid grid-cols-3 gap-2 text-center text-sm" x-show="wl(r).entry">
+                <div class="grid grid-cols-2 gap-2 text-center text-sm" x-show="wl(r).entry">
                   <div class="lvl"><div class="lvl-l">Entry &gt;</div><div class="text-up font-bold" x-text="wl(r).entry"></div></div>
                   <div class="lvl"><div class="lvl-l">Stop</div><div class="text-down font-bold" x-text="wl(r).stop"></div></div>
-                  <div class="lvl"><div class="lvl-l">Target</div><div class="font-bold" style="color:var(--cyan)" x-text="wl(r).target"></div></div>
                 </div>
                 <div class="text-xs text-slate-400" x-text="wl(r).why || r.why || 'Run scan / analyze for setup detail.'"></div>
                 <div class="flex gap-2">
@@ -1106,6 +1082,20 @@
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null?stats.avg_r+'R':'—'"></div></div>
             <div class="stat"><div class="stat-label">Closed</div><div class="stat-val" x-text="stats.closed??0"></div></div>
           </div>
+          <!-- Learning-loop activation: the ±8 realized-results nudge fires per setup at ≥N closed trades -->
+          <template x-if="stats.activation && Object.keys(stats.activation).length">
+            <div class="card p-4">
+              <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🧠 Learning loop <span class="font-normal normal-case">— the ±8 realized-results nudge activates per setup at <b x-text="stats.activation_threshold||5"></b> closed trades</span></div>
+              <div class="flex flex-wrap gap-2">
+                <template x-for="(v,st) in stats.activation" :key="st">
+                  <span class="text-xs px-2.5 py-1 rounded-lg border" :style="v.active?'color:#22e0a1;border-color:rgba(34,224,161,.5);background:rgba(34,224,161,.08)':'color:#93a1b8;border-color:#222c3c'">
+                    <span x-text="st"></span>: <b x-text="v.closed+'/'+(stats.activation_threshold||5)"></b><span x-show="v.active"> ✓</span><span x-show="!v.active" class="text-slate-500" x-text="' · '+v.to_go+' to go'"></span>
+                  </span>
+                </template>
+              </div>
+              <div class="text-[11px] text-slate-600 mt-2" x-show="!Object.values(stats.activation).some(v=>v.active)">When a setup reaches the threshold, its realized avg-R nudges that setup's grade ±8 — the grader starts learning from your actual results. (Grading stays post-close only, never from a live trade.)</div>
+            </div>
+          </template>
           <!-- Personal P&L calendar -->
           <div class="card p-5">
             <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
@@ -1138,7 +1128,7 @@
           <!-- Forward (paper) test: live A/A+ picks tracked day-by-day -->
           <div class="card p-5" x-show="forward">
             <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
-              <span>🔬 Forward test <span class="text-xs font-normal text-slate-500">— each day's top dashboard setups, frozen at the prior close &amp; tracked as that session trades; status updates every market close (no hindsight)</span></span>
+              <span>🔬 Forward test <span class="text-xs font-normal text-slate-500">— a STATIC record: each day's top setups by grade, frozen at the prior close &amp; tracked as that session trades (the dashboard's "Top suggestions" is the live view and may re-order intraday). Status updates every market close, no hindsight.</span></span>
               <button class="btn-sm" @click="loadForward()">↻</button>
             </div>
             <template x-if="forward && !forward.days_logged">
@@ -1160,6 +1150,36 @@
                   </div>
                 </template>
                 <div class="text-xs text-slate-500" x-show="!forward.aggregate">Picks logged — none matured yet (each needs ~7 sessions of forward data). The win rate / avg % appear here once they do.</div>
+                <template x-if="(forward.by_grade && Object.keys(forward.by_grade).length) || (forward.by_setup && Object.keys(forward.by_setup).length)">
+                  <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-1">Grade vs outcome <span class="font-normal normal-case text-slate-600">— does an A actually beat a B?</span></div>
+                      <table class="w-full text-sm">
+                        <template x-for="(v,g) in forward.by_grade" :key="g">
+                          <tr class="border-t border-line">
+                            <td class="py-1 font-extrabold" :style="'color:'+gradeColor(g)" x-text="g"></td>
+                            <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                            <td class="py-1 text-right text-slate-400" x-text="v.win_rate+'% win'"></td>
+                            <td class="py-1 text-right text-slate-500" x-text="'n='+v.n"></td>
+                          </tr>
+                        </template>
+                      </table>
+                    </div>
+                    <div>
+                      <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-1">Setup vs outcome</div>
+                      <table class="w-full text-sm">
+                        <template x-for="(v,st) in forward.by_setup" :key="st">
+                          <tr class="border-t border-line">
+                            <td class="py-1 truncate" x-text="st"></td>
+                            <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                            <td class="py-1 text-right text-slate-400" x-text="v.win_rate+'% win'"></td>
+                            <td class="py-1 text-right text-slate-500" x-text="'n='+v.n"></td>
+                          </tr>
+                        </template>
+                      </table>
+                    </div>
+                  </div>
+                </template>
                 <template x-if="forward.by_day && forward.by_day.length">
                   <div class="space-y-3">
                     <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">Day-by-day — top picks &amp; the day's lesson</div>
@@ -1189,10 +1209,11 @@
                               <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(p.grade)" x-text="p.grade"></span>
                               <span class="font-bold w-16 shrink-0" x-text="p.ticker"></span>
                               <span class="text-slate-500 text-xs flex-1 truncate min-w-0" x-text="p.setup_type"></span>
+                              <span class="badge shrink-0" x-show="p.filled_kind==='breakout' && p.setup_type!=='Breakout' && p.setup_type!=='Episodic Pivot'" style="background:rgba(245,158,11,.18);color:#fcd34d;border-color:rgba(245,158,11,.45)" title="The planned pullback never triggered, but the breakout leg filled — so this is scored on the breakout entry (the forward test no longer counts it as a miss).">⚡bkt</span>
                               <span class="badge shrink-0" x-show="p.trend_template" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)" title="passed the Minervini Trend Template">✓TT</span>
                               <span class="badge shrink-0" x-show="p.vcp" style="background:rgba(168,85,247,.18);color:#d9b3ff;border-color:rgba(168,85,247,.45)" title="VCP">🌀</span>
                               <span class="font-bold shrink-0 w-16 text-right" :class="(p.R!=null?(fwdPct(p.R,p.entry,p.stop)||0):(p.progress_pct||0))>=0?'text-up':'text-down'" :style="p.R==null?'opacity:.55':''" :title="p.R!=null?('trade result = '+p.R+'R (entry → '+(p.fstatus==='open'?'now':'exit')+')'):(p.progress_pct!=null?('idea progress: the stock is '+(p.progress_pct>=0?'+':'')+p.progress_pct+'% from the entry $'+p.entry+' to now — but the entry never triggered, so hypothetical'):'')" x-text="p.R!=null ? ((fwdPct(p.R,p.entry,p.stop)>=0?'+':'')+fwdPct(p.R,p.entry,p.stop)+'%') : (p.progress_pct!=null ? ((p.progress_pct>=0?'+':'')+p.progress_pct+'%') : '—')"></span>
-                              <span class="text-[10px] shrink-0 w-24 text-right" :class="p.fstatus==='no-fill'?'text-slate-600':'text-slate-500'" :title="p.fstatus==='matured'?('filled, then exited on the '+(p.exit==='stop'?'snapshot stop $'+p.stop:'9-EMA close')):p.fstatus==='open'?('filled — still open, tracking to the 9-EMA close / stop'):p.fstatus==='no-fill'?('price never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry+' within the window — this setup gave no entry'):p.fstatus==='awaiting'?('entry $'+p.entry+' not '+(p.entry_type==='limit'?'pulled back to':'broken above')+' yet — fills if it triggers in a coming session'):''" x-text="p.fstatus==='matured' ? (p.exit==='stop'?'stopped out':p.exit==='9ema'?'9-EMA exit':'exited') : (p.fstatus==='open' ? 'filled · open' : p.fstatus==='no-fill' ? 'never triggered' : p.fstatus==='awaiting' ? 'no fill yet' : '—')"></span>
+                              <span class="text-[10px] shrink-0 w-24 text-right" :class="p.fstatus==='no-fill'?'text-slate-600':'text-slate-500'" :title="p.fstatus==='matured'?('filled, then exited on the '+(p.exit==='stop'?'snapshot stop $'+p.stop:(p.exit==='50ema'?'50-EMA close':'9-EMA close'))):p.fstatus==='open'?('filled — still open, tracking to the trailing-EMA close / stop'):p.fstatus==='no-fill'?('price never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry+' within the window — this setup gave no entry'):p.fstatus==='awaiting'?('entry $'+p.entry+' not '+(p.entry_type==='limit'?'pulled back to':'broken above')+' yet — fills if it triggers in a coming session'):''" x-text="p.fstatus==='matured' ? (p.exit==='stop'?'stopped out':p.exit==='9ema'?'9-EMA exit':p.exit==='50ema'?'50-EMA exit':'exited') : (p.fstatus==='open' ? 'filled · open' : p.fstatus==='no-fill' ? 'never triggered' : p.fstatus==='awaiting' ? 'no fill yet' : '—')"></span>
                             </div>
                           </template>
                         </div>

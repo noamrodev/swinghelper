@@ -34,6 +34,7 @@ function dataCenter() {
     ],
     view: 'dashboard',
     market: currentMarket(),     // 'us' (default) or 'il' (Tel Aviv) — switches all data
+    backupMsg: '',
     mobileNav: false,
     hosted: false,
     // pages hidden on the hosted free service (no persistent storage there, so they can't save)
@@ -66,6 +67,9 @@ function dataCenter() {
     forward: null,
     openForwardDay: null,
     pnlCal: {},
+    // coach thresholds — fetched from /coach-config (single-sourced in rubric.py). Defaults match
+    // the backend so the live coach still works if the fetch fails.
+    coachCfg: { parabolic_adr: 4.0, raise_r: 1.0, earn_soon_days: 7 },
     pnlMonthOffset: 0,
     live: { prices: {}, market_state: null, updated_at: null, posture: null },
     liveOn: true,
@@ -176,6 +180,7 @@ function dataCenter() {
       this.applyScale();
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
       try { this.hosted = !!(await this.api('/env')).hosted; } catch (e) {}
+      try { this.coachCfg = await this.api('/coach-config'); } catch (e) {}
       if (this.hosted) { this.market = 'us'; localStorage.setItem('dc_market', 'us'); }   // IL is local-only; site stays US
       if (this.hosted && this.hostedHidden.includes(this.view)) this.view = 'dashboard';
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
@@ -288,7 +293,7 @@ function dataCenter() {
       const adr = (c.ext9_adr ? Math.abs(c.ext9 / c.ext9_adr) : null);
       const ext9 = e9 ? (price / e9 - 1) * 100 : null;
       const ext9_adr = (ext9 != null && adr) ? ext9 / adr : null;
-      const edays = c.earnings_days, earnSoon = edays != null && edays >= 0 && edays <= 7;
+      const edays = c.earnings_days, earnSoon = edays != null && edays >= 0 && edays <= this.coachCfg.earn_soon_days;
       const rtxt = r != null ? ((r >= 0 ? '+' : '') + r.toFixed(1) + 'R') : '';
       const rsuffix = rtxt ? ' (' + rtxt + ')' : '';
       let action, tone, reason;
@@ -301,9 +306,9 @@ function dataCenter() {
       else if (patient && e9 != null && price < e9) { action = 'HOLD'; tone = 'good'; reason = `under the 9 EMA but holding the 50 EMA ($${e50}) — that's the deep-pullback/base plan`; }
       // TRIM only on a genuine PARABOLIC blow-off (price VERY far above the EMAs — the ARM/DELL case),
       // not on ordinary strength. ≥4× ADR above the 9 EMA. (ext9_adr is live → premarket-aware.)
-      else if (r != null && r >= 1 && ext9_adr != null && ext9_adr >= 4) { action = 'TRIM'; tone = 'warn'; reason = `parabolic — ${ext9_adr.toFixed(1)}× ADR over the 9-EMA (far above 9/21/50)${rsuffix} — trim into the spike, trail the rest`; }
+      else if (r != null && r >= this.coachCfg.raise_r && ext9_adr != null && ext9_adr >= this.coachCfg.parabolic_adr) { action = 'TRIM'; tone = 'warn'; reason = `parabolic — ${ext9_adr.toFixed(1)}× ADR over the 9-EMA (far above 9/21/50)${rsuffix} — trim into the spike, trail the rest`; }
       else if (earnSoon) { action = 'WATCH'; tone = 'warn'; reason = `earnings in ${edays}d — binary event; hold through or reduce, your call${rsuffix}`; }
-      else if (r != null && r >= 1 && stop < e) { action = 'RAISE STOP'; tone = 'good'; reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`; }
+      else if (r != null && r >= this.coachCfg.raise_r && stop < e) { action = 'RAISE STOP'; tone = 'good'; reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`; }
       else { action = 'HOLD'; tone = 'good'; reason = `trend intact above the ${trailLabel}${rsuffix} — hold; exit on a daily close under it`; }
       return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
     },
@@ -482,6 +487,12 @@ function dataCenter() {
       this.predictionLoading = false;
     },
     async loadUniverse() { this.universe = await this.api('/universe'); },
+    async backupData() {
+      this.backupMsg = '…';
+      try { const r = await this.api('/backup', 'POST'); this.backupMsg = r.ok ? ('✓ ' + r.files + ' files') : ('✗ ' + (r.error || 'failed')); }
+      catch (e) { this.backupMsg = '✗ failed'; }
+      setTimeout(() => { this.backupMsg = ''; }, 4000);
+    },
     async buildUniverse() {
       const r = await this.api('/universe/build', 'POST');
       if (r.ok) { this.universe.status = { running: true, stage: 'Starting…', done: 0, total: 0 }; this.pollUniverse(); }
@@ -548,8 +559,9 @@ function dataCenter() {
     gradeBand(s) { const r = s.rating || 0; return r >= 82 ? 5 : r >= 73 ? 4 : r >= 63 ? 3 : r >= 52 ? 2 : 1; },
     sugRank(a, b) {
       return this.gradeBand(b) - this.gradeBand(a)
-        || (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0)
-        || (b.rating || 0) - (a.rating || 0);
+        || (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0)   // buyable-now floats up (live actionability)
+        || (b.rating || 0) - (a.rating || 0)
+        || (b.score || 0) - (a.score || 0);                    // raw-score tiebreak so the order is STABLE (no rating-72 reshuffle)
     },
     get filteredSuggestions() {
       let items = (this.suggestions.items || []);
@@ -567,7 +579,7 @@ function dataCenter() {
       else if (mf === '3M') items = items.filter(s => s.screen_3m && !s.screen_6m);
       else if (mf === '6M') items = items.filter(s => s.screen_6m);
       if (this.sectorFilter !== 'All') items = items.filter(s => s.theme === this.sectorFilter);
-      if (this.waitFilter) items = items.filter(s => s.worth_waiting);
+      if (this.waitFilter) items = items.filter(s => this.isWorthWaiting(s));
       if (this.leaderFilter) items = items.filter(s => (s.rs_pct || 0) >= 85);
       if (this.risingFilter) items = items.filter(s => s.theme_trend === 'Rising');
       if (this.ttFilter) items = items.filter(s => s.trend_template);
@@ -949,6 +961,11 @@ function dataCenter() {
     entryHint(e, close) {
       const cur = this.cur;
       const now = close != null ? ` (now ${cur}${close})` : '';
+      // STALE: price has run far above this dip entry — say so plainly instead of "wait for the pullback".
+      if (e.stale) {
+        const pct = (close && e.entry) ? Math.round((close / e.entry - 1) * 100) : null;
+        return `⛔ broke out & ran${pct != null ? ` ~${pct}% above` : ' past'} this dip (${cur}${e.entry}) — unlikely to fill; graded as a chase`;
+      }
       if (e.trigger_note) return ((e.entry_type === 'stop' ? '▲ ' : '⏳ ') + e.trigger_note + now).replaceAll('$', cur);
       if (e.entry_type === 'stop') return `▲ break above ${cur}${e.entry} to trigger${now}`;
       return `⏳ wait for the pullback to ${cur}${e.entry}${now}`;
@@ -994,7 +1011,7 @@ function dataCenter() {
         : rot.status === 'below'
           ? `buy the reclaim of the prior-day high $${rot.entry} · stop = day low $${rot.stop}`
           : `above the prior-day-high trigger $${rot.entry} — wait for a pullback to it · stop = day low $${rot.stop}`;
-      return { ...e, ...rot, entry_type: 'stop', rotation: true, shares,
+      return { ...e, ...rot, entry_type: 'stop', rotation: true, shares, stale: false,
         trigger_note: note, entry_note: 'intraday rotation: reclaim the prior-day high, stop at the day low' };
     },
     // LIVE "pullback catch of the breakout" for patient deep-dip setups (Deep Pullback / Consolidation):
@@ -1038,7 +1055,7 @@ function dataCenter() {
       } else if (e.rating != null) {                         // no momentum option to anchor on -> demote a notch
         rating = Math.max(52, e.rating - 10); grade = this.gradeLetter(rating);
       }
-      return { ...e, ...cat, entry_type: 'limit', breakoutCatch: true, shares, grade, rating,
+      return { ...e, ...cat, entry_type: 'limit', breakoutCatch: true, shares, grade, rating, stale: false,
         trigger_note: `broke out — catch a dip to the ${cat.lbl} $${cat.entry} (the deep dip is now unlikely) · stop $${cat.stop}`,
         entry_note: `pullback catch of today's breakout — buy the dip to the ${cat.lbl}` };
     },
@@ -1053,11 +1070,40 @@ function dataCenter() {
       }];
       const rot = this.rotationFor(s);                 // non-patient: reclaim the prior-day high
       const cat = rot ? null : this.breakoutCatchFor(s); // patient + broke out: shallow catch to nearest EMA
-      return entries.map(e => {
-        if (e.kind === 'pullback') return rot ? this._applyRot(s, e, rot) : (cat ? this._applyCatch(s, e, cat) : e);
-        if (e.kind === 'confirm') return this._confirmDayStop(s, e);    // breakout confirm: stop at the day low (live)
-        return e;
+      let list = [];
+      entries.forEach(e => {
+        if (e.kind === 'pullback') {
+          if (cat) {                                   // broke out intraday: the catch is the live entry,
+            list.push(this._applyCatch(s, e, cat));    // and it becomes the primary (carries the grade);
+            list.push({ ...e, stale: true });          // the original deep dip has RUN AWAY → keep it as a
+          } else if (rot) {                            // dimmed secondary so you can still see it.
+            list.push(this._applyRot(s, e, rot));
+          } else {
+            list.push(e);
+          }
+        } else {                                       // breakout secondary (break above the prior-day high)
+          list.push(e);
+        }
       });
+      // Ran-away (stale) legs sink below the actionable ones, so the breakout / real entry is the primary
+      // and the ran-away dip shows dimmed beneath it.
+      if (list.some(e => e.stale)) list = [...list.filter(e => !e.stale), ...list.filter(e => e.stale)];
+      return list;
+    },
+    // Has the patient dip RUN AWAY? (the pullback leg is stale → price left it behind). Used to keep
+    // setup-state tags/filters honest: a name whose deep dip ran away is no longer "worth waiting".
+    dipRanAway(s) { return (s.entries || []).some(e => e.kind === 'pullback' && e.stale); },
+    // Is this still a live "worth waiting" patient setup? Only if it's flagged AND its dip hasn't run away.
+    isWorthWaiting(s) { return !!s.worth_waiting && !this.dipRanAway(s); },
+    // The card's headline grade = the AVERAGE of the actionable entries on offer, mirroring the backend
+    // (so display and sort agree). Reads the legs ACTUALLY shown (displayEntries applies the catch and
+    // flags ran-away dips) and drops the ran-away ones — so a great-but-unlikely entry can't carry the
+    // card and a run-away dip can't either. Uses per-leg grades the backend already set (no rubric dup).
+    cardGrade(s) {
+      const pool = this.displayEntries(s).filter(e => e.rating != null && !e.stale);
+      if (!pool.length) return { grade: s.grade, rating: s.rating };
+      const avg = Math.round(pool.reduce((sum, e) => sum + e.rating, 0) / pool.length);
+      return { grade: this.gradeLetter(avg), rating: avg };
     },
     // LIVE: a confirmation entry is a breakout buy-STOP — once it triggers the real invalidation is the
     // DAY'S LOW (same as the rotation), not a fixed 1× ADR stop. While the market's open, tighten the

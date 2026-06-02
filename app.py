@@ -26,6 +26,7 @@ from urllib.parse import urlparse, unquote, quote, parse_qs
 
 import scanner
 import universe
+import rubric
 
 BASE = Path(__file__).resolve().parent
 SEED = BASE / "data"                       # shared files baked into the image / repo
@@ -854,6 +855,94 @@ def compute_equity():
             "open": round(open_pnl, 2), "equity": round(base + realized + open_pnl, 2)}
 
 
+def _equity_at(session, refresh=True):
+    """Account equity at a session's REGULAR close — each open position valued at the FINALIZED daily-bar
+    close for that date (never a mid-session cached value or an after-hours print). Deterministic, so the
+    P&L calendar cell doesn't drift with WHEN it's recorded (the old bug: a cached mid-session 'close'
+    inflated the baseline → the next day's day_pnl came out too low). `session` = 'YYYY-MM-DD'."""
+    st = read_json(settings_f(), {})
+    base = st.get("account_size") or 0
+    trades = read_json(trades_f(), [])
+    realized = open_pnl = 0.0
+    for t in trades:
+        e, sh = t.get("entry"), t.get("shares")
+        if not (e and sh):
+            continue
+        if t.get("status") == "closed" and t.get("exit"):
+            realized += (t["exit"] - e) * sh
+            continue
+        if t.get("status") != "open" or not t.get("ticker"):
+            continue
+        if t.get("taken_at") and t["taken_at"] > session:        # position not opened yet on this session
+            continue
+        try:
+            bars = scanner.get_bars(t["ticker"], max_age_hours=0 if refresh else 12)
+            bar = next((b for b in reversed(bars) if b.get("time") and b["time"] <= session), None)
+            if bar:
+                open_pnl += (bar["close"] - e) * sh
+        except Exception:
+            pass
+    return {"base": round(base, 2), "realized": round(realized, 2),
+            "open": round(open_pnl, 2), "equity": round(base + realized + open_pnl, 2)}
+
+
+# The IRREPLACEABLE files — your account, journal and forward test. Everything else (suggestions,
+# universe, news, cache) is regenerable market data and is deliberately NOT backed up.
+_BACKUP_FILES = ["settings.json", "trades.json", "watchlist.json", "status.json",
+                 "forward_log.json", "pnl_calendar.json"]
+
+
+def backup_data():
+    """Copy only the irreplaceable personal data (account, trades, watchlist, forward log, P&L — for
+    BOTH markets and every user dir — plus the journal prose) to a timestamped backups/<ts>/ folder, so
+    one bad write never loses the journal. Local-only (hosted has no durable disk anyway)."""
+    if HOSTED:
+        return {"ok": False, "error": "backup is local-only"}
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dst = BASE / "backups" / ts
+    roots = [DATA, DATA / "il"]                                # us + il namespaces
+    users = DATA / "users"
+    if users.exists():
+        for d in users.iterdir():
+            if d.is_dir():
+                roots += [d, d / "il"]
+    n = 0
+    try:
+        for root in roots:
+            for name in _BACKUP_FILES:
+                p = root / name
+                if p.exists():
+                    rel = p.relative_to(DATA)
+                    (dst / rel).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(p, dst / rel)
+                    n += 1
+        for jp in (BASE / "journal" / "lessons.md", BASE / "journal" / "trades.md"):
+            if jp.exists():
+                (dst / "journal").mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(jp, dst / "journal" / jp.name)
+                n += 1
+    except Exception as e:
+        return {"ok": False, "error": str(e), "files": n}
+    return {"ok": True, "path": str(dst), "files": n, "at": ts}
+
+
+def rebuild_pnl_calendar():
+    """Recompute EVERY recorded session's equity + day_pnl with `_equity_at` (the deterministic
+    finalized-close method) so the whole calendar is consistent — fixes any cells captured with the old
+    snapshot method. day_pnl = this session's equity − the prior recorded session's (recomputed) equity."""
+    cal = read_json(pnl_f(), {})
+    prev_eq = None
+    for session in sorted(cal):
+        eq = _equity_at(session)
+        base_for_first = eq["base"]
+        ref = prev_eq if prev_eq is not None else base_for_first
+        cal[session] = {"equity": eq["equity"], "open": eq["open"], "realized": eq["realized"],
+                        "day_pnl": round(eq["equity"] - ref, 2)}
+        prev_eq = eq["equity"]
+    write_json(pnl_f(), cal)
+    return cal
+
+
 def _equity_settings():
     """Settings with account_size swapped for live equity — used for sizing/grading so position size
     reflects current equity, not a stale typed-in number."""
@@ -926,7 +1015,7 @@ def position_coach(t, bars, settings, news_map):
     except Exception:
         e = None
     edays = days_until(e["date"]) if e else None
-    earn_soon = edays is not None and 0 <= edays <= 7
+    earn_soon = edays is not None and 0 <= edays <= rubric.COACH_EARN_SOON_D
     nm = news_map.get(t.get("ticker"))
     bad_news = bool(nm and nm.get("sentiment") == "bad")
 
@@ -954,7 +1043,7 @@ def position_coach(t, bars, settings, news_map):
         action, tone = "HOLD", "good"
         reasons.append(f"under the 9 EMA but holding the 50 EMA (${round(e50,2)}) — that's the deep-pullback/base "
                        f"plan; exit only on a close under the 50")
-    elif r_mult is not None and r_mult >= 1 and ext9_adr >= 4.0:
+    elif r_mult is not None and r_mult >= rubric.COACH_RAISE_R and ext9_adr >= rubric.COACH_PARABOLIC_ADR:
         action, tone = "TRIM", "warn"
         reasons.append(f"parabolic — {ext9_adr:.1f}× ADR above the 9 EMA (far above 9/21/50), {rtxt} — trim "
                        f"into the spike & trail the rest (the ARM/DELL blow-off case)")
@@ -962,7 +1051,7 @@ def position_coach(t, bars, settings, news_map):
         action, tone = "WATCH", "warn"
         reasons.append(f"earnings in {edays}d — binary event ({rtxt}); hold through or reduce, your call "
                        f"(no auto-trim on strength)")
-    elif r_mult is not None and r_mult >= 1 and stop and entry and stop < entry:
+    elif r_mult is not None and r_mult >= rubric.COACH_RAISE_R and stop and entry and stop < entry:
         action, tone = "RAISE STOP", "good"
         reasons.append(f"{rtxt} locked-in zone — raise the stop to breakeven (${entry}) so the trade can't turn red")
     elif bad_news:
@@ -989,7 +1078,7 @@ def position_coach(t, bars, settings, news_map):
 
 
 def _grade_letter(r):
-    return "A+" if r >= 82 else "A" if r >= 73 else "B" if r >= 63 else "C" if r >= 52 else "D"
+    return rubric.grade_letter(r)
 
 
 def entry_grade_for(ticker, date, settings):
@@ -1002,17 +1091,16 @@ def entry_grade_for(ticker, date, settings):
     a = scanner.analyze_at(ticker, date, settings, market())
     if not a:
         return None
-    setup = max(0, min(100, (a.get("score", 0) - 4) / 16 * 100))
+    setup = rubric.setup_score(a.get("score", 0))
     rs = a.get("rs_score", 50)
     entry_loc = a.get("entry_quality", 60)
     liq = a.get("liq_score", 50)
-    neutral = 55                                            # regime/sector/timing/news unknown for a past date
-    r = (0.28 * setup + 0.14 * rs + 0.14 * neutral + 0.14 * entry_loc
-         + 0.08 * liq + 0.10 * neutral + 0.06 * neutral + 0.06 * neutral)
+    n = rubric.NEUTRAL                                      # regime/sector/timing/news unknown for a past date
+    r = rubric.composite(setup, rs, n, entry_loc, liq, n, n, n)
     if a.get("extended"):
         r -= 8
     if a.get("distribution_today"):
-        r = min(r, 62)
+        r = min(r, rubric.CAP_DISTRIB)
     r = round(max(0, min(99, r)))
     return {"rating": r, "grade": _grade_letter(r), "setup_type": a.get("setup_type"),
             "entry_quality": a.get("entry_quality"), "ext10": a.get("ext10"), "asof": a.get("asof"),
@@ -1185,11 +1273,11 @@ def grade_suggestions(items, settings):
         ww = bool(it.get("worth_waiting")) if ww is None else bool(ww)   # patient dip-buy — buys INTO the 50 (exempt from chase pen)
         patient_quality = ww or ("AVWAP" in st)                         # setups the backtest showed work in ANY tape
         buyable = u.get("buyable_now", it.get("buyable_now"))
-        setup = max(0, min(100, (it.get("score", 0) - 4) / 16 * 100))   # technical setup quality
+        setup = rubric.setup_score(it.get("score", 0))                  # technical setup quality
         rs = it.get("rs_score", 50)                                     # relative strength
         # market regime: breakouts/EPs are demoted harder than pullbacks in weak tape
         regime = posture if st in pullback_setups else (
-            posture if posture >= 55 else posture * 0.6)
+            posture if posture >= rubric.REGIME_SOFT else posture * rubric.REGIME_DISCOUNT)
         entry_loc = u.get("entry_quality")
         entry_loc = it.get("entry_quality", 60) if entry_loc is None else entry_loc   # don't-chase / tight-stop
         liq = it.get("liq_score", 50)                                    # liquidity -> institutional interest
@@ -1203,48 +1291,48 @@ def grade_suggestions(items, settings):
         timing = 75 if (ww or (buyable and ext < 2)) else 55
         nd = it.get("news_dir")
         news = 100 if nd == "good" else (8 if nd == "bad" else (75 if it.get("news_flag") else 55))
-        r = (0.28 * setup + 0.14 * rs + 0.14 * regime + 0.14 * entry_loc
-             + 0.08 * liq + 0.10 * sector + 0.06 * timing + 0.06 * news)
+        r = rubric.composite(setup, rs, regime, entry_loc, liq, sector, timing, news)
         hist = bysetup.get(st)                                          # learns from realized results
-        if hist and hist.get("n", 0) >= 5:
-            r += max(-8, min(8, hist.get("avg_r", 0) * 3))
+        if hist and hist.get("n", 0) >= rubric.HIST_MIN_N:
+            r += max(-rubric.HIST_NUDGE_MAX, min(rubric.HIST_NUDGE_MAX,
+                                                 hist.get("avg_r", 0) * rubric.HIST_NUDGE_K))
         # earnings overhang: a print inside a week is a hard demote (don't open binary risk);
         # 8-14 days out is a lighter caution.
         if it.get("earnings_soon"):
-            r -= 18
+            r -= rubric.EARN_SOON_PEN
         elif it.get("earnings_near"):
-            r -= 6
+            r -= rubric.EARN_NEAR_PEN
         # EXTENSION / CHASE penalty (v5): a momentum name far above its BASE (the 50-EMA) already made the
         # money — buying it is a chase (SEDG: +85%/1m, 4.1x ADR over the 50, was grading B). Graded demote
         # above 2.5x ADR, HARD-CAP at C once parabolic (>=4x). worth_waiting dip-buys buy INTO the 50 -> exempt.
         if not ww:
-            if ext > 2.5:
-                r -= (ext - 2.5) * 8
-            if ext >= 4.0:
-                r = min(r, 52)                              # parabolic chase -> max C (overrides RS/sector)
-            elif ext >= 2.5:
-                r = min(r, 72)                              # extended 2.5-4x ADR above the 50 -> max B, not A
+            if ext > rubric.CHASE_SOFT_ADR:
+                r -= (ext - rubric.CHASE_SOFT_ADR) * rubric.CHASE_PEN_K
+            if ext >= rubric.CHASE_HARD_ADR:
+                r = min(r, rubric.CAP_PARABOLIC)            # parabolic chase -> max C (overrides RS/sector)
+            elif ext >= rubric.CHASE_SOFT_ADR:
+                r = min(r, rubric.CAP_EXTENDED)             # extended 2.5-4x ADR above the 50 -> max B, not A
                                                            # (the APLD case: shallow pullback in an extended move)
         # distribution / climax-reversal day: cap at C regardless of how strong RS/sector look (the ASTS case).
         if it.get("distribution_today"):
-            r = min(r, 62)
+            r = min(r, rubric.CAP_DISTRIB)
         # REGIME GATE (v5 — setup-aware): the backtest's losers in weak tape were breakouts/EPs; AVWAP/
         # Consolidation/worth-waiting worked in any tape. So breakouts/EPs stay capped below posture 65,
         # but the BEST patient at-support setups can reach A even in a mixed tape (user choice).
         if st in ("Breakout", "Episodic Pivot"):
-            if posture < 50:
-                r = min(r, 52)
-            elif posture < 65:
-                r = min(r, 72)                              # breakouts fail in weak tape -> max B
-        elif patient_quality and ext < 2.5 and tr != "Falling":
-            if posture < 50:
-                r = min(r, 72)                              # deep correction: even the best -> max B, not A
+            if posture < rubric.REGIME_WEAK:
+                r = min(r, rubric.CAP_BREAKOUT_WEAK)
+            elif posture < rubric.REGIME_MIXED:
+                r = min(r, rubric.CAP_BREAKOUT_MIXED)       # breakouts fail in weak tape -> max B
+        elif patient_quality and ext < rubric.CHASE_SOFT_ADR and tr != "Falling":
+            if posture < rubric.REGIME_WEAK:
+                r = min(r, rubric.CAP_PATIENT_WEAK)         # deep correction: even the best -> max B, not A
             # posture >= 50: no cap -> A/A+ reachable for the best patient setups (near their base)
         else:                                               # plain pullbacks & everything else
-            if posture < 50:
-                r = min(r, 52)
-            elif posture < 65:
-                r = min(r, 78)                              # allow A, not A+
+            if posture < rubric.REGIME_WEAK:
+                r = min(r, rubric.CAP_PLAIN_WEAK)
+            elif posture < rubric.REGIME_MIXED:
+                r = min(r, rubric.CAP_PLAIN_MIXED)          # allow A, not A+
         return round(max(0, min(99, r)))
 
     patient_or_pullback = pullback_setups + ("Deep Pullback", "Consolidation")
@@ -1265,11 +1353,18 @@ def grade_suggestions(items, settings):
                                        "buyable_now": e.get("buyable_now"),
                                        "chase_exempt": e.get("chase_exempt")})
             e["grade"] = _grade_letter(e["rating"])
-        # the ticker's headline grade = the BEST available option (a name with an A pullback is an A name),
-        # but each option carries its own grade so the user can see the breakout is a chase.
-        it["rating"] = max((e["rating"] for e in entries), default=_rating(it))
+        # the ticker's headline grade = the AVERAGE of its actionable options, so one great-but-unlikely
+        # entry can't carry the whole card (the FLNC case: a chase breakout + a 19%-below pullback that
+        # grades A shouldn't sit at the top on the pullback alone — the realistic blend is mid). A STALE
+        # leg (price ran far above its zone — that dip won't come) is excluded entirely; it can't even be
+        # averaged in. With one actionable leg the headline is just that leg's grade.
+        ratable = [e for e in entries if not e.get("stale")] or entries
+        ratings = [e["rating"] for e in ratable]
+        it["rating"] = round(sum(ratings) / len(ratings)) if ratings else _rating(it)
         it["grade"] = _grade_letter(it["rating"])
-    return sorted(items, key=lambda x: x.get("rating", 0), reverse=True)
+    # break rating ties with the raw setup `score` so the order is STABLE + meaningful (many names tie at
+    # rating 72 when a weak-tape regime gate caps grades at B; without a tiebreak the list reshuffles).
+    return sorted(items, key=lambda x: (x.get("rating", 0), x.get("score", 0)), reverse=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1294,9 +1389,11 @@ FORWARD_TOP_N = 50                      # how many of today's TOP suggestions to
 
 
 def log_forward_picks(date_key=None):
-    """Snapshot today's TOP suggestions — the same set/order the dashboard's "Top suggestions today"
-    shows (buyable-now floated to the top, then by rating) — so we can score how they perform over the
-    following days. Keyed by the session that just CLOSED; one snapshot per date; never overwrites."""
+    """Snapshot today's TOP suggestions as a STATIC record (the top-N SET by grade), so we can score how
+    they perform over the following days. Decoupled from the dashboard's live display order: the dashboard
+    floats buyable-now names up intraday (`sugRank`), but the snapshot captures by rating then raw score —
+    a stable set that doesn't depend on the transient buyable-now state at capture. Keyed by the session
+    that just CLOSED; one snapshot per date; never overwrites."""
     items = read_json(suggest_f(), {}).get("items", [])
     if not items:
         return
@@ -1306,12 +1403,18 @@ def log_forward_picks(date_key=None):
     if day in log.get("snapshots", {}):                 # already captured this day — keep the first
         return
     graded = grade_suggestions(items, _equity_settings())
-    # mirror the dashboard "Top suggestions" ordering: actionable-now names float up, then by rating
-    graded = sorted(graded, key=lambda s: (1 if s.get("buyable_now") else 0, s.get("rating", 0)),
+    # STABLE top-N set: rating, then raw `score` to break the rating-72 ties (NOT buyable-now-first, which
+    # is a live-display concern that would make the frozen record depend on the capture-moment's quotes).
+    graded = sorted(graded, key=lambda s: (s.get("rating", 0), s.get("score", 0)),
                     reverse=True)[:FORWARD_TOP_N]
     picks = [{"ticker": s["ticker"], "grade": s["grade"], "rating": s["rating"],
               "setup_type": s.get("setup_type"), "entry": s.get("entry"), "stop": s.get("stop"),
               "target": s.get("target"), "entry_type": s.get("entry_type"),
+              # BOTH entry legs (pullback + breakout) so the forward test can score whichever actually
+              # filled — a name that never dipped but broke out and ran is no longer logged as "no-fill".
+              "entries": [{"kind": e.get("kind"), "entry_type": e.get("entry_type"),
+                           "entry": e.get("entry"), "stop": e.get("stop"), "target": e.get("target")}
+                          for e in (s.get("entries") or []) if e.get("entry") and e.get("stop")],
               "buyable_now": bool(s.get("buyable_now")), "trend_template": bool(s.get("trend_template")),
               "vcp": bool(s.get("vcp")), "theme": s.get("theme"),
               "theme_trend": s.get("theme_trend"), "close_at_signal": s.get("close")}
@@ -1416,9 +1519,19 @@ def run_forward_eod():
     trade_day = _next_session_date()                       # the upcoming session these picks are FOR (the label)
     log = read_json(forward_f(), {"snapshots": {}})
     if trade_day in log.get("snapshots", {}):
-        return                                             # already snapshotted for that session (capture once)
-    if read_json(suggest_f(), {}).get("items"):
-        log_forward_picks(trade_day)                       # freeze today's dashboard top setups; tracked forward
+        return                                             # already captured once for that session
+    if SCAN.get("running"):
+        return                                             # a scan is mid-flight; its post-close finish snapshots
+    # AUTO FRESH SCAN at the close: recompute the whole universe so tomorrow's setups are a clean
+    # post-close picture (not a stale intraday scan). run_scan writes suggestions AND, because it's after
+    # the close, freezes the forward snapshot itself — so these fresh setups ARE the forward-test record
+    # and the dashboard's "best setups for tomorrow." Runs once/day (the snapshot gate above skips later ticks).
+    screeners = read_json(screeners_f(), [])
+    sc = next((s for s in screeners if s.get("is_default")), None) or (screeners[0] if screeners else None)
+    if sc:
+        run_scan(sc["id"], max_age=0)                      # fresh bars; writes suggestions + the post-close snapshot
+    elif read_json(suggest_f(), {}).get("items"):
+        log_forward_picks(trade_day)                       # no screener configured — snapshot whatever's there
 
 
 def record_daily_pnl(session):
@@ -1429,7 +1542,7 @@ def record_daily_pnl(session):
     Local-only."""
     if HOSTED:
         return
-    eq = compute_equity()
+    eq = _equity_at(session)                                   # finalized regular close, not a live/after-hours snapshot
     cal = read_json(pnl_f(), {})
     prior = [cal[k]["equity"] for k in sorted(cal) if k < session and isinstance(cal.get(k), dict)]
     prev_eq = prior[-1] if prior else eq["base"]
@@ -1457,21 +1570,26 @@ def _forward_eod_loop():
         time.sleep(1800)
 
 
-def _sim_forward(bars, trade_date, entry, stop, entry_type):
+def _sim_forward(bars, trade_date, entry, stop, entry_type, setup_type=None):
     """`trade_date` is the session these picks are FOR (the day you'd act on the trigger — the snapshot
     is labeled by it). Looks at bars from trade_date onward (so it never fills on the prior close where
     the setup was identified — a buy-stop at that day's high would be a fake instant loss; real bug,
     fixed), waits for the entry trigger (buy-stop: a high >= entry; limit: a low <= entry), fills there,
-    then exits on a daily close < 9-EMA or a stop hit. The trade day hasn't printed yet → 'awaiting'.
-    Trigger never hit after several sessions → 'no-fill'. Returns {R,matured,exit,status}."""
+    then exits on a daily close < the TRAILING EMA or a stop hit.
+    TRAILING EMA = the **9 EMA** by default, but the **50 EMA** for the patient LONG-HOLD setups
+    (Deep Pullback / Consolidation) — a strong 6-month leader caught deep at the 50 is held until it
+    loses the 50 again, not the 9 (mirrors the live position coach + my-rules; the LITE case).
+    The trade day hasn't printed yet → 'awaiting'. Trigger never hit → 'no-fill'. Returns {R,matured,exit,status}."""
     if not entry or not stop or entry <= stop:
         return None
     risk = entry - stop
     closes = [b["close"] for b in bars]
-    e9 = _ema_series(closes, 9)
+    patient = (setup_type or "").strip().lower() in ("deep pullback", "consolidation")
+    trail = _ema_series(closes, 50 if patient else 9)     # long-hold leaders trail the 50, the rest the 9
+    exit_label = "50ema" if patient else "9ema"
     after = [i for i, b in enumerate(bars) if b["time"] >= trade_date]   # the trade day onward
     if not after:
-        return {"R": None, "matured": False, "exit": None, "status": "awaiting"}
+        return {"R": None, "matured": False, "exit": None, "status": "awaiting", "fi": None}
     start, end = after[0], min(len(bars) - 1, after[0] + 60)
     is_limit = (entry_type == "limit")
     fi = None                                              # fill index = first post-signal bar that triggers
@@ -1481,16 +1599,48 @@ def _sim_forward(bars, trade_date, entry, stop, entry_type):
             break
     if fi is None:
         return {"R": None, "matured": False, "exit": None,
-                "status": "no-fill" if (end - start) >= 3 else "awaiting"}
+                "status": "no-fill" if (end - start) >= 3 else "awaiting", "fi": None}
     for j in range(fi, end + 1):
         b = bars[j]
         if b["low"] <= stop:
             px = b["open"] if b["open"] < stop else stop
-            return {"R": round((px - entry) / risk, 2), "matured": True, "exit": "stop", "status": "matured"}
-        if b["close"] < e9[j] and j > fi:                  # 9-EMA exit only AFTER the fill day
-            return {"R": round((b["close"] - entry) / risk, 2), "matured": True, "exit": "9ema", "status": "matured"}
+            return {"R": round((px - entry) / risk, 2), "matured": True, "exit": "stop", "status": "matured", "fi": fi}
+        if b["close"] < trail[j] and j > fi:               # trailing-EMA exit only AFTER the fill day
+            return {"R": round((b["close"] - entry) / risk, 2), "matured": True, "exit": exit_label, "status": "matured", "fi": fi}
     return {"R": round((bars[end]["close"] - entry) / risk, 2),
-            "matured": (end - fi) >= 5, "exit": "open", "status": "open"}
+            "matured": (end - fi) >= 5, "exit": "open", "status": "open", "fi": fi}
+
+
+def _forward_plans(pick):
+    """The entry legs to simulate for a forward pick: the stored `entries` (pullback + breakout, the
+    same both-leg plan shown on the dashboard) if present, else the single primary entry — so snapshots
+    frozen before both-leg tracking still score exactly as before."""
+    plans = [e for e in (pick.get("entries") or []) if e and e.get("entry") and e.get("stop")]
+    if not plans:
+        plans = [{"kind": "breakout" if pick.get("entry_type") == "stop" else "pullback",
+                  "entry_type": pick.get("entry_type"), "entry": pick.get("entry"),
+                  "stop": pick.get("stop")}]
+    return plans
+
+
+def _sim_forward_best(bars, trade_date, pick):
+    """Simulate EVERY entry leg and return (plan, result) for the one that actually FILLED — so a name
+    that never gave its pullback but broke out and ran is scored on the breakout leg instead of being
+    recorded as 'no-fill' (the forward test used to undercount up-day winners). If several legs filled,
+    take the one that triggered FIRST (the entry you'd realistically have been in); ties favor the
+    primary leg. If none filled, return the primary leg's result (awaiting / no-fill)."""
+    sims = []
+    for pl in _forward_plans(pick):
+        r = _sim_forward(bars, trade_date, pl.get("entry"), pl.get("stop"),
+                         pl.get("entry_type"), pick.get("setup_type"))
+        if r:
+            sims.append((pl, r))
+    if not sims:
+        return None, None
+    filled = [(pl, r) for pl, r in sims if r.get("fi") is not None]
+    if filled:
+        return min(filled, key=lambda x: x[1]["fi"])      # earliest fill; primary wins a tie (stable order)
+    return sims[0]                                          # nothing filled → primary's awaiting/no-fill
 
 
 def _day_lesson(picks):
@@ -1543,16 +1693,24 @@ def score_forward():
         picks_out = []
         for p in snap.get("picks", []):
             bars = scanner.get_bars(p["ticker"])
-            r = _sim_forward(bars, date, p.get("entry"), p.get("stop"), p.get("entry_type")) if bars else None
+            plan, r = _sim_forward_best(bars, date, p) if bars else (None, None)
             status = r["status"] if r else "no-data"
             R = r["R"] if r else None
-            # idea PROGRESS: how far price has moved from the frozen entry to the latest close, regardless
-            # of whether the strict (pullback/breakout) trigger filled — so a name that ran without ever
-            # giving its dip still shows "the idea is +X%" (the user wants entrance-vs-now, not just fills).
+            filled = bool(r and r.get("fi") is not None)
+            # the leg that actually filled drives R / exit / status / chart levels; on a no-fill we keep
+            # the primary entry as the reference (the leg falls back to it). A breakout that filled when
+            # the pullback didn't now shows its OWN entry & "breakout" kind, not the missed pullback.
+            out = {**p}
+            if plan and filled:
+                out.update({"entry": plan.get("entry"), "stop": plan.get("stop"),
+                            "entry_type": plan.get("entry_type"), "filled_kind": plan.get("kind")})
+            # idea PROGRESS: how far price has moved from the (reference) entry to the latest close,
+            # regardless of whether a trigger filled — so a name that ran without ever giving its dip
+            # still shows "the idea is +X%" (the user wants entrance-vs-now, not just fills).
             cur = bars[-1]["close"] if bars else None
-            entry = p.get("entry")
+            entry = out.get("entry")
             progress = round((cur - entry) / entry * 100, 1) if (cur and entry) else None
-            picks_out.append({**p, "R": R, "matured": bool(r and r["matured"]),
+            picks_out.append({**out, "R": R, "matured": bool(r and r["matured"]),
                               "exit": r["exit"] if r else None, "fstatus": status,
                               "cur": cur, "progress_pct": progress})
             if r and r["matured"]:
@@ -1571,18 +1729,31 @@ def score_forward():
         by_day.append({"date": date, "posture": snap.get("posture"),
                        "picks": sorted(picks_out, key=lambda x: -(x.get("rating") or 0)),
                        "summary": day_sum, "lesson": _day_lesson(picks_out)})
-    agg = None
-    if scored:
-        rs = [t["R"] for t in scored]
+    def _agg_rs(rows):
+        rs = [t["R"] for t in rows if t.get("R") is not None]
+        if not rs:
+            return None
         wins = [x for x in rs if x > 0]
-        agg = {"n": len(scored), "win_rate": round(100 * len(wins) / len(rs), 1),
-               "avg_r": round(sum(rs) / len(rs), 2),
-               "pct_gt1R": round(100 * sum(1 for x in rs if x >= 1) / len(rs), 1)}
+        return {"n": len(rs), "avg_r": round(sum(rs) / len(rs), 2),
+                "win_rate": round(100 * len(wins) / len(rs)),
+                "pct_gt1R": round(100 * sum(1 for x in rs if x >= 1) / len(rs))}
+
+    agg = _agg_rs(scored)
+    if agg:
+        agg["win_rate"] = round(agg["win_rate"], 1)
+    # grade-vs-outcome + setup-vs-outcome: does an A actually beat a B? which setups pay? This turns the
+    # rubric's "educated-guess" weights into evidence as matured picks accumulate.
+    by_grade = {g: _agg_rs([t for t in scored if t.get("grade") == g]) for g in ("A+", "A", "B", "C", "D")}
+    by_grade = {g: v for g, v in by_grade.items() if v}
+    setups = {t.get("setup_type") for t in scored if t.get("setup_type")}
+    by_setup = {st: _agg_rs([t for t in scored if t.get("setup_type") == st]) for st in setups}
+    by_setup = {st: v for st, v in by_setup.items() if v}
     days = len(snaps)
     total_logged = sum(len(s.get("picks", [])) for s in snaps.values())
     recent = sorted(scored, key=lambda x: x["date"], reverse=True)[:20]
     return {"days_logged": days, "total_picks": total_logged, "matured": len(scored),
             "pending": pending, "aggregate": agg, "recent": recent, "by_day": by_day,
+            "by_grade": by_grade, "by_setup": by_setup,
             "first_date": min(snaps) if snaps else None, "last_date": max(snaps) if snaps else None}
 
 
@@ -1716,6 +1887,11 @@ def compute_stats():
             out["by_setup"][stp] = {"n": len(grp),
                                     "win_rate": round(100 * len(w) / len(grp), 1),
                                     "avg_r": round(sum(grp) / len(grp), 2)}
+    # learning-loop activation: the ±8 realized-results nudge fires per setup at ≥5 CLOSED trades. Surface
+    # how close each setup is so the user knows the grader is data-waiting, not broken.
+    out["activation"] = {stp: {"closed": v["n"], "active": v["n"] >= 5, "to_go": max(0, 5 - v["n"])}
+                         for stp, v in out["by_setup"].items()}
+    out["activation_threshold"] = 5
     return out
 
 
@@ -2180,6 +2356,10 @@ class Handler(BaseHTTPRequestHandler):
             # lets the frontend hide write-heavy pages (journal/strategy/watchlist) on the hosted
             # free service, where per-user data doesn't persist across the dyno sleeping.
             self._json({"hosted": HOSTED})
+        elif route == "coach-config":
+            # the coach threshold NUMBERS, single-sourced in rubric.py — the frontend's live coach
+            # recompute (web/app.js) reads these so they can't drift from the backend coach.
+            self._json(rubric.coach_config())
         elif route == "screeners":
             self._json(read_json(screeners_f(), []))
         elif route == "suggestions":
@@ -2471,6 +2651,9 @@ class Handler(BaseHTTPRequestHandler):
                 _spawn(run_refresh_all)
             self._json({"ok": True})
 
+        elif route == "backup":
+            self._json(backup_data())
+
         else:
             self._json({"error": "unknown route"}, 404)
 
@@ -2672,8 +2855,10 @@ def main():
     UPLOADS.mkdir(parents=True, exist_ok=True)
     regen_watchlist()
     regen_trades_md()
-    _run_forward_eod_all()                               # catch up (both markets) if we launched after the close
-    threading.Thread(target=_forward_eod_loop, daemon=True).start()   # auto EOD snapshots (local only)
+    # auto EOD job (local only): finalize day P&L + run the post-close fresh scan + freeze the forward
+    # snapshot. The loop's FIRST iteration runs immediately, so it also catches up if we launched after
+    # the close — in the BACKGROUND, so the (multi-minute) close scan never blocks startup.
+    threading.Thread(target=_forward_eod_loop, daemon=True).start()
     url = f"http://localhost:{PORT}"
     try:
         srv = _Server(("127.0.0.1", PORT), Handler)

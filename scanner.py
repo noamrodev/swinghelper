@@ -21,6 +21,8 @@ import statistics as st
 from pathlib import Path
 from datetime import datetime, timezone
 
+import rubric
+
 BASE = Path(__file__).resolve().parent
 # Cache lives under DATA_DIR when set (so it persists on a host's volume), else data/.
 CACHE = (Path(os.environ["DATA_DIR"]) if os.environ.get("DATA_DIR") else BASE / "data") / "cache"
@@ -652,8 +654,8 @@ def analyze(sym, bars, settings=None):
                 vol_signal, vol_adj = "distribution", -2.0
                 vol_note = "selling volume rising on the dip — pullback may not be over"
             elif dv and uv and dv < uv * 0.85:
-                vol_signal, vol_adj = "dry", 0.5     # trimmed from 1.5 — didn't add edge in the backtest
-                vol_note = "pullback on drying volume — sellers exhausting"
+                vol_signal, vol_adj = "dry", 0.0     # NO score edge — backtest: dry −0.09R vs none +0.52R
+                vol_note = "pullback on drying volume — sellers exhausting"   # kept as context, not a grade input
         else:                                          # breakout / EP — an advance
             if uv > dv * 1.3 and expanding >= 1.1:
                 vol_signal, vol_adj = "accumulation", 2.0
@@ -702,9 +704,9 @@ def analyze(sym, bars, settings=None):
         score -= 4
     if ext10 < -1 and not deep and not consol:             # below the 10-EMA IS the deep pullback / base
         score -= 2
-    if volc and volc < 0.85:
-        score += 1
-    score += vol_adj                                       # volume character (accumulation/distribution)
+    # (removed the flat +1 "dry-up" bonus for volc<0.85 — the 228-trade backtest found volume dry-up
+    #  carried no edge, even slightly negative: dry −0.09R vs none +0.52R. Re-validate via forward test.)
+    score += vol_adj                                       # volume character (accumulation/distribution — penalties kept)
 
     # ----- trade levels -----
     swing_low = min(l[-7:])
@@ -830,7 +832,7 @@ def analyze(sym, bars, settings=None):
     # vertical move. Measured as distance above the 50 EMA in ADR units. Patient dip-buy setups
     # (deep pullback / consolidation) are exempt — they buy INTO the 50/support, not extended above it.
     ext50_adr = ((close / e50 - 1) * 100 / adr_safe) if e50 else 0.0
-    parabolic = ext50_adr >= 4.0          # ≥4x ADR above the 50 = a chase (my-rules); also hard-caps the grade at C
+    parabolic = ext50_adr >= rubric.CHASE_HARD_ADR   # ≥4x ADR above the 50 = a chase (my-rules); also hard-caps the grade at C
     if parabolic and not worth_waiting:
         buyable_now = False
 
@@ -857,34 +859,10 @@ def analyze(sym, bars, settings=None):
         if avwap_earn:
             supports.append(("AVWAP (earnings)", avwap_earn))
         alt = _pullback_plan(close, adr, supports, min(l[-5:]), sh_prices)
-    elif worth_waiting:
-        # alt = the CONFIRMATION entry for a patient dip-buy (deep pullback / consolidation): instead of
-        # only waiting at the deep zone, buy once buyers PROVE themselves by reclaiming the NEAREST real
-        # resistance overhead. Candidates: the 9/21/50 EMAs (match the chart), the prior-day high, and
-        # recent swing-high pivots (a "hard" horizontal level from prior days). Pick the CLOSEST one above
-        # price — on a strong leader, breaking the nearest level is enough; no need to wait for a far high.
-        # A buy-stop with a 1x-ADR stop, graded + forward-tested like any entry (the "safer play", measurable).
-        prior_high = max(h[-2:])
-        e9, e21 = _ema(c, 9), _ema(c, 21)
-        adr_px_c = close * adr / 100 or 0.01
-        floor = close + 0.1 * adr_px_c               # must be a real level overhead, not noise at the close
-        cands = []
-        for lvl, ck, lbl in ((e9, "9ema", "reclaim the 9 EMA"), (e21, "21ema", "reclaim the 21 EMA"),
-                             (e50, "50ema", "reclaim the 50 EMA"), (prior_high, "high", "break the prior-day high")):
-            if lvl and lvl >= floor:
-                cands.append((round(lvl, 2), ck, lbl))
-        for p in sh_prices:                          # overhead swing-high resistance (a hard level)
-            if p and p >= floor:
-                cands.append((round(p, 2), "resistance", "break overhead resistance"))
-        alt = None
-        if cands:
-            trig, ckind, clabel = min(cands, key=lambda x: x[0])     # the CLOSEST hurdle overhead
-            alt = _breakout_plan(trig, close, adr, clabel + " — buyers confirming")
-            if alt:
-                alt["kind"] = "confirm"
-                alt["confirm_kind"] = ckind
-                alt["trigger_note"] = f"{clabel} ${alt['entry']} — buyers confirming"
-    else:                                                # other pullbacks: alt = break the prior-day high
+    else:                                                # pullbacks AND patient setups: the secondary is the
+        # BREAKOUT above the prior-day high — buy the strength instead of waiting for the dip. Shown always
+        # (open or closed); on a patient name whose deep dip ran away, this is the realistic plan. (Replaces
+        # the old intraday "confirm/reclaim-the-EMA" alt, which conflated an intraday signal with a setup.)
         alt = _breakout_plan(max(h[-2:]), close, adr, "buy-stop above the prior-day high")
     entries = [primary]
     if alt and abs(alt["entry"] - primary["entry"]) >= 0.4 * (entry * adr / 100 or 0.01):
@@ -894,12 +872,22 @@ def analyze(sym, bars, settings=None):
     # per-ENTRY grade factors so each option is graded on ITS OWN merit (the app grades per entry):
     # entry location vs the 10/50-EMA + stop width AT that entry, plus whether it's exempt from the
     # chase cap. A buy-the-dip pullback and a chase-the-breakout buy-stop on the same name grade apart.
+    adr_px_now = close * adr / 100 or 0.01
     for e in entries:
         ep, sp = e["entry"], e["stop"]
+        # STALE pullback: a "wait for the dip" limit that price has RUN far above (> STALE_PULLBACK_ADR
+        # above its zone top). The dip won't realistically come (the parabolic INOD/DOCN case: a +150%
+        # name 4.8x ADR over the 50, its pullback entry ~30% below). It's no longer a buy-into-support —
+        # grade it as the chase it now is (at today's price, no exemption) and flag it so the unreachable
+        # A+ can't carry the headline grade. If price later does correct to the 50, it re-classifies fresh.
+        zt = e.get("zone_top") or ep
+        stale = bool(e["entry_type"] == "limit" and not e.get("buyable_now")
+                     and (close - zt) / adr_px_now > rubric.STALE_PULLBACK_ADR)
+        e["stale"] = stale
         # grade at the price you'd actually PAY: a buy-stop fills at its (higher) trigger; a pullback
-        # that's BUYABLE NOW fills at the current price (you buy in the upper zone), not the lower limit —
+        # that's BUYABLE NOW (or has run away → stale) fills at the current price, not the lower limit —
         # so a "buy the dip" that's already extended (APLD at 48 vs its 46 limit) still grades as extended.
-        gp = max(ep, close) if (e["entry_type"] == "limit" and e.get("buyable_now")) else ep
+        gp = max(ep, close) if (e["entry_type"] == "limit" and (e.get("buyable_now") or stale)) else ep
         ex10 = (gp / e10 - 1) * 100 / adr_safe if e10 else 0.0
         ex50 = (gp / e50 - 1) * 100 / adr_safe if e50 else 0.0
         spen = min(50.0, max(0.0, ex10) * 25.0)
@@ -909,8 +897,9 @@ def analyze(sym, bars, settings=None):
         e["ext50_adr"] = round(ex50, 1)
         e["entry_quality"] = round(max(0.0, 100.0 - spen - s50pen - wpen))
         # the pullback option of a patient setup (deep pullback / consolidation) buys INTO support with a
-        # tight stop -> exempt from the chase cap; breakout options (and other pullbacks) never are.
-        e["chase_exempt"] = bool(worth_waiting and e["kind"] == "pullback")
+        # tight stop -> exempt from the chase cap; breakout options, other pullbacks, and run-away (stale)
+        # pullbacks never are.
+        e["chase_exempt"] = bool(worth_waiting and e["kind"] == "pullback" and not stale)
 
     # ----- sizing -----
     acct = settings.get("account_size")

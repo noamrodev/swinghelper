@@ -1,5 +1,69 @@
 # Changelog
 
+## 2026-06-02 (Chart UX — white price mark + declutter)
+- **Current price now marked in WHITE** on the chart, not the green/red candle color (confusing next to the
+  green buy zone / red stop). Candlestick `lastValueVisible:false`; a neutral white price line is drawn in the
+  live (`obj`) view and tracks the live tick (`updateChartLive` updates `chartModal._priceLine`). (`web/app.js`)
+- **Chart draws ONLY the selected setup's levels.** Removed the faint "other setup" overlay (zone/stop drawn
+  faded) — it cluttered/overlapped, especially with the confirm + pullback levels close together. The
+  Pullback/Confirm buttons still switch which setup is shown. Legend updated. (`web/app.js`, `web/index.html`)
+
+## 2026-06-02 (Confirmation entry = nearest resistance + breakout-catch + day-low stop)
+- **Confirmation is now a real per-setup ALT ENTRY** (`kind:"confirm"`), graded + forward-tested like any
+  entry — replaces the earlier card-level "safer entry" box (which was per-TICKER, not per-setup). For
+  `worth_waiting` setups (Deep Pullback / Consolidation), `scanner.analyze` adds it as the **nearest real
+  resistance buyers must reclaim overhead**: the closest above price among the **9/21/50 EMAs** (computed to
+  match the chart's 9/21/50 lines), the **prior-day high**, and recent **swing-high pivots** — 1× ADR stop.
+  Don't wait for a far high; breaking the closest level is enough on a strong leader. (e.g. INTC → *reclaim the
+  21 EMA ~109.7*, not the 113.3 prior-day high). When price is below the 50, the deep-pullback PRIMARY entry
+  already IS the 50 reclaim. `confirm_kind ∈ {9ema,21ema,50ema,high,resistance}`. `ema10/20/50` exposed on the
+  result. Card renders a **🔔 Confirm** badge per option. (`scanner.py`, `web/`)
+- **LIVE breakout-catch for deep pullbacks** (`breakoutCatchFor`/`_applyCatch`, sibling to `rotationFor`): when
+  the market's OPEN and a patient name has already broken out above its deep dip zone, a dip to the 50 EMA is
+  unlikely — so the displayed pullback is swapped for a **shallow catch to the nearest rising EMA (10/20)** with
+  a ≤1× ADR stop (🎯 *breakout catch* badge). EOD it reverts to the deep zone. (`web/app.js`, `web/index.html`)
+- **Breakout-catch grade fixed:** it was inheriting the deep-pullback's A. Now graded off the **confirm/breakout
+  option + a notch** (`_plusGrade` → e.g. **B+**) — better than chasing the confirmed breakout, but not the
+  deep pullback's A. `gradeColor` reads the first letter so `B+`/`C+` color correctly. (`web/app.js`)
+- **Confirm entry stop → the DAY'S LOW (live)** (`_confirmDayStop`): a confirmation is a breakout buy-stop, so
+  once it triggers the real invalidation is today's low (like the rotation), not a fixed 1× ADR stop. Tightens to
+  the day low (floored at 0.3× ADR; never wider than 1× ADR), recomputes risk/shares, labels **"Stop (day low)"**,
+  and the chart stop line tracks it live. (e.g. INOD confirm risk 15.07→7.45/sh). (`web/app.js`, `web/index.html`)
+- `entryHint`, the confirm/catch/rotation notes, and all `$` glyphs are **currency-aware** (`cur` → ₪ on IL).
+
+## 2026-06-02 (Israeli / TASE market — local-only)
+- **Added a second market (Israel / Tel Aviv Stock Exchange) with a top-right 🇺🇸/🇮🇱 toggle.** Each market is
+  fully separated: own dashboard, account, positions, P&L, suggestions, and forward-test data. US is byte-for-byte
+  unchanged; IL namespaces every data file under `data/il/`.
+- **Backend (`app.py`):** mirrors the per-user workspace pattern — a thread-local `_ctx.market` set per request
+  from an **`X-Market`** header (`set_workspace`); `_mns()` namespaces shared files and `_ud()` per-user files;
+  the 16 shared-file constants became **per-market getter functions** (`suggest_f()`, `forward_f()`, `pnl_f()`,
+  …); `write_json` makes parent dirs; lazy IL workspace bootstrap. **Gotcha fixed:** `_ctx` does NOT propagate to
+  worker threads, so `_spawn()` re-applies market+udir into every scan/build/forward worker (else IL jobs would
+  write into US files). Session/close gating (`_market_closed`/`_after_close_today`/`_session_date`/
+  `_next_session_date`) is market-aware. Forward-test + P&L are per-market; `_run_forward_eod_all` loops US+IL
+  (local-only).
+- **Config (`scanner.py` `MARKETS`/`mcfg`):** benchmarks (US SPX/QQQ/IWM; IL `^TA125.TA` + `TA35.TA`), session
+  hours, **trading days (IL = Sun–Thu)**, tz, currency, and universe thresholds (IL price/dollar-vol in **agorot**,
+  marketCap in ₪). `scan`/`analyze_at`/`market_regime`/`_attach_rs` thread a `market` arg.
+- **IL universe (`universe.py`, `data/il_symbols.json`):** TASE has no free symbol directory like NASDAQ-Trader,
+  so the list is **auto-harvested from Yahoo's screener** (`exchange=TLV`, quoteType=EQUITY → 820, bonds/T-bills/
+  series stripped → **499 candidate equities**); `build_universe(market='il', symbols=…)` re-quotes + liquidity-
+  filters them (same pipeline as US) → **~222 kept**. TASE has ~500 listed equities total — no 800-name liquid set
+  exists like the US; 222 ≈ the whole investable market.
+- **Frontend (`web/`):** US/IL pill (mobile-safe), `currentMarket()`, `X-Market` on every request, `reloadAll()`
+  swaps the whole app, and a `cur` getter renders **₪ vs $** (TASE quotes in agorot — strategy math is ratio-based
+  so unaffected, display only).
+- **Local-only:** the toggle is gated `x-show="!hosted"` and `init()` forces `market='us'` when hosted, so the
+  hosted swinghelper site stays **US-only** (IL ships inert in the code; `data/il/` + `il_symbols.json` aren't
+  copied by the build). Verified end-to-end: data isolation, IL scan (220 graded setups), regime, forward, mobile.
+
+## 2026-06-02 (Forward-test: snapshot top 50, not 10)
+- `FORWARD_TOP_N` **10 → 50** (`app.py`). The best setups are "worth waiting" and rarely trigger same-day, so the
+  old top-10 was mostly un-entered names — a wider net captures the lower-ranked names that *do* have an entry
+  today, so the forward test keeps collecting real data. Pulls from the full `suggestions.json` (not the
+  dashboard's top-10), local-only, gated to post-close. Applies to both markets.
+
 ## 2026-06-02 (Grade is PER ENTRY OPTION, not per ticker)
 - User: "grade should be PER setup — INOD pullback can be A but the breakout is DEF NOT." The grade was
   computed once per ticker from the primary's factors; now **each entry option is graded on its own merit**.
