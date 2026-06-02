@@ -21,7 +21,12 @@ here to match how you actually trade.
 
 ## Entry / exit defaults
 - **Entry:** buy-stop above the consolidation high (breakout) or opening-range high (EP).
-- **First action:** trim 1/3â€“1/2 at ~2â€“3R or after 3â€“5 strong days; move stop to breakeven.
+- **Raise stop:** once +1R, move the stop to breakeven so the trade can't turn red.
+- **Trim â€” ONLY when parabolic.** I do **not** trim on ordinary strength or hit-R targets. I trim a
+  position **only when it goes parabolic (or close to it): price stretched VERY far above the EMAs â€”
+  roughly â‰¥4Ã— ADR above the 9 EMA, miles above the 21/50** (the ARM / DELL blow-off look). Then I trim
+  into the spike and trail the rest. Otherwise I let winners run on the 9-EMA trail.
+- **Earnings:** not an automatic trim â€” a binary event I decide to hold through or reduce case by case.
 - **Exit (momentum):** I ride winners and **exit when price closes under the 9 EMA.** Charts show
   the **9 / 21 / 50 EMA**; the 9 EMA is my trailing line.
 - **Minimum R to first target:** 2.

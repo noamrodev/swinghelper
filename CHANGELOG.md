@@ -1,5 +1,270 @@
 # Changelog
 
+## 2026-06-02 (Prediction now reads pre/after-hours SECTOR movement)
+- User: the prediction's rotation (Into/Out of) is the EOD multi-day trend and ignored premarket — e.g.
+  Photonics/Optics was popping pre-market two days running but still showed as "cooling."
+- Added `_premarket_sector_moves()`: averages each sector's members' **`ext_change_pct`** (the true
+  extended-hours move vs the regular close, ≥2 members printing) → up/down sector movers. `compute_prediction`
+  adds a **🌙 {Pre-market|After-hours} sector moves** driver, nudges the score, mentions the leaders in the
+  outlook, and returns `pm_sectors`. Prediction UI shows a dedicated **"🌙 Pre-market now:"** chip row
+  (green up / red down) under Into/Out, with a "moves often fade at the open" caveat — kept SEPARATE from
+  the multi-day trend so it's a heads-up, not a trend call.
+- **Important:** used `ext_change_pct`, NOT `live_sector_heat`'s `perf_1d` — during PRE `perf_1d`'s
+  `prev_close` is 2 days back, so it doubled in yesterday's session (showed AI-Networking +13%; the real
+  premarket avg is ~+8%). Verified in PRE: Photonics/Optics now surfaces at +3.2% (n=19) as a leader.
+  **Restart python + refresh.**
+
+## 2026-06-02 ("Detect new groups" actually finds NEW ones)
+- Bug: it was showing clusters whose common thread is an **existing theme** (e.g. INFQ/QBTS/RGTI → all
+  Quantum), defeating the purpose. (The "Other" the user saw was the legacy *sector* column; the *theme*
+  map has all three in Quantum.) `run_detect_groups` kept theme-dominated clusters with `novel=False`.
+- Fix: a cluster that is **entirely an existing theme is now dropped**. An existing-theme cluster is kept
+  ONLY when **new names are joining it** (members not in that theme) — surfaced as `joining` (candidate
+  additions), e.g. "🆕 INFQ → Quantum". Genuinely new clusters (thread not a known theme) stay as
+  `novel` 🆕 groups. Frontend: joining badge + amber ring + a "candidate addition" note + a 🆕 tag on the
+  new member; help text rewritten. Verified: the Quantum cluster now drops (0 groups → honest empty
+  state); injected joining/novel samples render correctly. **Restart python + refresh.**
+
+## 2026-06-02 (System is now pre/after-hours aware — regime, gameplan, prediction)
+- **% color:** position P&L % was grey — now inherits the row's green/red (up/down). (index.html)
+- **Market regime shows pre/after:** `live_posture` now returns per-index `ext_pct` + `market_state`/
+  `extended`; the regime card shows a 🌙 chip per index (QQQ/IWM; the cash index ^GSPC has no premarket
+  print) and a "🌙 PRE/AFTER" header badge. The posture/states already re-blended from live prices.
+- **Gameplan & Prediction take pre/after into account:** new `_effective_regime()` — during pre/after
+  hours it re-blends SPX/QQQ/IWM from extended-hours prices (`live_posture`); otherwise the stored daily
+  regime. Both `compute_gameplan` and `compute_prediction` use it, so posture/stance/lean reflect what's
+  moving NOW. Gameplan stance appends a "🌙 Pre-market: … this read uses live prices" note + a header
+  badge (`regime_live`/`market_state`); prediction adds a 🌙 extended-hours index-move driver that biases
+  the lean. Frontend re-fetches gameplan (+prediction if open) every ~3 min during extended hours.
+  Verified in PRE: gameplan `regime_live:true` posture 58 (live), prediction uses it, regime card 🌙 chips.
+
+## 2026-06-02 (Trim strategy: parabolic-only — no more quick trims)
+- User: "I do not trim my positions so quickly. I only trim if a stock went parabolic or close to it,
+  the EMAs are VERY far from it — like ARM or DELL." The coach trimmed too eagerly (TRIM at `r≥3 &&
+  ext9_adr>2.2`, and pre-earnings at `r≥0.5`).
+- **Change (both `position_coach` in app.py and `liveCoach` in app.js, kept in sync):** TRIM now fires
+  **only on a genuine parabolic blow-off — `ext9_adr ≥ 4.0` (price ≥4× ADR above the 9 EMA, miles above
+  the 21/50) with `r ≥ 1`**. Ordinary strength now stays HOLD/RAISE-STOP and rides the 9-EMA trail.
+  **Earnings → WATCH** ("binary event; hold through or reduce, your call"), no longer an auto-TRIM.
+  `liveCoach`'s ext9_adr is live, so the parabolic trim is premarket-aware.
+- Verified: parabolic (4.5× ADR) → TRIM; strong-but-not-parabolic (1× ADR) → RAISE STOP; the old eager
+  case (2.5× ADR, +R) → now holds. Playbook updated in `strategy/my-rules.md`. **Restart python + refresh.**
+
+## 2026-06-02 (Premarket P&L semantics fixed + per-position pre/after change)
+- **Bug:** during PRE, "Today's P&L" showed a non-zero number = **yesterday's** full-day move. Cause:
+  before today's open, Yahoo's `regularMarketPrice` is still yesterday's close and `prev_close` is the
+  day before, so `reg_price − prev_close` = yesterday's move. Today's regular session hasn't happened.
+  **Fix:** `dailyPnl` returns null during PRE/PREPRE → tile shows "—"; the only live number premarket is
+  the **🌙 Pre-market P&L** sub-line (extended price − yesterday's close). Verified: PRE → Today "—",
+  Pre-market +$87.
+- **Per-position pre/after-hours change** (user ask): each position row in the Gameplan now shows a
+  **🌙 chip** with its extended-hours % (and $ impact in the tooltip + expanded line). `tickLive`
+  attaches `t._extPct`/`t._extImpact` from the quote's `ext_price`/`reg_price`/`ext_change_pct`.
+  Verified live: ONDS −1.71% (−$46), CRWV +2.71% (+$61), etc. Frontend only — **refresh**.
+
+## 2026-06-02 (Dashboard: positions merged into Gameplan, regime color fix, major-news banner, premarket coach)
+Four user-requested dashboard improvements (verified live in PRE, desktop + 375px, no console errors):
+- **Manage positions ⨉ Open positions merged.** The Gameplan now has one full-width **"Your positions"**
+  section (driven by `openTrades`): each row shows the live coach action + ticker + P&L/R + reason, with a
+  **"more ▾"** toggle that expands to the full open-position detail (setup/grade badges, entry/stop/risk-
+  basis/shares, hit-target, all coach reasons, Chart/Edit/Close). The standalone "Open positions" card was
+  removed (redundant). Per-row expand state = `expandedPos` (keyed by trade id).
+- **Regime color bug fixed.** An "Extended" index showed **green** because it was colored by raw posture
+  (55 → lime band) while the emoji said 🟠. New `stateColor(state)` colors each index by its STATE
+  (Extended → amber), matching the emoji. IWM/SPX/QQQ now read amber when extended.
+- **Major market news banner.** A deliberately HIGH-bar macro detector (`MACRO_PATTERNS` + `_detect_macro`
+  in app.py, fed by a dedicated macro RSS query) surfaces ONLY regime-changers — war/military, Fed-chair
+  change, emergency Fed move, election/president shock, market crash/halt, debt/fiscal shock, national
+  crisis. Routine Fed speeches, "price war", single-stock moves, and everyday tariff headlines are
+  rejected (verified). Shows as a prominent red/amber banner at the top of the dashboard; empty on a
+  normal day (`news.macro`). Populates on the next **New day** / news refresh.
+- **Premarket-aware position coach.** The merged section uses the **live** coach (`t._liveCoach||t.coach`),
+  which recomputes off the live (pre/after-hours) price. Verified: in premarket, INOD flipped from the
+  static **HOLD** (last close) to **RAISE STOP** because the premarket spike pushed it past +1R.
+  **Restart python** (app.py changed) **+ refresh** (app.js/index.html changed).
+
+## 2026-06-02 (Professional dashboard redesign — two-column, decluttered)
+- User feedback: the dashboard was a long single stack of heavy cards — "too cluttered, not easy on the
+  eyes." Reorganized into a clean, scannable layout (verified desktop + 375px mobile, no console errors,
+  no horizontal overflow):
+  - **Toolbar** slimmed (data-as-of + Rebuild universe + New day); the verbose universe-coverage line is
+    now the Rebuild button's tooltip instead of a standalone gray paragraph.
+  - **KPI strip** at the top — `.stat` tiles: **Equity** (new), Today's P&L (with the 🌙 pre/after-hours
+    move folded in as a sub-line so the strip is always a clean 6), Open P&L, Realized, Win rate, Avg R.
+  - **Two-column work area** (`lg:grid-cols-12`): main (8 cols) = Gameplan → Open positions → Top
+    suggestions; right rail (4 cols) = compact Market regime → vertical Catalysts list → compact Position
+    calculator. Collapses to one column on mobile (main above rail).
+  - **Declutter:** explanatory footnotes (regime "equal-blend…", gameplan "synthesized…") moved to
+    tooltips; market-regime condensed from 3 big multi-chip cards to one compact row per index
+    (state · 50-MA ext · off-high · 1m); catalysts changed from a horizontal scroll strip to a tidy
+    vertical list (ticker + headline + date).
+  - No data/logic changes — pure layout; all existing Alpine bindings/getters reused. **Refresh the
+    browser** (frontend only).
+
+## 2026-06-02 (Chase guard held on live ticks + pre/after-hours P&L split out)
+- **Bug 1 — extended name showing "🟢 BUYABLE NOW":** NBIS (5.6× ADR above the 50 EMA, AVWAP-reclaim,
+  not a patient setup) showed BUYABLE NOW *and* the ⚠️ "extended — chasing" warning at once. The scanner
+  correctly set `buyable_now=False` (chase guard), but the frontend live tick (`tickLive`, app.js:298)
+  recomputed `buyable_now` from **live price vs zone only**, wiping the guard on every poll. Root trigger:
+  the "in-zone" price ($271.25) was a **pre-market** print. **Fix:** the live recompute now mirrors the
+  scanner guard — `parabolic && !worth_waiting`, `distribution_today`, or `extended` ⇒ not buyable, even
+  if price sits in the zone. Hardened `inZone()`'s fallback the same way.
+- **Bug 2 — pre/after-hours leaking into "Today's P&L":** during PRE/POST, `fetch_quotes` collapsed
+  `price` to the extended-hours print, and `dailyPnl` used it — so a pre-market gap (e.g. MRVL reg 219 →
+  pre 276) counted as today's regular-session P&L. **Fix:** `scanner.fetch_quotes` now returns
+  `reg_price` / `ext_price` / `ext_change_pct` separately (keeps `price` as the live value for position
+  P&L/charts); `/api/live` forwards them. Frontend: **Today's P&L = regular-session move only**
+  (`reg_price` − base), plus a new **Pre-market / After-hours P&L** tile (extended price − regular close)
+  that shows only during extended hours. Verified live in PRE: NBIS reg 264.51 / pre 272.91 split cleanly.
+  **Restart python** (scanner.py + app.py changed) **then refresh** (app.js + index.html changed).
+
+## 2026-06-02 (News catalysts surface ANY universe mover, not just the top-16 suggestions)
+- **Bug the user hit:** MRVL got a big catalyst ("Marvell stock soars — Nvidia CEO calls it the next
+  trillion-dollar company") but it never showed in **catalysts**. Root cause: the per-ticker news pool
+  (`ticker_news` → the catalyst table + 🚀BUY/🛑AVOID alerts) was built ONLY from the top-16 graded
+  suggestions, so a fresh mover that wasn't already a setup was invisible (it sat in the raw feed only).
+- **Fix:** after building the feed, `run_news_refresh` now **promotes big catalysts on ANY universe
+  name** by resolving each material headline back to a ticker — by company name (`Marvell Technology`→
+  MRVL) or an explicit ticker token (`HPE stock soars`). New: `universe.fetch_symbol_names()` +
+  `clean_company_name()` (keyless NASDAQ directory → `data/symbol_names.json`, cached ~monthly),
+  `app._symbol_names()` + `_build_news_resolver()`.
+- **Precision guards** (so it surfaces the SUBJECT, not every mentioned name): a name only counts when
+  it's immediately followed by stock/shares/possessive or a price-action verb (kills "Truist cuts…",
+  "…Morgan Stanley sees", "Price **Target**", "(NASDAQ:…"); restricted to the tradeable universe;
+  generic first-words/tokens blocklisted; **mixed-sentiment roundups skipped** ("…Rally; Credo Plunges").
+- Alerts now **buy-first then recency-sorted** (cap 8→10) so a fresh mover outranks week-old news.
+  Verified: MRVL is the #1 🚀BUY catalyst + shows in the catalyst table ("not in current setups",
+  clickable to chart); promoted set was clean (MRVL/HPE/S/SMCI). Frontend needed no changes.
+  **Restart the python process** (app.py changed), then **Refresh news / New day**.
+
+## 2026-06-02 (Live re-rank RESTORED — reconciliation roadmapped)
+- Reverted the previous change: the dashboard's **live re-rank is back** (buyable-now floats to the top,
+  updates live) — removing it made the best setups lag, which the user (rightly) rejected. The
+  dashboard "Top suggestions" is intentionally a LIVE view and will differ intraday from the frozen
+  forward snapshot. **Reconciling the two properly is now an OPEN BUG / roadmap item** (PROJECT.md →
+  "Next highest-value" item 0): root cause is that top picks all tie at **rating 72** (regime-gate cap),
+  so any re-rank reshuffles; fix by breaking the tie with raw score / widening the grade and labeling
+  the snapshot (static) vs the dashboard (live) — without removing the live re-rank.
+
+## (superseded) 2026-06-02 (Dashboard top picks == forward snapshot)
+- [reverted — see above] Had removed the intraday reorder to force a match; that caused lag.
+
+## 2026-06-02 (Forward log keyed by the TRADE day, not the signal day)
+- Snapshots now key by **`_next_session_date()`** (the upcoming session you'd ACT on the picks), not the
+  signal session. So picks captured at tonight's close show up labeled **tomorrow** ("your watchlist
+  FOR 06-02"), matching how a trader thinks. `_sim_forward` measures from that trade day onward (`>=`),
+  which also avoids the signal-day instant-loss bug. `run_forward_eod` captures the next-session
+  watchlist from the current top suggestions (no auto-scan). Existing 06-01 snapshot re-keyed → 06-02.
+  Verified: forward shows **2026-06-02 · 10 awaiting** (DOCN/INOD/APP/ONDS/AEHR…); scores after 06-02 trades.
+
+## 2026-06-02 (Forward sim fix #2 — measure AFTER the signal day only)
+- **Root bug:** the suggested entry is a buy-stop set just above the signal day's range — which equals
+  that day's HIGH (ONDS entry 13.91 = 06-01 high; INOD 117.19 = 06-01 high). The sim was measuring the
+  signal day ITSELF, so it "triggered at the high and closed lower" = a fake −R (ONDS −0.33R) and a
+  misleading −1R aggregate. **Fix:** `_sim_forward` now looks ONLY at bars *after* the signal day — you
+  act on the trigger the next session and the result is measured from there. With no post-signal bar
+  yet → status **"awaiting"** (no fake R). Each pick's tooltip says exactly what it's waiting for
+  ("would enter on the break above $X next session"). Day summary shows "N awaiting next session".
+
+## 2026-06-02 (Forward sim fix — honor the entry TRIGGER)
+- **Bug:** the sim entered every pick at the day's OPEN, ignoring the setup's entry trigger — so a
+  breakout buy-stop that never broke out (INOD, entry $117.19, closed $114.40) was wrongly "entered"
+  and an intraday wick to the stop was logged as a **false −1R** (which was dragging the matured
+  aggregate to −1R). **Fix:** `_sim_forward` now waits for the trigger — buy-stop fills only when a
+  bar's HIGH reaches entry; limit/pullback fills when a bar's LOW reaches it. Never triggered → **"no
+  fill"** (not a loss). On the fill day a stop counts only if the bar CLOSES below it (an intraday wick
+  that closes strong isn't a false stop-out). Result: INOD now reads **open −0.13R** (triggered, slightly
+  red), pullbacks that didn't fill show "no fill", and the bogus −1R is gone.
+
+## 2026-06-02 (Forward picks → chart + personal P&L calendar)
+- **Each forward pick is now clickable to its chart** with the SNAPSHOT's entry/stop drawn — so you can
+  see exactly which stop the forward-sim used (it uses the *suggested* stop, not your personal one;
+  e.g. INOD "stop" exit was the suggested level, not where your stop sat).
+- **Personal P&L calendar (Stats).** `record_daily_pnl()` saves the account's daily equity + **day P&L**
+  (= today's equity − the last recorded day's; realized + open) into `pnl_calendar.json`, updated every
+  EOD cycle (local only). New month-grid calendar colors each weekday green/red by its P&L with a
+  month total. `GET /api/pnl-calendar`.
+
+## 2026-06-02 (Forward = same-day open→close + news connected to setups)
+- **Forward picks now score from their SIGNAL DAY** (enter at that day's OPEN, track open→close then
+  forward), instead of waiting for the next session. So the day's top picks show their result at that
+  day's own close — verified: 06-01's picks now read DOCN +0.4R, ONDS +0.3R, INOD −1.0R, avg +0.19R,
+  70% win, with a real lesson. `run_forward_eod()` no longer gates on market-closed — it **scores
+  continuously and captures each new US session's picks** (so tomorrow's set is added at the next open).
+- **News tab = ONE connected table.** Removed the spammy "Actionable now" chip cards. The primary view
+  is now **Catalysts → setups**: each stock with a news catalyst joined to its grade/setup/why and
+  **what to do** (🟢 buy zone / ⏳ wait), sorted actionable-first then newest. Broad macro/sector
+  headlines moved to a secondary **Market headlines** feed below. `catalystTable` computed (news ⋈ suggestions).
+
+## 2026-06-02 (News feed cleanup + prediction-news + gameplan clarity)
+- **News tab rebuilt as ONE clean feed.** Replaced the scattered category cards with a single
+  **deduped, newest-first "Latest catalysts" feed** (material-only) with **relative timestamps**
+  ("2h ago"), sentiment icons, source, and a Trump tag. Backend builds `news.feed` (deduped from the
+  already-sorted `pool_imp`, ≤24); frontend `ago()` helper. The "Tickers worth watching" sidebar stays.
+- **Prediction now names the actual catalysts** (not just a +/- count) and weights news a bit more —
+  a "Catalysts: 🚀 …" driver lists the top material headlines feeding the lean.
+- **Daily Gameplan clarity:** the stance is now a prominent posture-tinted **banner** (headline +
+  bottom line), and Manage / New-entries / Avoid / Remember are separated into distinct panels.
+
+## 2026-06-02 (Forward log: keyed by US session + autonomous updating)
+- **Bug fix — key by the US trading-session date, not the local clock.** `now_date()` is the local
+  date, which rolls over before the US close (e.g. Israel midnight = 17:00 ET, prior session). The
+  forward log now keys off `_session_date()` (SPY's latest daily bar), so days aren't mislabeled and
+  no phantom "next day" is created before the US session trades.
+- **Autonomous EOD updating.** `run_forward_eod()` (on launch + every 30 min, local only, while the
+  market is CLOSED): `_refresh_forward_bars()` pulls the latest session's bars (SPY-probed, only for
+  picks that are behind) so **prior days' picks score forward automatically as each session closes**;
+  and it **captures the latest completed session's top picks** if not yet logged (auto re-rating the
+  universe first if the current scan isn't from that session). Results now update themselves at each
+  close with no clicks.
+
+## 2026-06-02 (Forward test: per-day results + daily lesson)
+- The **Stats → 🔬 Forward test** card now shows a **day-by-day breakdown** (collapsible per date) of
+  the top picks logged that day, each with its forward R + status (matured / open / no-entry) and
+  Trend-Template/VCP badges — plus an **auto-generated lesson per day** (`_day_lesson()`): avg R,
+  best/worst pick, and which trait carried the edge (Trend Template / VCP / buyable-now / setup type).
+  `score_forward()` now returns `by_day`. Results accrue as forward sessions arrive (enters the session
+  after the signal; "matures" ~7 sessions).
+
+## 2026-06-01 (Dashboard reorder + auto daily forward-data)
+- **Dashboard reordered by priority** (flex `order`, no risky block moves): refresh → coverage →
+  **Market regime → Daily Gameplan → Today's P&L → Open positions → catalysts → Top suggestions →
+  Position calculator (now last)**. Fixes the calculator/tool sitting above your positions & ideas.
+- **Auto daily forward-data (local only).** `log_forward_picks()` now snapshots the **top 10 by rating
+  (ANY grade** — some days have no A/A+) instead of only A/A+, with `trend_template`/`vcp` flags.
+  `run_forward_eod()` + a background heartbeat (`_forward_eod_loop`, started in local `main()`)
+  **auto-snapshot once per day when the market is closed** (`_market_closed()` ET check), gated to
+  today's scan + not-already-captured. Scored over the following days by the existing `score_forward()`
+  / Stats "forward" tab — a growing dataset to learn which setups actually work. Never runs hosted.
+
+## 2026-06-01 (Suggestions UX + auto-equity + chase guard)
+- **One watchlist button.** Removed Approve/Reject (and the pending/approved status filter) from
+  Suggestions — replaced with a single **+ Watchlist** button (`addSugToWatch`/`onWatch`); the status
+  badge now shows only "✓ taken". "Took it" (log a trade) stays.
+- **Auto account equity.** The typed-in account size is now the **base**; the app derives live
+  **equity = base + realized + open P&L** (`compute_equity()`), uses it for sizing (`_equity_settings()`),
+  and shows it in the sidebar ("$21,284.96 (+$1,067 P&L)"). The close handler no longer mutates the
+  base — realized is computed from closed trades, so the account "updates itself."
+- **Chase guard (NBIS fix).** A momentum/breakout name **parabolic-extended ≥4.5× ADR above the 50 EMA**
+  is no longer flagged "buyable now" even if the close lands in the zone — that's chasing a vertical
+  move. Card shows "⚠️ Extended ~X× ADR above the 50 EMA — chasing; wait for a pullback." Patient
+  dip-buy setups (deep pullback / consolidation) are exempt. Verified: NBIS (5.6× ADR) → not buyable.
+
+## 2026-06-01 (Minervini Trend Template + VCP + redesigned filter bar)
+- **New strategy: Mark Minervini** (`strategy/minervini.md`, from verified deep research) as the
+  "worth watching" **eligibility gate** — complements (doesn't replace) Qulla/Luk.
+- **Trend Template** (`scanner`): `trend_template` boolean + `tt_count` (n/8) — price > 50/150/200
+  SMAs, 50>150>200 stacked, 200-SMA rising, ≥30% above the 52w low, within 25% of the 52w high, RS
+  rating ≥70 (the RS criterion finalized in `_attach_rs`). 137/796 pass — a clean Stage-2 leader
+  universe (DOCN/ONDS/AEHR/INTC… 8/8). Refuted variants deliberately NOT encoded.
+- **VCP detector** (`scanner._vcp`, approximate): `vcp` + `vcp_contractions` — successive shallower
+  contractions on drying volume near the base high; hardened against flatline/illiquid false
+  positives (plateau-collapse + 2–6 contraction cap + a real ≥8% leg required).
+- **Suggestions filter bar redesigned**: 4 stacked rows → one grouped, collapsible bar (`.fchip`),
+  with the top signals always visible + a "⚙ Filters (N)" toggle + match count + clear. **New filters:
+  Trend Template, VCP, News catalyst, Buyable-now**; ✓ Trend Template / 🌀 VCP badges on cards. Mobile-safe.
+- Wired `minervini.md` into the in-app Strategy tab (`DOCS`, `docTabs`) and the build (`make-build.ps1`).
+
 ## 2026-06-01 (Initial-stop / risk basis — R survives a breakeven raise)
 - Trades now carry **`initial_stop`** (the stop taken at entry) separate from the editable live
   **`stop`**. Raising the stop to breakeven no longer destroys the trade's R: **all R is measured off

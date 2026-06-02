@@ -16,6 +16,7 @@ import urllib.request
 import urllib.parse
 import http.cookiejar
 import json
+import re
 import time
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -83,6 +84,62 @@ def fetch_symbols(exchanges="all"):
                 continue                                  # skip Arca/BATS/IEX (fund venues)
             syms[sym] = exch
     return syms
+
+
+_CORP_SUFFIX = {"inc", "incorporated", "corp", "corporation", "co", "company", "ltd",
+                "limited", "plc", "holdings", "holding", "group", "sa", "nv", "ag", "lp",
+                "llc", "ab", "se", "the", "& co", "lp."}
+
+
+def clean_company_name(nm):
+    """NASDAQ directory names ('Marvell Technology, Inc. - Common Stock') -> a matchable
+    company name ('Marvell Technology'): drop the security-type tail, parentheticals, and
+    trailing corporate words."""
+    nm = (nm or "").split(" - ")[0]                 # drop ' - Common Stock' / ' - Class A...'
+    nm = re.sub(r"\([^)]*\)", "", nm)               # drop parentheticals
+    nm = nm.split(",")[0]                            # drop ', Inc.' / ', Ltd.'
+    # strip a trailing security-type descriptor even with no ' - ' separator (NYSE rows)
+    nm = re.sub(r"\s+(class\s+[a-z]\s+)?(common|ordinary|capital|preferred)\s+(stock|shares).*$",
+                "", nm, flags=re.I)
+    words = nm.split()
+    while words and words[-1].lower().strip(".") in _CORP_SUFFIX:
+        words.pop()
+    return " ".join(words).strip()
+
+
+def fetch_symbol_names(exchanges="all"):
+    """{symbol: cleaned company name} from the NASDAQ Trader directory (keyless text files).
+    Same source/filter as fetch_symbols, but keeps the name instead of the exchange — used to
+    map news headlines ('Marvell ...') back to a ticker (MRVL)."""
+    names = {}
+    for name, url in SYM_FILES:
+        try:
+            lines = _http(url).decode("utf-8", "replace").splitlines()
+        except Exception:
+            continue
+        header = lines[0].split("|")
+        idx = {h.strip(): i for i, h in enumerate(header)}
+        for ln in lines[1:]:
+            if ln.startswith("File Creation") or "|" not in ln:
+                continue
+            f = ln.split("|")
+            try:
+                sym = f[idx["Symbol" if name == "nasdaqlisted" else "ACT Symbol"]].strip()
+                nm = f[idx["Security Name"]]
+                test = f[idx["Test Issue"]].strip()
+                etf = f[idx["ETF"]].strip()
+            except Exception:
+                continue
+            if test == "Y" or etf == "Y":
+                continue
+            if not sym.isalpha() or not (1 <= len(sym) <= 5):
+                continue
+            if any(b in nm.lower() for b in _BAD_NAME):
+                continue
+            cleaned = clean_company_name(nm)
+            if cleaned:
+                names[sym] = cleaned
+    return names
 
 
 def _yahoo_session():

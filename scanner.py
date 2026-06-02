@@ -188,14 +188,24 @@ def fetch_quotes(symbols, max_age=30):
                         sym = q.get("symbol")
                         if not sym:
                             continue
-                        price = q.get("regularMarketPrice")
-                        chg = q.get("regularMarketChangePercent", 0)
+                        reg_price = q.get("regularMarketPrice")
+                        reg_chg = q.get("regularMarketChangePercent", 0)
                         ms = q.get("marketState")
+                        # extended-hours (pre/after) print kept SEPARATE from the regular-session
+                        # price so the UI can split "today's P&L" (regular) from pre/after-hours P&L.
+                        ext_price = ext_chg = None
                         if ms in ("PRE", "PREPRE") and q.get("preMarketPrice"):
-                            price, chg = q["preMarketPrice"], q.get("preMarketChangePercent", chg)
+                            ext_price, ext_chg = q["preMarketPrice"], q.get("preMarketChangePercent")
                         elif ms in ("POST", "POSTPOST", "CLOSED") and q.get("postMarketPrice"):
-                            price, chg = q["postMarketPrice"], q.get("postMarketChangePercent", chg)
+                            ext_price, ext_chg = q["postMarketPrice"], q.get("postMarketChangePercent")
+                        # `price`/`change_pct` stay the "live" values (extended when in pre/post) so
+                        # existing live position P&L and chart overlays are unchanged.
+                        price = ext_price if ext_price is not None else reg_price
+                        chg = ext_chg if ext_chg is not None else reg_chg
                         rec = {"price": round(price, 2) if price is not None else None,
+                               "reg_price": round(reg_price, 2) if reg_price is not None else None,
+                               "ext_price": round(ext_price, 2) if ext_price is not None else None,
+                               "ext_change_pct": round(ext_chg, 2) if ext_chg is not None else None,
                                "prev_close": q.get("regularMarketPreviousClose"),
                                "change_pct": round(chg, 2) if chg is not None else None,
                                "market_state": ms, "_t": now}
@@ -282,6 +292,57 @@ def _swing_highs(h, left=3, right=3, lookback=60):
     return out
 
 
+def _vcp(bars, lookback=60):
+    """Volatility Contraction Pattern (Minervini) — APPROXIMATE detector. A VCP is a series of
+    successive pullbacks of DECREASING depth (the price coiling tighter) on DRYING volume, near the
+    top of a base — the 'line of least resistance' before a breakout. Exact thresholds aren't pinned
+    in primary sources (see strategy/minervini.md open questions), so these are defensible
+    community-standard params, tunable: >=2 contractions, each <=0.8x the prior, last one tight
+    (<=12%), price within ~8% of the base high, recent volume below the prior base's volume.
+    Returns {vcp, contractions, depth_last, vol_dry, pivot}."""
+    n = len(bars)
+    if n < 30:
+        return {"vcp": False, "contractions": 0}
+    h = [b["high"] for b in bars]
+    l = [b["low"] for b in bars]
+    c = [b["close"] for b in bars]
+    v = [b["volume"] for b in bars]
+    L = R = 3
+    raw = [i for i in range(max(L, n - lookback), n - R) if h[i] == max(h[i - L:i + R + 1])]
+    # collapse plateaus / adjacent equal-high runs (flat or illiquid names spam "pivots") — keep the
+    # highest pivot in each cluster, require pivots spaced >= 4 bars apart.
+    piv = []
+    for i in raw:
+        if piv and i - piv[-1] < 4:
+            if h[i] >= h[piv[-1]]:
+                piv[-1] = i
+        else:
+            piv.append(i)
+    if len(piv) < 2:
+        return {"vcp": False, "contractions": 0}
+    depths = []                                            # peak-to-trough drawdown of each leg
+    for k in range(len(piv)):
+        start = piv[k]
+        end = piv[k + 1] if k + 1 < len(piv) else n - 1
+        if end <= start:
+            continue
+        ph = h[start]
+        trough = min(l[start:end + 1])
+        if ph > 0:
+            depths.append((ph - trough) / ph * 100)
+    if not (2 <= len(depths) <= 6):                        # a real VCP is a handful of legs, not noise
+        return {"vcp": False, "contractions": len(depths)}
+    tightening = all(depths[i] <= depths[i - 1] * 0.8 for i in range(1, len(depths)))
+    deep_enough = max(depths) >= 8.0                       # at least one real ~8%+ contraction (not flatline)
+    last_tight = 1.0 <= depths[-1] <= 12.0                 # final leg tight but real (excludes ~0% flatlines)
+    base_high = max(h[-lookback:])
+    near = base_high > 0 and (base_high / c[-1] - 1) * 100 <= 8.0
+    vol_dry = (st.mean(v[-10:]) < st.mean(v[-30:-10])) if n >= 30 and st.mean(v[-30:-10]) > 0 else False
+    vcp = tightening and deep_enough and last_tight and near
+    return {"vcp": bool(vcp), "contractions": len(depths),
+            "depth_last": round(depths[-1], 1), "vol_dry": bool(vol_dry), "pivot": round(base_high, 2)}
+
+
 def regression_channel(bars, max_lookback=120, min_len=30):
     """Linear-regression channel on LOG price, ANCHORED to the most recent major low so it fits
     the current trend leg (a fixed window mis-fits V-shaped moves and the bands blow out). Bands
@@ -336,6 +397,7 @@ def analyze(sym, bars, settings=None):
     adr = st.mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0])
     adr_safe = adr or 1
     s10, s20, s50 = _sma(c, 10), _sma(c, 20), _sma(c, 50)
+    s150 = _sma(c, 150) if len(c) >= 150 else None
     s200 = _sma(c, 200) if len(c) >= 200 else None
     e10, e20, e50 = _ema(c, 10), _ema(c, 20), _ema(c, 50)
     above = int(close > s10) + int(close > s20) + int(close > s50)
@@ -353,11 +415,30 @@ def analyze(sym, bars, settings=None):
 
     # ----- 52-week-high distance + MA stack (for the 1M/3M/6M momentum screens) -----
     hi_52w = max(h)
+    lo_52w = min(l)
     pull_from_52w = round((hi_52w / close - 1) * 100, 1)
     above_50 = close > s50
     above_200 = s200 is not None and close > s200
     ma_stack = s200 is not None and s50 > s200            # 50-MA over 200-MA (golden-cross trend)
     near_high = pull_from_52w <= 20
+
+    # ----- Minervini Trend Template (Stage-2 leader filter; the RS criterion is added later in
+    # _attach_rs once the universe-relative RS rating exists). Verified criteria (refuted variants
+    # excluded): price > 50/150/200 SMAs; 50>150>200 alignment; 200-SMA rising ~1mo; >=30% above the
+    # 52w low; within 25% of the 52w high. -----
+    tt_flags, tt_pass = {}, False
+    if s150 is not None and s200 is not None and lo_52w > 0:
+        s200_prev = _sma(c[:-22], 200) if len(c) >= 222 else None      # 200-SMA ~1 month ago
+        tt_flags = {
+            "above50": close > s50, "above150": close > s150, "above200": close > s200,
+            "stack": s50 > s150 > s200,
+            "ma200_up": s200_prev is not None and s200 > s200_prev,
+            "above_low": close >= lo_52w * 1.30,
+            "near_high": pull_from_52w <= 25,
+        }
+        tt_pass = all(tt_flags.values())
+    tt_count_price = sum(1 for v in tt_flags.values() if v)            # 0-7 (RS adds an 8th later)
+    vcp = _vcp(bars)
     screen_1m = p1m >= 20 and above_50 and near_high
     screen_3m = p3m >= 25 and above_50 and above_200 and ma_stack and near_high and adr >= 3.5
     screen_6m = p6m >= 30 and above_50 and above_200 and ma_stack and near_high
@@ -630,6 +711,14 @@ def analyze(sym, bars, settings=None):
     # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
     # (the SNDK base). NOT shallow pullbacks near the highs that are still moving up.
     worth_waiting = deep or consol
+    # CHASE GUARD (the NBIS case): a momentum/breakout name parabolic-extended far above the 50 EMA is
+    # NOT "buyable now" even if the close happens to land in the zone — buying here is chasing a
+    # vertical move. Measured as distance above the 50 EMA in ADR units. Patient dip-buy setups
+    # (deep pullback / consolidation) are exempt — they buy INTO the 50/support, not extended above it.
+    ext50_adr = ((close / e50 - 1) * 100 / adr_safe) if e50 else 0.0
+    parabolic = ext50_adr >= 4.5
+    if parabolic and not worth_waiting:
+        buyable_now = False
 
     # ----- sizing -----
     acct = settings.get("account_size")
@@ -678,6 +767,9 @@ def analyze(sym, bars, settings=None):
         "dollar_vol": dollar_vol, "liq_score": liq_score,
         "pull_from_52w": pull_from_52w, "above_50": above_50, "above_200": above_200,
         "ma_stack": ma_stack, "screen_1m": screen_1m, "screen_3m": screen_3m, "screen_6m": screen_6m,
+        "tt_pass_price": tt_pass, "tt_count_price": tt_count_price, "tt_flags": tt_flags,
+        "vcp": vcp["vcp"], "vcp_contractions": vcp["contractions"],
+        "vcp_depth_last": vcp.get("depth_last"), "vcp_pivot": vcp.get("pivot"),
         "score": round(score, 1), "entry": entry, "stop": stop, "inval": inval,
         "risk_ps": risk_ps, "target": target, "shares": shares,
         "shares_per_10k": shares_per_10k, "dollar_risk": dollar_risk,
@@ -685,6 +777,7 @@ def analyze(sym, bars, settings=None):
         "entry_type": entry_type, "entry_note": entry_note, "stop_basis": stop_basis,
         "entry_quality": entry_quality, "worth_waiting": worth_waiting,
         "zone_top": zone_top, "zone_bottom": zone_bottom, "buyable_now": buyable_now,
+        "parabolic": parabolic, "ext50_adr": round(ext50_adr, 1),
         "recent_gap": recent_gap, "news_move": news_move,
         "vol_signal": vol_signal, "vol_note": vol_note,
         "distribution_today": distribution_today,
@@ -1193,6 +1286,11 @@ def _attach_rs(results):
         r["rs_outperf"] = round(outperf, 1)
         r["rs_pct"] = round(pct[i])
         r["rs_score"] = round(0.5 * pct[i] + 0.5 * op_score)
+        # finalize the Minervini Trend Template: the 7 price/MA criteria (from analyze) + RS rating >=70
+        rs_ok = r["rs_pct"] >= 70
+        r["trend_template"] = bool(r.get("tt_pass_price")) and rs_ok
+        r["tt_count"] = r.get("tt_count_price", 0) + (1 if rs_ok else 0)   # out of 8
+        r["tt_rs_ok"] = rs_ok
 
 
 def detect_groups(tickers, lookback=15, min_move=8.0, corr_thr=0.86, max_cand=120, progress=None):

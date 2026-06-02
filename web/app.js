@@ -54,7 +54,11 @@ function dataCenter() {
     refreshState: { running: false, stage: '', done: 0, total: 4 },
     gameplan: null,
     gameplanOpen: true,
+    expandedPos: {},          // per-position "show more" toggle in the gameplan (keyed by trade id)
     forward: null,
+    openForwardDay: null,
+    pnlCal: {},
+    pnlMonthOffset: 0,
     live: { prices: {}, market_state: null, updated_at: null, posture: null },
     liveOn: true,
     liveAgeSec: 0,
@@ -70,6 +74,7 @@ function dataCenter() {
       { id: 'pullback-avwap', label: 'Pullbacks & AVWAP' },
       { id: 'qullamaggie', label: 'Qullamaggie' },
       { id: 'martin-luk', label: 'Martin Luk' },
+      { id: 'minervini', label: 'Minervini' },
       { id: 'lessons', label: 'Lessons' },
     ],
     docTab: 'my-rules',
@@ -98,6 +103,11 @@ function dataCenter() {
     waitFilter: false,
     leaderFilter: false,
     risingFilter: false,
+    ttFilter: false,
+    vcpFilter: false,
+    newsFilter: false,
+    buyableFilter: false,
+    showFilters: false,
     showAllSug: false,
     calcModal: { open: false, ticker: '' },
     chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null },
@@ -205,6 +215,14 @@ function dataCenter() {
         this.live = { prices: r.prices || {}, market_state: r.market_state, updated_at: r.updated_at, posture: r.posture };
         this._liveAt = Date.now(); this.liveAgeSec = 0;
         this.mergeLive();
+        // pre/after-hours: keep the gameplan (and prediction, if open) in sync with the LIVE regime
+        // — they recompute server-side off the extended-hours index prices (~every 3 min).
+        if (this.live.posture && this.live.posture.extended
+            && (!this._lastGpLive || Date.now() - this._lastGpLive > 3 * 60 * 1000)) {
+          this._lastGpLive = Date.now();
+          this.loadGameplan();
+          if (this.view === 'news' && this.newsTab === 'prediction') this.loadPrediction();
+        }
         // live Sector Heat — only while viewing that tab (it fetches all member quotes), throttled ~60s
         if (this.view === 'screeners' && this.screenTab === 'heat' && this.marketOpen
             && (!this._lastHeatLive || Date.now() - this._lastHeatLive > 60000)) {
@@ -265,8 +283,10 @@ function dataCenter() {
       else if (trail != null && price < trail && !armed) { action = 'HOLD'; tone = 'good'; reason = `below the ${trailLabel} ($${trail}) but it hasn't reclaimed the line yet — not an exit; only your stop $${stop} exits until it closes back above`; }
       else if (trail != null && price < trail) { action = 'WATCH'; tone = 'warn'; reason = `back under the ${trailLabel} ($${trail}) intraday — exit only if it CLOSES under it`; }
       else if (patient && e9 != null && price < e9) { action = 'HOLD'; tone = 'good'; reason = `under the 9 EMA but holding the 50 EMA ($${e50}) — that's the deep-pullback/base plan`; }
-      else if (earnSoon && r != null && r >= 0.5) { action = 'TRIM'; tone = 'warn'; reason = `earnings in ${edays}d — trim to lock ${rtxt} before the print`; }
-      else if (r != null && r >= 3 && ext9_adr != null && ext9_adr > 2.2) { action = 'TRIM'; tone = 'warn'; reason = `${rtxt} & ${ext9_adr.toFixed(1)}× ADR over the 9-EMA — trim into strength`; }
+      // TRIM only on a genuine PARABOLIC blow-off (price VERY far above the EMAs — the ARM/DELL case),
+      // not on ordinary strength. ≥4× ADR above the 9 EMA. (ext9_adr is live → premarket-aware.)
+      else if (r != null && r >= 1 && ext9_adr != null && ext9_adr >= 4) { action = 'TRIM'; tone = 'warn'; reason = `parabolic — ${ext9_adr.toFixed(1)}× ADR over the 9-EMA (far above 9/21/50)${rsuffix} — trim into the spike, trail the rest`; }
+      else if (earnSoon) { action = 'WATCH'; tone = 'warn'; reason = `earnings in ${edays}d — binary event; hold through or reduce, your call${rsuffix}`; }
       else if (r != null && r >= 1 && stop < e) { action = 'RAISE STOP'; tone = 'good'; reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`; }
       else { action = 'HOLD'; tone = 'good'; reason = `trend intact above the ${trailLabel}${rsuffix} — hold; exit on a daily close under it`; }
       return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
@@ -282,11 +302,22 @@ function dataCenter() {
         t._live = true;
         t._liveCoach = this.liveCoach(t, q.price);
         t._hitTarget = t.target != null ? q.price >= t.target : false;
+        // pre/after-hours move on THIS position: % vs the regular-session close + its $ impact
+        if (q.ext_price != null && q.reg_price != null) {
+          t._extPct = q.ext_change_pct != null ? q.ext_change_pct : +(((q.ext_price / q.reg_price) - 1) * 100).toFixed(2);
+          t._extImpact = t.shares ? +((q.ext_price - q.reg_price) * t.shares).toFixed(2) : null;
+        } else { t._extPct = null; t._extImpact = null; }
       });
       (this.suggestions.items || []).forEach(s => {
         const q = px[s.ticker]; if (!q || q.price == null) return;
         s.close = q.price; s._livechg = q.change_pct;
-        if (s.zone_bottom != null && s.zone_top != null) s.buyable_now = (q.price >= s.zone_bottom && q.price <= s.zone_top);
+        if (s.zone_bottom != null && s.zone_top != null) {
+          // mirror the scanner's chase guard — a parabolic-extended (non-patient) name, a
+          // distribution bar, or a stretched setup is NOT "buyable now" even if price sits in
+          // the zone (the NBIS case). Without this, the live tick would wipe the scan's guard.
+          const chase = (s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended;
+          s.buyable_now = (q.price >= s.zone_bottom && q.price <= s.zone_top) && !chase;
+        }
         s._liveStopped = s.stop != null && q.price <= s.stop;
       });
       if (this.live.posture) {
@@ -294,7 +325,9 @@ function dataCenter() {
         this.marketRegime.label = this.live.posture.label;
         if (this.live.posture.indexes) this.marketRegime.indexes = this.live.posture.indexes;
       }
-      // live re-rank: names that have pulled INTO their buy zone float to the top
+      // live re-rank: names that have pulled INTO their buy zone float to the top (live actionability).
+      // NOTE: this is intentionally a LIVE view and will differ intraday from the frozen forward
+      // snapshot — that's by design (see the roadmap item to reconcile/label the two). Don't remove it.
       if (this.suggestions.items) {
         this.suggestions.items.sort((a, b) => (b.buyable_now ? 1 : 0) - (a.buyable_now ? 1 : 0) || (b.rating || 0) - (a.rating || 0));
       }
@@ -321,15 +354,37 @@ function dataCenter() {
     // today's mark-to-market on open positions. Baseline = your ENTRY for positions opened today
     // (you only owned it from the fill), else yesterday's close for overnight holds.
     get dailyPnl() {
+      // REGULAR-session move only — use reg_price (regularMarketPrice), never the pre/after
+      // print, so extended-hours moves don't leak into "today's P&L" (they get their own tile).
+      // During PRE (before today's open) regularMarketPrice is still YESTERDAY's close, so
+      // reg_price−prev_close would be yesterday's move — today hasn't traded yet, so it's null.
+      if (['PRE', 'PREPRE'].includes(this.live.market_state)) return null;
       const px = this.live.prices || {}, today = this.todayStr(); let s = 0, have = false;
       this.trades.forEach(t => {
         if (t.status !== 'open' || !t.shares) return;
-        const q = px[t.ticker]; if (!q || q.price == null) return;
+        const q = px[t.ticker]; if (!q) return;
+        const cur = q.reg_price != null ? q.reg_price : q.price; if (cur == null) return;
         const base = (t.taken_at === today) ? (t.entry || t.planned_entry) : q.prev_close;
         if (base == null) return;
-        s += (q.price - base) * t.shares; have = true;
+        s += (cur - base) * t.shares; have = true;
       });
       return have ? s : null;
+    },
+    // pre-market / after-hours move on open positions, separate from the regular-session P&L:
+    // (extended price − the regular-session close) × shares. Null outside extended hours.
+    get extPnl() {
+      const px = this.live.prices || {}; let s = 0, have = false;
+      this.trades.forEach(t => {
+        if (t.status !== 'open' || !t.shares) return;
+        const q = px[t.ticker]; if (!q || q.ext_price == null) return;
+        const ref = q.reg_price != null ? q.reg_price : q.prev_close; if (ref == null) return;
+        s += (q.ext_price - ref) * t.shares; have = true;
+      });
+      return have ? s : null;
+    },
+    get extLabel() {
+      return ['PRE', 'PREPRE'].includes(this.live.market_state) ? 'Pre-market P&L'
+        : ['POST', 'POSTPOST'].includes(this.live.market_state) ? 'After-hours P&L' : 'Extended P&L';
     },
     async api(path, method = 'GET', body) {
       const opt = { method, headers: { 'Content-Type': 'application/json', 'X-Workspace': workspaceId() } };
@@ -344,10 +399,39 @@ function dataCenter() {
     async loadSuggestions() { this.suggestions = await this.api('/suggestions'); this.mergeLive(); },
     async loadTrades() { this.trades = await this.api('/trades'); this.mergeLive(); },
     async loadWatchlist() { this.watchlist = await this.api('/watchlist'); },
+    onWatch(t) { return (this.watchlist || []).some(r => r.ticker === t); },
+    async addSugToWatch(s) {
+      await this.loadWatchlist();                       // refresh first so we never overwrite the list
+      if (this.onWatch(s.ticker)) return;
+      this.watchlist.push({ ticker: s.ticker, why: s.why || '', level: (s.zone_bottom + '–' + s.zone_top),
+        setup: s.setup_type || '', catalyst: s.news_headline || '' });
+      await this.saveWatchlist();
+    },
     async loadStats() { this.stats = await this.api('/stats'); },
     async loadMarket() { this.marketRegime = await this.api('/market'); },
     async loadGameplan() { try { this.gameplan = await this.api('/gameplan'); } catch (e) {} },
-    async loadForward() { try { this.forward = await this.api('/forward'); } catch (e) {} },
+    async loadForward() { try { this.forward = await this.api('/forward'); if (this.forward && this.forward.by_day && this.forward.by_day.length && !this.openForwardDay) this.openForwardDay = this.forward.by_day[0].date; } catch (e) {} },
+    async loadPnlCal() { try { this.pnlCal = await this.api('/pnl-calendar'); } catch (e) {} },
+    get pnlMonthDate() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + this.pnlMonthOffset); return d; },
+    get pnlMonthLabel() { return this.pnlMonthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' }); },
+    get pnlCalGrid() {
+      const base = this.pnlMonthDate, y = base.getFullYear(), m = base.getMonth();
+      const start = new Date(y, m, 1); start.setDate(1 - start.getDay());   // back to the Sunday
+      const cells = [];
+      for (let i = 0; i < 42; i++) {
+        const dt = new Date(start); dt.setDate(start.getDate() + i);
+        const key = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+        const rec = (this.pnlCal || {})[key];
+        cells.push({ key, day: dt.getDate(), inMonth: dt.getMonth() === m, weekend: dt.getDay() === 0 || dt.getDay() === 6,
+          pnl: rec && rec.day_pnl != null ? rec.day_pnl : null });
+      }
+      return cells;
+    },
+    get pnlMonthTotal() {
+      const y = this.pnlMonthDate.getFullYear(), m = this.pnlMonthDate.getMonth() + 1; let t = 0, any = false;
+      Object.entries(this.pnlCal || {}).forEach(([k, v]) => { const [yy, mm] = k.split('-').map(Number); if (yy === y && mm === m && v && v.day_pnl != null) { t += v.day_pnl; any = true; } });
+      return any ? Math.round(t) : null;
+    },
     async loadPrediction() {
       this.predictionLoading = true;
       try { this.prediction = await this.api('/prediction'); } catch (e) {}
@@ -404,7 +488,7 @@ function dataCenter() {
     get openPnl() { return this.trades.filter(t => t.status === 'open').reduce((a, t) => a + (t.pnl || 0), 0); },
     get realizedPnl() { return this.trades.filter(t => t.status === 'closed').reduce((a, t) => a + (t.pnl || 0), 0); },
     get sortedSectors() { const k = this.sectorSort; return [...(this.sectorHeat.sectors || [])].sort((a, b) => b[k] - a[k]); },
-    get riskDollar() { return this.settings.account_size ? Math.round(this.settings.account_size * (this.settings.risk_pct || 1) / 100).toLocaleString() : ''; },
+    get riskDollar() { const a = (this.settings.equity_info ? this.settings.equity_info.equity : this.settings.account_size); return a ? Math.round(a * (this.settings.risk_pct || 1) / 100).toLocaleString() : ''; },
     setupClass(t) {
       t = t || '';
       if (t.includes('AVWAP')) return 'badge-avwap';
@@ -433,7 +517,21 @@ function dataCenter() {
       if (this.waitFilter) items = items.filter(s => s.worth_waiting);
       if (this.leaderFilter) items = items.filter(s => (s.rs_pct || 0) >= 85);
       if (this.risingFilter) items = items.filter(s => s.theme_trend === 'Rising');
+      if (this.ttFilter) items = items.filter(s => s.trend_template);
+      if (this.vcpFilter) items = items.filter(s => s.vcp);
+      if (this.newsFilter) items = items.filter(s => s.news_flag);
+      if (this.buyableFilter) items = items.filter(s => this.inZone(s));
       return items;
+    },
+    get activeFilterCount() {
+      return [this.setupFilter !== 'All', this.momFilter !== 'All',
+        this.sectorFilter !== 'All', this.waitFilter, this.leaderFilter, this.risingFilter,
+        this.ttFilter, this.vcpFilter, this.newsFilter, this.buyableFilter].filter(Boolean).length;
+    },
+    clearFilters() {
+      this.setupFilter = 'All'; this.momFilter = 'All'; this.sectorFilter = 'All';
+      this.waitFilter = this.leaderFilter = this.risingFilter = false;
+      this.ttFilter = this.vcpFilter = this.newsFilter = this.buyableFilter = false;
     },
     // cap how many cards actually render (top by rating) — keeps the DOM light & the live merge fast
     get displayedSuggestions() { const f = this.filteredSuggestions; return this.showAllSug ? f : f.slice(0, 120); },
@@ -452,9 +550,29 @@ function dataCenter() {
     // ---------- news: newest first (used on the News tab AND the dashboard) ----------
     _pubTime(p) { const t = p ? Date.parse(p) : NaN; return isNaN(t) ? 0 : t; },
     newsByDate(items) { return [...(items || [])].sort((a, b) => this._pubTime(b.published) - this._pubTime(a.published)); },
+    ago(published) {
+      const t = this._pubTime(published); if (!t) return '';
+      const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+      if (mins < 60) return mins + 'm ago';
+      const h = Math.round(mins / 60); if (h < 24) return h + 'h ago';
+      const d = Math.round(h / 24); return d + 'd ago';
+    },
     get newsTickerRows() {
       return Object.entries(this.news.ticker_news || {})
         .sort((a, b) => this._pubTime(b[1].published) - this._pubTime(a[1].published));
+    },
+    // ONE table: each stock with a news catalyst, joined to its current setup (grade/why/zone/action)
+    get catalystTable() {
+      const sug = {}; (this.suggestions.items || []).forEach(s => { sug[s.ticker] = s; });
+      return Object.entries(this.news.ticker_news || {}).map(([tk, n]) => {
+        const s = sug[tk] || null;
+        return {
+          ticker: tk, headline: n.title, link: n.link, sentiment: n.sentiment, trump: n.trump, published: n.published,
+          grade: s && s.grade, setup: s && s.setup_type, why: s && s.why,
+          zone_bottom: s && s.zone_bottom, zone_top: s && s.zone_top, entry: s && s.entry,
+          buyable: s ? this.inZone(s) : false, _sug: s,
+        };
+      }).sort((a, b) => (a.grade ? 0 : 1) - (b.grade ? 0 : 1) || this._pubTime(b.published) - this._pubTime(a.published));
     },
 
     // ---------- suspicious activity: sort the loaded list (default = volume spike) ----------
@@ -603,7 +721,7 @@ function dataCenter() {
       if (id === 'watchlist') this.loadWatchlistAnalysis();
       if (id === 'news') this.loadNews();
       if (id === 'dashboard' && !this.gameplan) this.loadGameplan();
-      if (id === 'stats') this.loadForward();
+      if (id === 'stats') { this.loadForward(); this.loadPnlCal(); }
     },
 
     // ---------- sector heat ----------
@@ -749,6 +867,13 @@ function dataCenter() {
       return ({ 'Healthy uptrend': '🟢', 'Recovery': '🟢', 'Extended': '🟠',
         'Pullback': '🟡', 'Mid-correction': '🔻', 'Deep correction': '🔻' })[s] || '➖';
     },
+    // color a regime STATE by its meaning (matches stateEmoji) — NOT by raw posture, so an
+    // "Extended" index reads amber even though its posture number (55) sits in the green band.
+    stateColor(s) {
+      return ({ 'Healthy uptrend': '#22c55e', 'Recovery': '#22c55e', 'Extended': '#f59e0b',
+        'Pullback': '#eab308', 'Mid-correction': '#f97316', 'Deep correction': '#ef4444' })[s] || '#64748b';
+    },
+    get majorNews() { return this.news.macro || []; },
     // leader-in-group medal: 🥇 for the strongest name in a theme (by RS), 🥈🥉 for a sizeable group
     groupMedal(s) {
       if (!s.group_rank || !(s.group_size >= 2)) return '';
@@ -760,6 +885,7 @@ function dataCenter() {
     // is current price already inside the buy zone (fillable now)?
     inZone(s) {
       if (s.buyable_now != null) return s.buyable_now;
+      if ((s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended) return false;
       return s.entry_type === 'limit' ? s.close <= s.entry : s.close >= s.entry;
     },
 

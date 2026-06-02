@@ -19,7 +19,7 @@ import webbrowser
 import mimetypes
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, quote, parse_qs
@@ -48,15 +48,18 @@ SECTOR_HEAT_F = DATA / "sector_heat.json"
 NEWS_F = DATA / "news.json"
 MARKET_F = DATA / "market.json"
 UNIVERSE_F = DATA / "universe.json"
+SYMNAMES_F = DATA / "symbol_names.json"     # {ticker: company name} cache (news headline -> ticker)
 SUSPICIOUS_F = DATA / "suspicious.json"
 PREMARKET_F = DATA / "premarket.json"
 SPINNING_F = DATA / "spinning.json"        # last spinning-stocks (intraday reversal) scan
 FORWARD_F = DATA / "forward_log.json"      # live A/A+ picks snapshotted each scan (forward/paper test)
+PNL_F = DATA / "pnl_calendar.json"         # per-day account equity + day P&L (the personal calendar)
 GROUPS_F = DATA / "groups.json"            # detected emerging groups (correlated movers)
 
 DOCS = {
     "qullamaggie": BASE / "strategy" / "qullamaggie.md",
     "martin-luk": BASE / "strategy" / "martin-luk.md",
+    "minervini": BASE / "strategy" / "minervini.md",
     "my-rules": BASE / "strategy" / "my-rules.md",
     "pullback-avwap": BASE / "strategy" / "pullbacks-avwap.md",
     "lessons": BASE / "journal" / "lessons.md",
@@ -252,6 +255,43 @@ THEME_KEYWORDS = {
     "Software/Cloud/Cyber": ["cybersecurity", "cyberattack", "ransomware"],
 }
 
+# MAJOR MARKET NEWS — a deliberately HIGH bar: only regime-changing, whole-market events
+# (war, a new Fed chair, an emergency rate move, an election/president shock, a crash/halt, a
+# debt/fiscal shock, a national crisis). NOT everyday tariff/analyst/single-stock noise. Each is a
+# precise pattern so routine headlines ("Fed chair speaks", "price war") don't trip it.
+MACRO_PATTERNS = [
+    (re.compile(r"\b(declares war|at war with|war breaks out|invasion of|invades|missile strike|air ?strikes?|nuclear (strike|war|attack)|act of war)\b", re.I), "⚔️ War / military escalation"),
+    (re.compile(r"\b((new|next|incoming) fed chair|fed chair (resign|step(s|ping) down|nominat|replaced|fired|out\b)|powell (resign|step(s|ping) down|fired|ousted|replaced|out\b))", re.I), "🏛️ Fed leadership change"),
+    (re.compile(r"\b(emergency rate (cut|hike)|surprise rate (cut|hike)|inter-?meeting (cut|hike)|fed (cuts|hikes|slashes) rates by|(75|100) ?(bps|basis points))\b", re.I), "🏛️ Major Fed move"),
+    (re.compile(r"\b(wins the (presidency|election)|elected president|president-?elect|resigns as president|forced out as president|impeached)\b", re.I), "🗳️ Election / presidency shock"),
+    (re.compile(r"\b(market crash|circuit breaker|trading halted|black monday|flash crash|stocks? plunge \d\d%|biggest (drop|plunge) since)\b", re.I), "📉 Market crash / halt"),
+    (re.compile(r"\b(u\.?s\.? (debt )?default|debt default|government shutdown|credit rating downgrade|u\.?s\.? downgraded|sovereign default)\b", re.I), "🏦 Debt / fiscal shock"),
+    (re.compile(r"\b(global pandemic|pandemic declared|national state of emergency|terror(ist)? attack)\b", re.I), "🚨 National crisis"),
+]
+
+
+def _detect_macro(items, days=3):
+    """Scan headlines for a TRULY market-moving macro event (see MACRO_PATTERNS). Returns the most
+    recent few, deduped — the dashboard shows these as a prominent banner. Empty almost every day."""
+    cut = time.time() - days * 86400
+    out, seen = [], set()
+    for it in items:
+        ep = _epoch(it)
+        if ep < cut:
+            continue
+        title = it.get("title", "") or ""
+        for pat, label in MACRO_PATTERNS:
+            if pat.search(title):
+                key = "".join(ch for ch in title.lower() if ch.isalnum())[:50]
+                if key in seen:
+                    break
+                seen.add(key)
+                out.append({"label": label, "title": title, "link": it.get("link", ""),
+                            "published": it.get("published", ""), "source": it.get("source", ""), "_ep": ep})
+                break
+    out.sort(key=lambda m: m["_ep"], reverse=True)
+    return out[:3]
+
 
 def _classify(title):
     t = (title or "").lower()
@@ -287,10 +327,112 @@ def _recent_important(items, days=7, keep=8):
     return out[:keep]
 
 
+# news headline -> ticker resolution -------------------------------------------------------- #
+# Tokens that look like tickers but are almost always English/jargon in a headline, OR
+# first words of company names too generic to match on alone.
+_GENERIC_TOKENS = {"AI", "CEO", "CFO", "COO", "ETF", "ETFS", "IPO", "USA", "US", "UK", "EU",
+                   "GDP", "FED", "SEC", "FDA", "ON", "OR", "AND", "FOR", "THE", "NEW", "NOW",
+                   "ALL", "ARE", "IT", "BE", "GO", "SO", "BY", "AT", "TO", "OF", "IN", "AS",
+                   "NO", "UP", "Q1", "Q2", "Q3", "Q4", "FY", "DEAL", "WAR", "BUY", "SELL"}
+_GENERIC_NAME_WORDS = {"open", "block", "global", "american", "national", "first", "general",
+                       "capital", "group", "energy", "power", "data", "cloud", "digital",
+                       "tech", "health", "financial", "international", "united", "advanced",
+                       "applied", "core", "next", "prime", "smart", "super", "value", "world"}
+_TICKER_TOKEN = re.compile(r"\b[A-Z]{1,5}\b")
+# words that, right after a company name, mark it as the headline's SUBJECT (a stock that moved)
+_SUBJ_NEXT = {"stock", "stocks", "shares", "share", "s", "stocks", "rises", "rose", "rallies",
+              "rallied", "rally", "jumps", "jumped", "soars", "soared", "surges", "surged",
+              "plunges", "plunged", "tumbles", "tumbled", "slides", "slid", "slumps", "slumped",
+              "drops", "dropped", "falls", "fell", "sinks", "sank", "pops", "popped", "spikes",
+              "spiked", "rockets", "rocketed", "climbs", "climbed", "gains", "gained", "crashes",
+              "crashed", "dips", "dipped", "skyrockets", "skyrocketed", "edges", "edged"}
+
+
+def _symbol_names():
+    """{ticker: company name}, cached to data/symbol_names.json and refreshed ~monthly from the
+    keyless NASDAQ directory. Degrades to whatever's cached (or {}) if the fetch fails."""
+    cached = read_json(SYMNAMES_F, None)
+    if isinstance(cached, dict) and cached.get("names"):
+        try:
+            if time.time() - float(cached.get("_ep", 0)) < 30 * 86400:
+                return cached["names"]
+        except Exception:
+            pass
+    try:
+        names = universe.fetch_symbol_names()
+        if names:
+            write_json(SYMNAMES_F, {"_ep": time.time(),
+                                    "built_at": time.strftime("%Y-%m-%d %H:%M"), "names": names})
+            return names
+    except Exception:
+        pass
+    return cached["names"] if isinstance(cached, dict) and cached.get("names") else {}
+
+
+def _build_news_resolver():
+    """Return fn(headline)->[tickers]: maps a material headline to the universe ticker(s) it's
+    about, by company name ('Marvell Technology'->MRVL) or an explicit ticker token ('HPE stock').
+    Restricted to the current universe so only tradeable names surface. This is what lets a fresh
+    catalyst on a name that ISN'T yet a graded suggestion still show up in catalysts."""
+    screeners = read_json(SCREENERS_F, [])
+    default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
+    uni_set = set(default.get("tickers", [])) if default else set()
+    names = _symbol_names()
+    phrases = []                                   # (lower company name, ticker) — multi-word only
+    first_count, first_map = {}, {}                # distinctive first word -> ticker (if unique)
+    for tk in uni_set:
+        nm = names.get(tk)
+        if not nm:
+            continue
+        low = nm.lower()
+        if " " in low and len(low) >= 5:
+            phrases.append((low, tk))
+        ft = low.split()[0]
+        if len(ft) >= 5 and ft not in _GENERIC_NAME_WORDS:
+            first_count[ft] = first_count.get(ft, 0) + 1
+            first_map[ft] = tk
+    firsts = {ft: tk for ft, tk in first_map.items() if first_count[ft] == 1}
+    phrases = [(ph.split(), tk) for ph, tk in sorted(phrases, key=lambda p: -len(p[0]))]
+
+    def resolve(title):
+        if not title:
+            return []
+        toks = re.findall(r"[a-z0-9&]+", title.lower())
+        hits = []
+        # A company name only counts when it's the SUBJECT — i.e. immediately followed by
+        # stock/shares/possessive or a price-action verb ("Marvell stock soars", "HPE jumps").
+        # This rejects names that are merely mentioned: analyst firms ("Truist cuts…",
+        # "…Morgan Stanley sees"), comparisons, and generic words ("Price Target", "(NASDAQ:…").
+        def subject(i_after):
+            return i_after < len(toks) and toks[i_after] in _SUBJ_NEXT
+        for ws, tk in phrases:                     # 1) full multi-word company name as subject
+            n = len(ws)
+            for i in range(len(toks) - n + 1):
+                if toks[i:i + n] == ws and subject(i + n) and tk not in hits:
+                    hits.append(tk)
+                    break
+        for i, w in enumerate(toks):               # 2) distinctive single-word name as subject
+            if w in firsts and firsts[w] not in hits and subject(i + 1):
+                hits.append(firsts[w])
+        for m in _TICKER_TOKEN.finditer(title):    # 3) explicit ticker token ('HPE stock soars')
+            tok = m.group(0)
+            if tok not in uni_set or tok in _GENERIC_TOKENS or tok in hits:
+                continue
+            tail = title[m.end():m.end() + 8].lower()
+            if len(tok) >= 4 or tail.lstrip().startswith(("stock", "shares")) or ("(" + tok + ")") in title:
+                hits.append(tok)
+        return hits[:2]
+
+    return resolve
+
+
 def run_news_refresh():
     NEWS.update(running=True, done=0, current="headlines")
     raw_trump = fetch_rss("Trump stocks OR tariffs OR contract when:7d", 25)
     raw_market = fetch_rss("stock soars OR plunges OR contract OR deal when:5d", 25)
+    # dedicated query for whole-market, regime-changing events (war / Fed chair / crash / election);
+    # the catalyst queries above wouldn't surface these. Filtered hard by MACRO_PATTERNS below.
+    raw_macro = fetch_rss('"stock market" OR "wall street" OR "federal reserve" OR economy when:3d', 30)
     sections = [
         {"name": "🇺🇸 Trump & policy", "items": _recent_important(raw_trump)},
         {"name": "📰 Market catalysts", "items": _recent_important(raw_market)},
@@ -328,11 +470,31 @@ def run_news_refresh():
             it = ri[0]
             tn[tk] = {"title": it["title"], "link": it["link"], "published": it["published"],
                       "sentiment": it["sentiment"], "trump": "trump" in it["title"].lower()}
-    # ---- actionable alerts: distill the BIG catalysts into BUY / AVOID directives ----
-    themes_map = read_json(THEMES_F, {})
     HARD = ["contract", "deal", "wins", "awarded", "approval", "soar", "surge", "plunge",
             "explosion", "war", "ban", "fda", "acquire", "merger", "recall", "invests",
             "funding", "selected", "darpa", "pentagon", "billion", "stake", "bet"]
+    # ---- promote BIG catalysts on ANY universe name, not just the top-16 suggestions ----
+    # The material feed already caught the headline (e.g. MRVL soaring); resolve it back to a
+    # tradeable ticker so a fresh mover surfaces in catalysts even before it's a graded setup.
+    resolve = _build_news_resolver()
+    promoted = 0
+    for it in pool_imp:                                  # newest-first, already material
+        if promoted >= 14:
+            break
+        sent = it.get("sentiment")
+        tl = it["title"].lower()
+        if sent not in ("good", "bad") or not any(k in tl for k in HARD):
+            continue
+        if any(g in tl for g in GOOD_KW) and any(b in tl for b in BAD_KW):
+            continue                                     # mixed up/down → a roundup, not one catalyst
+        for tk in resolve(it["title"]):
+            if tk in tn:
+                continue
+            tn[tk] = {"title": it["title"], "link": it["link"], "published": it.get("published", ""),
+                      "sentiment": sent, "trump": "trump" in tl, "from_feed": True}
+            promoted += 1
+    # ---- actionable alerts: distill the BIG catalysts into BUY / AVOID directives ----
+    themes_map = read_json(THEMES_F, {})
     alerts = []
     for th, info in theme_news.items():
         if not any(k in info["title"].lower() for k in HARD):
@@ -348,10 +510,29 @@ def run_news_refresh():
                            "scope": "stock", "title": tk, "headline": info["title"],
                            "link": info["link"], "published": info.get("published", ""),
                            "tickers": [tk]})
-    alerts.sort(key=lambda a: 0 if a["dir"] == "buy" else 1 if a["dir"] == "watch" else 2)
-    alerts = alerts[:8]
+    # buy first, then by recency — a fresh big mover (e.g. MRVL today) outranks week-old news.
+    alerts.sort(key=lambda a: (0 if a["dir"] == "buy" else 1 if a["dir"] == "watch" else 2,
+                               -_epoch(a)))
+    alerts = alerts[:10]
+    # ---- unified feed: ONE deduped, newest-first stream of the material headlines (cleaner than the
+    # scattered category cards). pool_imp is already important-only + newest-first.
+    feed, fseen = [], set()
+    for it in pool_imp:
+        key = "".join(ch for ch in (it["title"] or "").lower() if ch.isalnum())[:60]
+        if not key or key in fseen:
+            continue
+        fseen.add(key)
+        feed.append({"title": it["title"], "link": it["link"], "source": it.get("source", ""),
+                     "published": it["published"], "ep": it.get("_ep", 0), "sentiment": it["sentiment"],
+                     "trump": "trump" in it["title"].lower()})
+        if len(feed) >= 24:
+            break
+    # major market news — the high-bar macro banner (war / Fed chair / crash / election shock).
+    # Scans the dedicated macro query + the existing pool; empty on a normal day.
+    macro = _detect_macro(list(raw_macro) + pool)
     write_json(NEWS_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sections": sections,
-                        "ticker_news": tn, "theme_news": theme_news, "alerts": alerts})
+                        "ticker_news": tn, "theme_news": theme_news, "alerts": alerts,
+                        "feed": feed, "macro": macro})
     NEWS.update(running=False, current="")
 
 
@@ -440,13 +621,19 @@ def run_detect_groups():
             need = max(2, g["size"] // 2 + 1)          # a real majority must share the thread
             t_best = max(theme_tally.items(), key=lambda x: x[1], default=(None, 0))
             s_best = max(sector_tally.items(), key=lambda x: x[1], default=(None, 0))
-            if t_best[1] >= need:                       # prefer the specific thematic group
-                g["common"], g["common_count"], g["novel"] = t_best[0], t_best[1], False
-            elif s_best[1] >= need:                     # fall back to a broad sector (likely a NEW group)
-                g["common"], g["common_count"] = s_best[0], s_best[1]
-                g["novel"] = s_best[0] not in theme_keys
+            # The point of THIS tab is to find NEW groups — not to re-show themes we already track.
+            if t_best[1] >= need:                       # the cluster is an EXISTING theme…
+                theme = t_best[0]
+                joining = [m["ticker"] for m in g["members"] if rev.get(m["ticker"]) != theme]
+                if not joining:
+                    continue                             # …entirely a known theme → skip, nothing new
+                g["common"], g["common_count"] = theme, t_best[1]   # …but NEW names are joining it
+                g["novel"], g["joining"] = False, joining           # surface only the new members
+            elif s_best[1] >= need and s_best[0] not in theme_keys:
+                g["common"], g["common_count"] = s_best[0], s_best[1]   # genuinely new cluster
+                g["novel"], g["joining"] = True, []
             else:
-                continue                                 # no discernible common thread → don't show it
+                continue                                 # an existing sector/theme or no thread → skip
             kept.append(g)
         write_json(GROUPS_F, {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "groups": kept})
     except Exception as e:
@@ -582,6 +769,38 @@ def apply_sizing(item, settings):
     return item
 
 
+def compute_equity():
+    """Live account equity = base (the size you input) + realized (closed P&L) + open (unrealized
+    P&L). The base is never auto-mutated — equity is always derived, so the account 'updates itself'."""
+    st = read_json(settings_f(), {})
+    base = st.get("account_size") or 0
+    trades = read_json(trades_f(), [])
+    realized = open_pnl = 0.0
+    for t in trades:
+        e, sh = t.get("entry"), t.get("shares")
+        if not (e and sh):
+            continue
+        if t.get("status") == "closed" and t.get("exit"):
+            realized += (t["exit"] - e) * sh
+        elif t.get("status") == "open" and t.get("ticker"):
+            try:
+                bars = scanner.get_bars(t["ticker"])
+                if bars:
+                    open_pnl += (bars[-1]["close"] - e) * sh
+            except Exception:
+                pass
+    return {"base": round(base, 2), "realized": round(realized, 2),
+            "open": round(open_pnl, 2), "equity": round(base + realized + open_pnl, 2)}
+
+
+def _equity_settings():
+    """Settings with account_size swapped for live equity — used for sizing/grading so position size
+    reflects current equity, not a stale typed-in number."""
+    st = read_json(settings_f(), {})
+    eq = compute_equity()["equity"]
+    return {**st, "account_size": eq} if eq else st
+
+
 def _mean(xs, default=0.0):
     xs = [x for x in xs if x is not None]
     return sum(xs) / len(xs) if xs else default
@@ -653,7 +872,9 @@ def position_coach(t, bars, settings, news_map):
     reasons = []
     rtxt = (f"+{r_mult:.1f}R" if (r_mult is not None and r_mult >= 0)
             else (f"{r_mult:.1f}R" if r_mult is not None else "—"))
-    # priority ladder: stop → trail-EMA close → earnings → trim extended → breakeven → news → hold
+    # priority ladder: stop → trail-EMA close → PARABOLIC trim → earnings (watch) → breakeven → news → hold
+    # TRIM only on a genuine parabolic blow-off (price VERY far above the EMAs, the ARM/DELL case),
+    # NOT on ordinary strength — the user does not trim quickly. PARABOLIC = ≥4× ADR above the 9 EMA.
     if stop and last < stop:
         if breakeven_plus:
             action, tone = "EXIT", "warn"
@@ -672,15 +893,14 @@ def position_coach(t, bars, settings, news_map):
         action, tone = "HOLD", "good"
         reasons.append(f"under the 9 EMA but holding the 50 EMA (${round(e50,2)}) — that's the deep-pullback/base "
                        f"plan; exit only on a close under the 50")
-    elif earn_soon and r_mult is not None and r_mult >= 0.5:
+    elif r_mult is not None and r_mult >= 1 and ext9_adr >= 4.0:
         action, tone = "TRIM", "warn"
-        reasons.append(f"earnings in {edays}d — trim to lock {rtxt} before the binary print")
+        reasons.append(f"parabolic — {ext9_adr:.1f}× ADR above the 9 EMA (far above 9/21/50), {rtxt} — trim "
+                       f"into the spike & trail the rest (the ARM/DELL blow-off case)")
     elif earn_soon:
         action, tone = "WATCH", "warn"
-        reasons.append(f"earnings in {edays}d with no real cushion ({rtxt}) — consider closing to skip the gamble")
-    elif r_mult is not None and r_mult >= 3 and ext9_adr > 2.2:
-        action, tone = "TRIM", "warn"
-        reasons.append(f"{rtxt} and {ext9_adr:.1f}× ADR above the 9 EMA — trim into strength, trail the 10/20-MA")
+        reasons.append(f"earnings in {edays}d — binary event ({rtxt}); hold through or reduce, your call "
+                       f"(no auto-trim on strength)")
     elif r_mult is not None and r_mult >= 1 and stop and entry and stop < entry:
         action, tone = "RAISE STOP", "good"
         reasons.append(f"{rtxt} locked-in zone — raise the stop to breakeven (${entry}) so the trade can't turn red")
@@ -942,60 +1162,248 @@ def _ema_series(closes, n):
     return out
 
 
-def log_forward_picks():
-    """Append today's A/A+ suggestions (as graded live) to the forward log, one snapshot per date."""
+FORWARD_TOP_N = 10                      # how many of today's TOP suggestions to log each day
+
+
+def log_forward_picks(date_key=None):
+    """Snapshot today's TOP suggestions — the same set/order the dashboard's "Top suggestions today"
+    shows (buyable-now floated to the top, then by rating) — so we can score how they perform over the
+    following days. Keyed by the session that just CLOSED; one snapshot per date; never overwrites."""
     items = read_json(SUGGEST_F, {}).get("items", [])
     if not items:
         return
-    graded = grade_suggestions(items, read_json(SETTINGS_F, {}))
+    day = date_key or _next_session_date()                # label by the session you ACT on these (next session
+                                                          # after the close they were snapshotted at)
+    log = read_json(FORWARD_F, {"snapshots": {}})
+    if day in log.get("snapshots", {}):                 # already captured this day — keep the first
+        return
+    graded = grade_suggestions(items, _equity_settings())
+    # mirror the dashboard "Top suggestions" ordering: actionable-now names float up, then by rating
+    graded = sorted(graded, key=lambda s: (1 if s.get("buyable_now") else 0, s.get("rating", 0)),
+                    reverse=True)[:FORWARD_TOP_N]
     picks = [{"ticker": s["ticker"], "grade": s["grade"], "rating": s["rating"],
               "setup_type": s.get("setup_type"), "entry": s.get("entry"), "stop": s.get("stop"),
               "target": s.get("target"), "entry_type": s.get("entry_type"),
-              "buyable_now": bool(s.get("buyable_now")), "theme": s.get("theme"),
+              "buyable_now": bool(s.get("buyable_now")), "trend_template": bool(s.get("trend_template")),
+              "vcp": bool(s.get("vcp")), "theme": s.get("theme"),
               "theme_trend": s.get("theme_trend"), "close_at_signal": s.get("close")}
-             for s in graded if s.get("grade") in ("A+", "A")]
-    log = read_json(FORWARD_F, {"snapshots": {}})
-    log.setdefault("snapshots", {})[now_date()] = {
+             for s in graded]
+    log.setdefault("snapshots", {})[day] = {
         "posture": read_json(MARKET_F, {}).get("posture"), "picks": picks}
     write_json(FORWARD_F, log)
 
 
-def _sim_forward(bars, sig_date, stop):
-    """Enter at the first open AFTER sig_date; exit on close<9-EMA or hard stop; 60-day cap."""
-    closes = [b["close"] for b in bars]
-    ei = next((i for i, b in enumerate(bars) if b["time"] > sig_date), None)
-    if ei is None or ei >= len(bars) or not stop:
-        return None
-    entry = bars[ei]["open"]
-    if entry <= stop:
+def _market_closed():
+    """Rough US-market-closed check (ET): weekend, or outside ~9:30-16:00. Good enough to gate a
+    once-a-day end-of-day snapshot (we don't need minute precision)."""
+    from datetime import timedelta
+    et = datetime.now(timezone.utc) - timedelta(hours=4)   # ~ET (EDT); minor winter drift is fine
+    if et.weekday() >= 5:
+        return True
+    hm = et.hour + et.minute / 60.0
+    return hm < 9.5 or hm >= 16.0
+
+
+def _session_date():
+    """The latest COMPLETED US trading-session date (from SPY's most recent daily bar) — NOT the local
+    calendar date (the user's local day rolls over while the US market is still on the prior session)."""
+    try:
+        b = scanner.get_bars("SPY")
+        return b[-1]["time"] if b else now_date()
+    except Exception:
+        return now_date()
+
+
+def _next_session_date():
+    """The NEXT US trading session after the latest completed one — i.e. the day you'd ACT on picks
+    captured at the last close. Forward snapshots are LABELED by this (the trade day), so the picks you
+    snapshot at tonight's close show up under tomorrow's session, awaiting until it trades. Skips
+    weekends (holidays not handled — close enough)."""
+    try:
+        d = datetime.strptime(_session_date(), "%Y-%m-%d") + timedelta(days=1)
+        while d.weekday() >= 5:                            # Sat/Sun -> Monday
+            d += timedelta(days=1)
+        return d.strftime("%Y-%m-%d")
+    except Exception:
+        return _session_date()
+
+
+def _refresh_forward_bars():
+    """Pull the latest session's bars for the logged picks so score_forward() can advance them.
+    Probes SPY fresh (1 call) to learn the latest session, then force-refreshes only picks that are
+    BEHIND it — so it does nothing (beyond the probe) until a genuinely new session prints."""
+    try:
+        ref = scanner.get_bars("SPY", max_age_hours=0)
+    except Exception:
+        ref = scanner.get_bars("SPY")
+    sess = ref[-1]["time"] if ref else None
+    if not sess:
+        return
+    log = read_json(FORWARD_F, {"snapshots": {}})
+    tks = {p["ticker"] for s in log.get("snapshots", {}).values() for p in s.get("picks", [])}
+    for t in tks:
+        try:
+            b = scanner.get_bars(t)
+            if not b or b[-1]["time"] < sess:             # behind the latest session -> pull fresh
+                scanner.get_bars(t, max_age_hours=0)
+        except Exception:
+            pass
+
+
+def run_forward_eod():
+    """LOCAL-ONLY autonomous job (runs on launch + every ~30 min). Every run it:
+      1) refreshes the logged picks' bars so EVERY snapshot's status SCORES/UPDATES continuously
+         (this is the "update how each setup did, each market close" part),
+      2) once the market is CLOSED, captures the day's top dashboard setups as a frozen snapshot
+         labeled by the NEXT session (the day you'd act on them) — one per day, never overwriting.
+    Capture is gated to market-closed so we snapshot the CLOSING picture, not a mid-session reshuffle.
+    Never runs hosted."""
+    if HOSTED:
+        return
+    _refresh_forward_bars()                                # pull latest bars so EVERY snapshot's status re-scores
+    record_daily_pnl(_session_date())                      # day P&L keyed by the latest PRINTED session bar
+    if not _market_closed():
+        return                                             # only snapshot once the session has closed
+    trade_day = _next_session_date()                       # the upcoming session these picks are FOR (the label)
+    log = read_json(FORWARD_F, {"snapshots": {}})
+    if trade_day in log.get("snapshots", {}):
+        return                                             # already snapshotted for that session (capture once)
+    if read_json(SUGGEST_F, {}).get("items"):
+        log_forward_picks(trade_day)                       # freeze today's dashboard top setups; tracked forward
+
+
+def record_daily_pnl(session):
+    """Record (and keep updating) the day's account equity + day P&L into the personal calendar.
+    day_pnl = today's total equity − the last recorded prior day's equity (realized + unrealized move).
+    Re-runs each cycle so today's entry converges to the close. Local-only."""
+    if HOSTED:
+        return
+    eq = compute_equity()
+    cal = read_json(PNL_F, {})
+    prior = [cal[k]["equity"] for k in sorted(cal) if k < session and isinstance(cal.get(k), dict)]
+    prev_eq = prior[-1] if prior else eq["base"]
+    cal[session] = {"equity": eq["equity"], "open": eq["open"], "realized": eq["realized"],
+                    "day_pnl": round(eq["equity"] - prev_eq, 2)}
+    write_json(PNL_F, cal)
+
+
+def _forward_eod_loop():
+    """Local background heartbeat: check every ~30 min whether an EOD snapshot is due."""
+    while True:
+        try:
+            run_forward_eod()
+        except Exception:
+            pass
+        time.sleep(1800)
+
+
+def _sim_forward(bars, trade_date, entry, stop, entry_type):
+    """`trade_date` is the session these picks are FOR (the day you'd act on the trigger — the snapshot
+    is labeled by it). Looks at bars from trade_date onward (so it never fills on the prior close where
+    the setup was identified — a buy-stop at that day's high would be a fake instant loss; real bug,
+    fixed), waits for the entry trigger (buy-stop: a high >= entry; limit: a low <= entry), fills there,
+    then exits on a daily close < 9-EMA or a stop hit. The trade day hasn't printed yet → 'awaiting'.
+    Trigger never hit after several sessions → 'no-fill'. Returns {R,matured,exit,status}."""
+    if not entry or not stop or entry <= stop:
         return None
     risk = entry - stop
+    closes = [b["close"] for b in bars]
     e9 = _ema_series(closes, 9)
-    end = min(len(bars) - 1, ei + 60)
-    for j in range(ei, end + 1):
+    after = [i for i, b in enumerate(bars) if b["time"] >= trade_date]   # the trade day onward
+    if not after:
+        return {"R": None, "matured": False, "exit": None, "status": "awaiting"}
+    start, end = after[0], min(len(bars) - 1, after[0] + 60)
+    is_limit = (entry_type == "limit")
+    fi = None                                              # fill index = first post-signal bar that triggers
+    for j in range(start, end + 1):
+        if (bars[j]["low"] <= entry) if is_limit else (bars[j]["high"] >= entry):
+            fi = j
+            break
+    if fi is None:
+        return {"R": None, "matured": False, "exit": None,
+                "status": "no-fill" if (end - start) >= 3 else "awaiting"}
+    for j in range(fi, end + 1):
         b = bars[j]
         if b["low"] <= stop:
             px = b["open"] if b["open"] < stop else stop
-            return {"R": round((px - entry) / risk, 2), "matured": True, "exit": "stop"}
-        if b["close"] < e9[j] and j > ei:
-            return {"R": round((b["close"] - entry) / risk, 2), "matured": True, "exit": "9ema"}
+            return {"R": round((px - entry) / risk, 2), "matured": True, "exit": "stop", "status": "matured"}
+        if b["close"] < e9[j] and j > fi:                  # 9-EMA exit only AFTER the fill day
+            return {"R": round((b["close"] - entry) / risk, 2), "matured": True, "exit": "9ema", "status": "matured"}
     return {"R": round((bars[end]["close"] - entry) / risk, 2),
-            "matured": (end - ei) >= 7, "exit": "open"}
+            "matured": (end - fi) >= 5, "exit": "open", "status": "open"}
+
+
+def _day_lesson(picks):
+    """A short, data-driven takeaway for ONE day's top picks: how they did + which trait carried an
+    edge (Trend Template / VCP / buyable-now / setup type). Honest when too few have matured."""
+    scored = [p for p in picks if p.get("R") is not None]
+    if len(scored) < 3:
+        awaiting = sum(1 for p in picks if p.get("fstatus") == "awaiting")
+        if awaiting:
+            return ("The top setups to act on this session, frozen from the prior close. Each fills on its "
+                    "trigger as the session trades, then we score it (9-EMA close / stop); the status updates "
+                    "every market close until it matures. Awaiting this session's data.")
+        return "Too early — most of these setups haven't filled/matured yet. Status updates each market close."
+    rs = [p["R"] for p in scored]
+    avg = sum(rs) / len(rs)
+    best = max(scored, key=lambda p: p["R"])
+    worst = min(scored, key=lambda p: p["R"])
+    head = (f"Avg {avg:+.1f}R across {len(scored)} scored. "
+            f"Best {best['ticker']} {best['R']:+.1f}R ({best.get('setup_type')}), "
+            f"worst {worst['ticker']} {worst['R']:+.1f}R.")
+    notes = []
+    for key, label in [("trend_template", "✓ Trend-Template"), ("vcp", "🌀 VCP"), ("buyable_now", "🟢 Buyable-now")]:
+        a = [p["R"] for p in scored if p.get(key)]
+        b = [p["R"] for p in scored if not p.get(key)]
+        if len(a) >= 2 and len(b) >= 2:
+            da, db = sum(a) / len(a), sum(b) / len(b)
+            if abs(da - db) >= 0.4:
+                notes.append(f"{label} {da:+.1f}R vs {db:+.1f}R without — "
+                             f"{'added edge' if da > db else 'HURT here'}.")
+    # which setup type led
+    bytype = {}
+    for p in scored:
+        bytype.setdefault(p.get("setup_type") or "?", []).append(p["R"])
+    if len(bytype) >= 2:
+        ranked = sorted(((sum(v) / len(v), k, len(v)) for k, v in bytype.items()), reverse=True)
+        top, bot = ranked[0], ranked[-1]
+        if top[0] - bot[0] >= 0.5:
+            notes.append(f"{top[1]} led ({top[0]:+.1f}R), {bot[1]} lagged ({bot[0]:+.1f}R).")
+    return head + (" " + " ".join(notes[:2]) if notes else "")
 
 
 def score_forward():
-    """Evaluate logged A/A+ picks that have enough forward data; aggregate win rate / avg R."""
+    """Evaluate logged TOP-suggestion picks; per-day breakdown + lessons + an overall aggregate.
+    Each pick is simulated forward with the house exit rules (close < 9-EMA or hard stop)."""
     log = read_json(FORWARD_F, {"snapshots": {}})
     snaps = log.get("snapshots", {})
-    scored, pending = [], 0
-    for date, snap in snaps.items():
+    scored, pending, by_day = [], 0, []
+    for date in sorted(snaps, reverse=True):
+        snap = snaps[date]
+        picks_out = []
         for p in snap.get("picks", []):
             bars = scanner.get_bars(p["ticker"])
-            r = _sim_forward(bars, date, p.get("stop")) if bars else None
+            r = _sim_forward(bars, date, p.get("entry"), p.get("stop"), p.get("entry_type")) if bars else None
+            status = r["status"] if r else "no-data"
+            R = r["R"] if r else None
+            picks_out.append({**p, "R": R, "matured": bool(r and r["matured"]),
+                              "exit": r["exit"] if r else None, "fstatus": status})
             if r and r["matured"]:
                 scored.append({**p, "date": date, "R": r["R"], "win": r["R"] > 0, "exit": r["exit"]})
-            else:
+            elif r and r["status"] == "open":
                 pending += 1
+        day_rs = [x["R"] for x in picks_out if x["R"] is not None]
+        wins = [x for x in day_rs if x > 0]
+        day_sum = {"n_scored": len(day_rs),
+                   "avg_r": round(sum(day_rs) / len(day_rs), 2) if day_rs else None,
+                   "win_rate": round(100 * len(wins) / len(day_rs)) if day_rs else None,
+                   "matured": sum(1 for x in picks_out if x["matured"]),
+                   "open": sum(1 for x in picks_out if x["fstatus"] == "open"),
+                   "awaiting": sum(1 for x in picks_out if x["fstatus"] == "awaiting"),
+                   "no_fill": sum(1 for x in picks_out if x["fstatus"] == "no-fill")}
+        by_day.append({"date": date, "posture": snap.get("posture"),
+                       "picks": sorted(picks_out, key=lambda x: -(x.get("rating") or 0)),
+                       "summary": day_sum, "lesson": _day_lesson(picks_out)})
     agg = None
     if scored:
         rs = [t["R"] for t in scored]
@@ -1007,7 +1415,7 @@ def score_forward():
     total_logged = sum(len(s.get("picks", [])) for s in snaps.values())
     recent = sorted(scored, key=lambda x: x["date"], reverse=True)[:20]
     return {"days_logged": days, "total_picks": total_logged, "matured": len(scored),
-            "pending": pending, "aggregate": agg, "recent": recent,
+            "pending": pending, "aggregate": agg, "recent": recent, "by_day": by_day,
             "first_date": min(snaps) if snaps else None, "last_date": max(snaps) if snaps else None}
 
 
@@ -1174,11 +1582,12 @@ def compute_gameplan():
     open_pos = [t for t in trades if t.get("status") == "open"]
     held = {t.get("ticker") for t in open_pos}
 
-    market = read_json(MARKET_F, {})
+    market = _effective_regime()
     posture = market.get("posture", 55)
     label = market.get("label", "")
     indexes = market.get("indexes", [])
     stretched = [i["name"] for i in indexes if i.get("stretched_50")]
+    regime_live = bool(market.get("live"))
 
     sug_items = read_json(SUGGEST_F, {}).get("items", [])
     graded = grade_suggestions(sug_items, settings) if sug_items else []
@@ -1217,6 +1626,14 @@ def compute_gameplan():
         stance = "Defense — weak tape, protect capital, mostly cash"
     if stretched:
         stance += f" · {', '.join(stretched)} extended above the 50-MA — don't chase, let setups pull in"
+    if regime_live:                       # pre/after-hours — call out the indexes that are moving now
+        movers = sorted([i for i in indexes if i.get("ext_pct") is not None],
+                        key=lambda i: -abs(i["ext_pct"]))
+        big = [f"{i['name']} {i['ext_pct']:+.1f}%" for i in movers if abs(i["ext_pct"]) >= 0.3][:3]
+        if big:
+            ms = market.get("market_state")
+            when = "Pre-market" if ms in ("PRE", "PREPRE") else "After-hours"
+            stance += f" · 🌙 {when}: {', '.join(big)} — this regime read uses the live extended-hours prices"
 
     manage = []
     for t in open_pos:
@@ -1246,6 +1663,7 @@ def compute_gameplan():
 
     return {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "date": now_date(),
             "posture": posture, "label": label, "stance": stance, "stretched": stretched,
+            "regime_live": regime_live, "market_state": market.get("market_state"),
             "exposure": exposure, "manage": manage, "buy_now": buy_now, "watch": watch,
             "avoid": avoid, "alerts": read_json(NEWS_F, {}).get("alerts", [])[:4],
             "lessons": _top_lessons(3), "bottom_line": bottom}
@@ -1255,11 +1673,12 @@ def compute_gameplan():
 # Prediction — a probabilistic forward read from all the data we have (NOT advice)
 # --------------------------------------------------------------------------- #
 def compute_prediction():
-    market = read_json(MARKET_F, {})
+    market = _effective_regime()
     posture = market.get("posture", 55)
     label = market.get("label", "")
     indexes = market.get("indexes", [])
     stretched = [i["name"] for i in indexes if i.get("stretched_50")]
+    regime_live = bool(market.get("live"))
 
     heat = read_json(SECTOR_HEAT_F, {}).get("sectors", [])
     rising = [s["sector"] for s in heat if s.get("trend") == "Rising"]
@@ -1283,8 +1702,19 @@ def compute_prediction():
 
     drivers = []
     score = (posture - 55) / 10.0
-    drivers.append({"text": f"Market regime: {label or 'n/a'} (posture {posture}/100)",
+    drivers.append({"text": f"Market regime: {label or 'n/a'} (posture {posture}/100)"
+                    + (" · 🌙 live extended-hours read" if regime_live else ""),
                     "dir": "pos" if posture >= 60 else "neg" if posture < 45 else "neutral"})
+    if regime_live:                       # the indexes are moving NOW (pre/after-hours) — surface it
+        em = [i for i in indexes if i.get("ext_pct") is not None]
+        avg_ext = _mean([i["ext_pct"] for i in em]) if em else 0
+        if em and abs(avg_ext) >= 0.2:
+            ms = market.get("market_state")
+            when = "Pre-market" if ms in ("PRE", "PREPRE") else "After-hours"
+            score += max(-1.5, min(1.5, avg_ext / 0.6))     # extended index move biases the lean
+            drivers.append({"text": f"🌙 {when} index move: "
+                            + ", ".join(f"{i['name']} {i['ext_pct']:+.1f}%" for i in em),
+                            "dir": "pos" if avg_ext > 0 else "neg"})
     if breadth is not None:
         score += (breadth - 50) / 15.0
         drivers.append({"text": f"Sector breadth {breadth}% of names above their 20-day MA",
@@ -1295,7 +1725,26 @@ def compute_prediction():
     if slowing or falling:
         drivers.append({"text": f"Cooling / rolling over: {', '.join((falling + slowing)[:5])}",
                         "dir": "neg"})
-    score += (a_good - a_bad) * 0.4 + (t_good - t_bad) * 0.12
+    # 🌙 PRE/AFTER-HOURS sector moves — what's actually moving NOW (separate from the multi-day trend
+    # above). A "cooling" group can still pop in pre-market; surface it so it's not missed (the
+    # Photonics/Optics case). Live perf_1d during PRE/POST = the extended-hours move.
+    pm_sectors = _premarket_sector_moves() if regime_live else {"when": None, "up": [], "down": []}
+    up, dn = pm_sectors["up"], pm_sectors["down"]
+    if up or dn:
+        score += max(-0.8, min(0.8, (len(up) - len(dn)) * 0.2))
+        seg = []
+        if up:
+            seg.append("leading " + ", ".join(f"{x['sector']} {x['pct']:+.1f}%" for x in up))
+        if dn:
+            seg.append("lagging " + ", ".join(f"{x['sector']} {x['pct']:+.1f}%" for x in dn))
+        drivers.append({"text": f"🌙 {pm_sectors['when']} sector moves: " + "; ".join(seg),
+                        "dir": "pos" if len(up) >= len(dn) else "neg"})
+    score += (a_good - a_bad) * 0.5 + (t_good - t_bad) * 0.15
+    if alerts:                                            # name the actual material catalysts driving it
+        cat = "; ".join((("🚀 " if a["dir"] == "buy" else "🛑 " if a["dir"] == "avoid" else "👀 ") + a["title"])
+                        for a in alerts[:3])
+        drivers.append({"text": f"Catalysts: {cat}",
+                        "dir": "pos" if a_good >= a_bad else "neg"})
     if alerts or tn:
         drivers.append({"text": f"News tone: {a_good + t_good} positive vs {a_bad + t_bad} negative catalysts",
                         "dir": "pos" if (a_good + t_good) > (a_bad + t_bad) else "neg" if (a_bad + t_bad) > (a_good + t_good) else "neutral"})
@@ -1334,13 +1783,17 @@ def compute_prediction():
         parts.append(f"Avoid fading strength into the cooling groups ({', '.join((falling + slowing)[:4])}).")
     if (a_bad + t_bad) > (a_good + t_good):
         parts.append("Headline tone skews negative — keep size honest.")
+    if pm_sectors["up"]:
+        parts.append(f"{pm_sectors['when']}, money is poking into {', '.join(x['sector'] for x in pm_sectors['up'][:3])} "
+                     f"— watch whether it holds into the open before committing (extended-hours moves often fade).")
     outlook = " ".join(parts)
 
     return {"computed_at": time.strftime("%Y-%m-%d %H:%M"),
             "lean": lean, "confidence": confidence, "score": round(score, 2),
             "outlook": outlook, "drivers": drivers,
             "rising": rising[:8], "slowing": slowing[:8], "falling": falling[:8],
-            "posture": posture, "label": label, "breadth": breadth,
+            "posture": posture, "label": label, "breadth": breadth, "regime_live": regime_live,
+            "pm_sectors": pm_sectors,
             "note": "Probabilistic read from the data on hand — not a prediction you should trade blindly. The market does what it wants."}
 
 
@@ -1364,20 +1817,81 @@ def live_posture(quotes):
         if not bars or len(bars) < 60:
             continue
         q = quotes.get(sym.upper())
+        ext_pct = None
         if q and q.get("price"):
             bars = bars[:-1] + [dict(bars[-1])]
             lp = q["price"]
             bars[-1]["close"] = lp
             bars[-1]["high"] = max(bars[-1]["high"], lp)
             bars[-1]["low"] = min(bars[-1]["low"], lp)
+            ext_pct = q.get("ext_change_pct")    # pre/after-hours move on this index, if any
         try:
-            idx.append(scanner._regime_one(name, bars))
+            one = scanner._regime_one(name, bars)
+            one["ext_pct"] = ext_pct
+            idx.append(one)
         except Exception:
             pass
     if not idx:
         return None
     avg = sum(i["posture"] for i in idx) / len(idx)
-    return {"posture": round(avg), "label": _regime_label(avg), "indexes": idx}
+    ms = next((quotes[s.upper()].get("market_state") for _, s in scanner.INDEXES
+               if quotes.get(s.upper())), None)
+    extended = ms in ("PRE", "PREPRE", "POST", "POSTPOST")
+    return {"posture": round(avg), "label": _regime_label(avg), "indexes": idx,
+            "market_state": ms, "extended": extended}
+
+
+def _premarket_sector_moves():
+    """Average TRUE extended-hours (pre/after) move per sector, from each member's `ext_change_pct`
+    (the move vs the regular-session close). NOT perf_1d — during PRE that's polluted by yesterday's
+    full session (its prev_close is 2 days back). Returns {'when', 'up', 'down'} (empty off-hours)."""
+    heat = read_json(SECTOR_HEAT_F, {}).get("sectors", [])
+    if not heat:
+        return {"when": None, "up": [], "down": []}
+    syms = list(dict.fromkeys([m["ticker"] for s in heat for m in s.get("members", [])]))
+    try:
+        quotes = scanner.fetch_quotes(syms)
+    except Exception:
+        return {"when": None, "up": [], "down": []}
+    ms, rows = None, []
+    for s in heat:
+        moves = []
+        for m in s.get("members", []):
+            q = quotes.get(m["ticker"].upper())
+            if q:
+                ms = ms or q.get("market_state")
+                if q.get("ext_price") is not None and q.get("ext_change_pct") is not None:
+                    moves.append(q["ext_change_pct"])
+        if len(moves) >= 2:                       # ≥2 members printing → a real sector move, not one name
+            rows.append({"sector": s["sector"], "pct": round(sum(moves) / len(moves), 2), "n": len(moves)})
+    if not rows or ms not in ("PRE", "PREPRE", "POST", "POSTPOST"):
+        return {"when": None, "up": [], "down": []}
+    rows.sort(key=lambda r: r["pct"], reverse=True)
+    when = "Pre-market" if ms in ("PRE", "PREPRE") else "After-hours"
+    return {"when": when,
+            "up": [r for r in rows if r["pct"] >= 0.4][:4],
+            "down": [r for r in rows if r["pct"] <= -0.4][-4:]}
+
+
+def _effective_regime():
+    """The market regime to use RIGHT NOW. During pre/after-hours this re-blends SPX/QQQ/IWM from
+    their extended-hours prices (live_posture) so the gameplan & prediction reflect what's moving
+    NOW — not yesterday's close. Outside extended hours it's the stored daily regime (market.json).
+    Index quotes are 30s-cached, so this is cheap."""
+    market = read_json(MARKET_F, {})
+    try:
+        idxq = scanner.fetch_quotes([s for _, s in scanner.INDEXES])
+        ms = next((idxq[s.upper()].get("market_state") for _, s in scanner.INDEXES
+                   if idxq.get(s.upper())), None)
+        if ms in ("PRE", "PREPRE", "POST", "POSTPOST"):
+            lp = live_posture(idxq)
+            if lp:
+                lp.setdefault("computed_at", market.get("computed_at"))
+                lp["live"] = True
+                return lp
+    except Exception:
+        pass
+    return {**market, "live": False}
 
 
 def live_sector_heat():
@@ -1487,7 +2001,7 @@ class Handler(BaseHTTPRequestHandler):
         settings = read_json(settings_f(), {})
 
         if route == "settings":
-            self._json(settings)
+            self._json({**settings, "equity_info": compute_equity()})
         elif route == "env":
             # lets the frontend hide write-heavy pages (journal/strategy/watchlist) on the hosted
             # free service, where per-user data doesn't persist across the dyno sleeping.
@@ -1507,7 +2021,7 @@ class Handler(BaseHTTPRequestHandler):
                         it["reject_reason"] = o["reject_reason"]
                     if o.get("catalyst") is not None:
                         it["catalyst"] = o["catalyst"]
-            s["items"] = grade_suggestions(s.get("items", []), settings)
+            s["items"] = grade_suggestions(s.get("items", []), _equity_settings())
             self._json(s)
         elif route == "market":
             self._json(read_json(MARKET_F, {}))
@@ -1603,6 +2117,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(compute_prediction())
         elif route == "forward":
             self._json(score_forward())
+        elif route == "pnl-calendar":
+            self._json(read_json(PNL_F, {}))
         elif route == "live":
             params = parse_qs(urlparse(self.path).query)
             req = (params.get("symbols", [""])[0] or "").split(",")
@@ -1611,7 +2127,9 @@ class Handler(BaseHTTPRequestHandler):
             quotes = scanner.fetch_quotes(allsyms)
             ms = next((quotes[s.upper()]["market_state"] for _, s in scanner.INDEXES
                        if quotes.get(s.upper())), None)
-            prices = {k: {kk: v[kk] for kk in ("price", "prev_close", "change_pct", "market_state")}
+            prices = {k: {kk: v.get(kk) for kk in ("price", "reg_price", "ext_price",
+                                                   "ext_change_pct", "prev_close", "change_pct",
+                                                   "market_state")}
                       for k, v in quotes.items()}
             self._json({"updated_at": time.strftime("%H:%M:%S"), "market_state": ms,
                         "prices": prices, "posture": live_posture(quotes)})
@@ -1620,8 +2138,9 @@ class Handler(BaseHTTPRequestHandler):
             bars = scanner.get_bars(t)
             if not bars:
                 self._json({"error": "no data"}, 404); return
-            a = scanner.analyze(t, bars, settings)
-            apply_sizing(a, settings)
+            esettings = _equity_settings()
+            a = scanner.analyze(t, bars, esettings)
+            apply_sizing(a, esettings)
             a["sector"] = read_json(SECTORS_F, {}).get(t, "Other")
             a["sector_hot"] = a["sector"] in read_json(SUGGEST_F, {}).get("hot_sectors", [])
             self._json({"analysis": a, "bars": bars})
@@ -1890,13 +2409,9 @@ class Handler(BaseHTTPRequestHandler):
         else:
             t["result_r"] = body.get("result_r")
         if e and sh and x:
-            pnl = (x - e) * sh
-            t["realized_pnl"] = round(pnl, 2)
-            st = read_json(settings_f(), {})
-            if st.get("account_size"):
-                st["account_size"] = round(st["account_size"] + pnl, 2)
-                write_json(settings_f(), st)
-                update_rules_account(st["account_size"])
+            # realized P&L is recorded on the trade; equity (base + realized + open) is computed live
+            # in compute_equity(), so we no longer mutate the typed-in base account_size here.
+            t["realized_pnl"] = round((x - e) * sh, 2)
         if body.get("notes"):
             t["notes"] = body["notes"]
         if body.get("lesson"):
@@ -1981,6 +2496,8 @@ def main():
     UPLOADS.mkdir(parents=True, exist_ok=True)
     regen_watchlist()
     regen_trades_md()
+    run_forward_eod()                                    # catch up if we launched after the close
+    threading.Thread(target=_forward_eod_loop, daemon=True).start()   # auto EOD snapshots (local only)
     url = f"http://localhost:{PORT}"
     try:
         srv = _Server(("127.0.0.1", PORT), Handler)
