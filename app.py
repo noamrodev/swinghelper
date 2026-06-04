@@ -3649,6 +3649,12 @@ class Handler(BaseHTTPRequestHandler):
         if HOSTED and route == "screeners":
             # screeners (incl. the auto-built universe) are shared / owner-managed
             self._json({"ok": False, "error": "screeners are shared in hosted mode"}, 403); return
+        if HOSTED and route in ("refresh-all", "scan", "sector-heat", "news", "universe", "suspicious", "spinning", "groups"):
+            # ⚠️ SHARED market data (regime / scan / sector heat / news / universe / suspicious / spinning / groups) is the
+            # OWNER's WARM SNAPSHOT, shipped with each build. Friends must NOT re-scan and overwrite it — an independent
+            # hosted scan is exactly what made the site diverge from the owner's local. It's read-only on the hosted site;
+            # the owner refreshes what friends see by making a NEW BUILD.
+            self._json({"ok": False, "error": "market data is read-only on the hosted site — it mirrors the owner's build"}, 403); return
         if route == "screeners":
             screeners = read_json(screeners_f(), [])
             raw = body.get("tickers", "")
@@ -3923,12 +3929,19 @@ class _Server(ThreadingHTTPServer):
 
 
 def _shared_refresh_loop():
-    """Hosted only: keep the SHARED market data (regime, scan, sector heat, news) fresh
-    so friends never have to trigger a refresh or wait on a cold scan. Runs once at boot,
-    then roughly once a day."""
+    """Hosted only: the SHARED market data (regime, scan, sector heat, news) ships as a WARM SNAPSHOT with
+    every build, so the site mirrors the owner's last build EXACTLY (deterministic; no cold-scan wait).
+
+    ⚠️ BUG FIX (2026-06-05): this used to run_refresh_all() on boot, which RE-SCANNED the universe + recomputed
+    the regime on the hosted server — OVERWRITING the shipped snapshot with the hosted's own independent scan
+    (different prices/regime/timing). So the site never matched the owner's local and NO rebuild could fix it
+    (the owner saw site=792 matches / A-grades vs local=780 / B-grades). Now we serve the shipped snapshot and
+    only scan if there is genuinely NO snapshot to serve (a cold deploy with no data). The owner updates what
+    friends see by making a NEW BUILD — not by the hosted server re-scanning itself."""
     while True:
         try:
-            run_refresh_all()
+            if not read_json(suggest_f(), {}).get("items"):   # ONLY when there's no shipped snapshot to serve
+                run_refresh_all()
         except Exception:
             pass
         time.sleep(24 * 3600)
