@@ -60,6 +60,7 @@
     <button class="btn" onclick="location.reload()" title="Refresh now">↻</button>
     <a class="btn" href="/?site=1" style="margin-left:auto">Browse setups →</a>
   </div>
+  <div id="alertMsg" class="mut" style="font-size:11px; margin-top:6px; display:none"></div>
 
   <!-- disclaimer -->
   <div class="disc" id="disc" style="margin-top:12px; display:none">
@@ -88,7 +89,7 @@
 <script>
 const AP = {
   data: null, prev: null,
-  sound: true, alertsOn: false, autoRefresh: true,
+  sound: true, alertsOn: false, autoRefresh: true, alertMsg: '',
   flash: {},
   _ac: null, _poll: null, _reload: null,
 
@@ -131,10 +132,24 @@ const AP = {
         g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.25,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
         o.start(t); o.stop(t+0.16); }); }catch(e){}
   },
+  _unlockAudio(){ try{ const C=window.AudioContext||window.webkitAudioContext; if(C){ this._ac=this._ac||new C(); if(this._ac.state==='suspended') this._ac.resume(); } }catch(e){} },
   async enableAlerts(){
-    if (!('Notification' in window)){ this.alertsOn = true; }
-    else { try{ this.alertsOn = (await Notification.requestPermission())==='granted'; }catch(e){ this.alertsOn=false; } }
-    try{ if (this._ac && this._ac.state==='suspended') this._ac.resume(); }catch(e){}
+    // Sound + on-screen flash ALWAYS work while this tab is open. OS/phone notifications additionally need
+    // (a) a secure https page and (b) browser support + permission — iOS Safari web doesn't support them,
+    // and a previous "Block" sticks. Detect the real state and TELL the user instead of failing silently.
+    this._unlockAudio();
+    if (!('Notification' in window)){
+      this.alertsOn=false; this.alertMsg="This browser can't show pop-up notifications (e.g. iPhone Safari) — but the sound + on-screen alert still fire while this tab is open."; this.beep(); this.renderControls(); return;
+    }
+    if (!window.isSecureContext){
+      this.alertsOn=false; this.alertMsg='Notifications need a secure (https) page. Sound + on-screen alerts still work here.'; this.beep(); this.renderControls(); return;
+    }
+    let p = Notification.permission;
+    if (p==='default'){ try{ p = await Notification.requestPermission(); }catch(e){ p='denied'; } }
+    this.alertsOn = (p==='granted');
+    this.alertMsg = p==='granted' ? ''
+      : (p==='denied' ? "Notifications are blocked for this site — turn them on in your browser's site settings (tap the lock/'aA' icon by the address bar). The sound + on-screen alert still work meanwhile."
+                      : 'Notifications not enabled — sound + on-screen alerts still work.');
     this.beep(); this.renderControls();
   },
   toggleSound(){ this.sound=!this.sound; if(this.sound) this.beep(); this.renderControls(); },
@@ -152,6 +167,7 @@ const AP = {
     const sb=document.getElementById('soundBtn'); sb.textContent = this.sound?'🔔 Sound on':'🔕 Sound off';
     const ab=document.getElementById('alertBtn'); ab.textContent = this.alertsOn?'✅ Alerts on':'🔔 Enable alerts'; ab.className='btn'+(this.alertsOn?' on-green':'');
     const rb=document.getElementById('refBtn'); rb.textContent = this.autoRefresh?'🔄 Auto-refresh: ON':'🔄 Auto-refresh: OFF'; rb.className='btn'+(this.autoRefresh?' on-sky':'');
+    const am=document.getElementById('alertMsg'); am.textContent = this.alertMsg||''; am.style.display = this.alertMsg ? 'block' : 'none';
   },
 
   render(){
@@ -220,6 +236,9 @@ const AP = {
     // restore prefs (survive the 5-min reload)
     try{ if (localStorage.getItem('ap_autorefresh')==='0') this.autoRefresh=false; }catch(e){}
     if ('Notification' in window && Notification.permission==='granted') this.alertsOn = true;
+    // proactively explain if pop-up notifications can't work here (sound still does)
+    if (!('Notification' in window)) this.alertMsg = "Pop-up notifications aren’t supported on this browser (e.g. iPhone Safari) — the sound + on-screen alert still fire while this tab is open.";
+    else if ('Notification' in window && Notification.permission==='denied') this.alertMsg = "Notifications are blocked for this site — allow them in your browser’s site settings to get pop-ups. The sound + on-screen alert work regardless.";
     window.addEventListener('pointerdown', ()=>{ try{ if (this._ac && this._ac.state==='suspended') this._ac.resume(); }catch(e){} }, { once:true });
     this.renderControls();
     this.load();

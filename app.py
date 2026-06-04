@@ -2704,21 +2704,26 @@ def _resistance_entry(price, s, entry_buf):
     return entry, stop, f"the {n} overhead EMA{'s' if n > 1 else ''}"
 
 
-def compute_now():
+def compute_now(shared=False):
+    # shared=True → the POSITION-AGNOSTIC view for Auto Pilot: ignore the owner's open positions and
+    # ✗-rejections entirely, so the armed/confirmed list is IDENTICAL for everyone (the owner's local
+    # preview matches what friends see). Without this, the owner's held names were filtered out of the
+    # shared view via skip_buy, so local showed a shorter/different list than the hosted site.
     _mk = getattr(_ctx, "market", "us")    # NOT market() — `market` is shadowed by a local below
-    _c = _NOW_CACHE.get(_mk)
+    _ck = _mk + (":shared" if shared else "")
+    _c = _NOW_CACHE.get(_ck)
     if _c and time.time() - _c["t"] < 12:
         return _c["v"]
     settings = read_json(settings_f(), {})
-    trades = enrich_trades(read_json(trades_f(), []))
+    trades = [] if shared else enrich_trades(read_json(trades_f(), []))
     open_pos = [t for t in trades if t.get("status") == "open"]
     held = {t.get("ticker") for t in open_pos}
     # Only skip a name you currently HOLD (don't re-pitch what you're already in) or one you explicitly
     # PASSED (✗). A name you traded and CLOSED today (e.g. a stopped-out AAOI) stays eligible — if it sets
     # up and breaks again it's a valid re-entry, so it can re-arm and fire again. (Earlier this also excluded
     # closed-today trades; the user wants those back in play.) `taken` isn't skipped here — while the trade
-    # is open it's already in `held`; once closed it should be eligible again.
-    _ov = read_json(status_f(), {})
+    # is open it's already in `held`; once closed it should be eligible again. SHARED view skips nothing.
+    _ov = {} if shared else read_json(status_f(), {})
     skip_buy = set(held) | {tk for tk, o in _ov.items()
                             if isinstance(o, dict) and o.get("status") == "rejected"}
     _today = now_date()    # used by the account/P&L block below (today's realized + open move)
@@ -3009,7 +3014,7 @@ def compute_now():
               "daily_lean": daily.get("lean"), "daily_outlook": daily.get("outlook"),
               "overall_state": overall_state, "positions_count": len(open_pos), "account": account,
               "note": "Synthesized from market regime + Fear&Greed + your positions + graded setups. Not advice — the final call is yours."}
-    _NOW_CACHE[_mk] = {"t": time.time(), "v": result}
+    _NOW_CACHE[_ck] = {"t": time.time(), "v": result}
     return result
 
 
@@ -3033,7 +3038,7 @@ def compute_autopilot():
     owner runs, but with NO positions, journal, account, or sizing. Reads ONLY shared data (suggestions +
     regime + live quotes), so it is safe to serve on the hosted build. v1 delivery = the browser keeps the
     tab open and polls this; the client alerts (sound + Notification) the moment a setup flips to confirmed."""
-    n = compute_now()
+    n = compute_now(shared=True)   # position-agnostic: identical list for the owner's preview AND every friend
     buys = [_autopilot_clean(b) for b in n.get("buys", [])]
     armed = [_autopilot_clean(a) for a in n.get("armed", [])]
     # a verdict with NO personal references (compute_now's verdict mentions "your positions")
