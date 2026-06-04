@@ -60,9 +60,12 @@ MARKETS = {
            "open": 9.9, "close": 17.25, "tz_offset": 3, "trading_days": (6, 0, 1, 2, 3),
            "currency": "ILS", "currency_sym": "₪",
            # NB: TASE quotes prices in AGOROT (1/100 ₪), so min_price + min_dollar_vol_m are in
-           # agorot units (min_dollar_vol_m=50 -> 50M agorot ≈ ₪0.5M/day). marketCap is in ₪.
-           # TASE has ~500 listed equities, ~220 with real liquidity — size is generous, not a true cap.
-           "uni": {"min_price": 50, "min_mktcap_m": 200, "min_dollar_vol_m": 50, "size": 300}},
+           # agorot units (min_dollar_vol_m=500 -> 500M agorot = ₪5M/day turnover). marketCap is in ₪.
+           # LIQUIDITY = ₪ TURNOVER, NOT share count: agorot pricing makes blue-chips (Elbit ~80k
+           # shares but ₪190M/day) look thin by shares, so we gate on price×volume, never on raw
+           # shares. ₪5M/day drops the untradeable long tail (~221 -> ~130 names) while keeping every
+           # liquid leader. TASE has ~500 listed equities; size is generous, not a true cap.
+           "uni": {"min_price": 50, "min_mktcap_m": 200, "min_dollar_vol_m": 500, "size": 300}},
 }
 
 
@@ -73,6 +76,38 @@ def mcfg(market="us"):
 # --------------------------------------------------------------------------- #
 # Data fetching (with on-disk daily cache)
 # --------------------------------------------------------------------------- #
+def _normalize_unit_jumps(bars):
+    """TASE tickers occasionally carry a ~100x unit discontinuity in Yahoo's daily series (an
+    agorot↔shekel switch mid-history) — far larger than any real one-day move, and it corrupts
+    every multi-day return (a sector reading +2000%/mo). Detect a ~100x (or ~1/100) step between
+    ADJACENT closes and rescale the earlier side so the whole series is continuous in the MOST
+    RECENT unit (what live quotes + the chart already use). No-op when there's no such step, so
+    it's safe to run on every series."""
+    n = len(bars)
+    if n < 2:
+        return bars
+    c = [b["close"] for b in bars]
+    f = [1.0] * n
+    for i in range(n - 2, -1, -1):
+        if c[i] <= 0:
+            f[i] = f[i + 1]
+            continue
+        rr = c[i + 1] / c[i]
+        if rr > 30:            # next bar ~100x bigger → earlier bars are in the smaller unit
+            f[i] = f[i + 1] * 100
+        elif rr < 1 / 30:      # next bar ~100x smaller → earlier bars are in the bigger unit
+            f[i] = f[i + 1] / 100
+        else:
+            f[i] = f[i + 1]
+    if all(x == 1.0 for x in f):
+        return bars
+    for i, b in enumerate(bars):
+        if f[i] != 1.0:
+            for k in ("open", "high", "low", "close"):
+                b[k] = round(b[k] * f[i], 2)
+    return bars
+
+
 def _fetch_raw(sym):
     sym = sym.strip().upper()
     for host in ("query1", "query2"):
@@ -98,6 +133,8 @@ def _fetch_raw(sym):
                     "volume": int(v) if v else 0,
                 })
             if len(bars) > 60:
+                if sym.endswith(".TA"):          # TASE: heal any agorot↔shekel unit step
+                    bars = _normalize_unit_jumps(bars)
                 return bars
         except Exception:
             time.sleep(0.4)
@@ -329,14 +366,24 @@ def _swing_highs(h, left=3, right=3, lookback=60):
 # Each returns a self-contained plan dict (entry/stop/zone/sizing-ready) or None
 # when the option doesn't make sense — so we "show two only where it makes sense."
 # --------------------------------------------------------------------------- #
-def _breakout_plan(pivot, close, adr, note="buy-stop above the pivot high"):
-    """Buy-STOP above an upside pivot, 1x-ADR stop. The pivot must sit at/above the
+def _breakout_stop(entry, day_low, adr):
+    """A breakout's stop is TODAY'S (the breakout-day) low — Qulla style: you catch the break and risk
+    to the low of the day, NOT a flat 1x ADR (on a high-ADR name like MXL that's a needlessly wide
+    stop). Falls back to 1x ADR below the trigger only when today's low isn't a usable stop (missing,
+    or not below the entry). Returns (stop, basis)."""
+    if day_low and 0 < day_low < entry:
+        return round(day_low, 2), "today's low (breakout-day low)"
+    return round(entry * (1 - adr / 100), 2), "1x ADR below the trigger"
+
+
+def _breakout_plan(pivot, close, adr, day_low=None, note="buy-stop above the pivot high"):
+    """Buy-STOP above an upside pivot, stop at today's low. The pivot must sit at/above the
     current price (a genuine upside trigger), else there's nothing to break out over."""
     if not pivot or pivot <= 0 or pivot < close:
         return None
     entry = round(pivot, 2)
     e_adr = entry * adr / 100 or 0.01
-    stop = round(entry * (1 - adr / 100), 2)
+    stop, basis = _breakout_stop(entry, day_low, adr)
     risk_ps = round(entry - stop, 2)
     if risk_ps <= 0:
         return None
@@ -345,7 +392,7 @@ def _breakout_plan(pivot, close, adr, note="buy-stop above the pivot high"):
     buf = 0.3 * e_adr
     return {
         "kind": "breakout", "entry_type": "stop", "entry": entry, "stop": stop,
-        "stop_basis": "1x ADR below the trigger", "inval": stop,
+        "stop_basis": basis, "inval": stop,
         "risk_ps": risk_ps, "target": round(entry + 2 * risk_ps, 2),
         "zone_bottom": zone_bottom, "zone_top": zone_top,
         "buyable_now": (zone_bottom - buf) <= close <= (zone_top + buf),
@@ -506,6 +553,7 @@ def analyze(sym, bars, settings=None):
     s150 = _sma(c, 150) if len(c) >= 150 else None
     s200 = _sma(c, 200) if len(c) >= 200 else None
     e10, e20, e50 = _ema(c, 10), _ema(c, 20), _ema(c, 50)
+    e9, e21 = _ema(c, 9), _ema(c, 21)        # the trader reads 9/21/50 — used for the break-above-EMA entry
     above = int(close > s10) + int(close > s20) + int(close > s50)
     ext10 = (close / e10 - 1) * 100
     p1m = (close / c[-21] - 1) * 100 if len(c) >= 21 else 0
@@ -790,11 +838,10 @@ def analyze(sym, bars, settings=None):
         inval = round(recent_low, 2)
     else:
         entry = round(base_h, 2)                           # buy-stop above the consolidation high
-        stop = round(entry * (1 - adr / 100), 2)
+        stop, stop_basis = _breakout_stop(entry, l[-1], adr)   # risk to today's (breakout-day) low
         inval = round(base_l, 2)
         entry_type = "stop"
         entry_note = "buy-stop above the consolidation high"
-        stop_basis = "1x ADR below the trigger"
     risk_ps = round(entry - stop, 2)
     target = round(entry + 2 * risk_ps, 2)
     # entry-location quality (0-100): penalize buying stretched far above the 10-EMA, far above the
@@ -863,7 +910,7 @@ def analyze(sym, bars, settings=None):
         # BREAKOUT above the prior-day high — buy the strength instead of waiting for the dip. Shown always
         # (open or closed); on a patient name whose deep dip ran away, this is the realistic plan. (Replaces
         # the old intraday "confirm/reclaim-the-EMA" alt, which conflated an intraday signal with a setup.)
-        alt = _breakout_plan(max(h[-2:]), close, adr, "buy-stop above the prior-day high")
+        alt = _breakout_plan(max(h[-2:]), close, adr, day_low=l[-1], note="buy-stop above the prior-day high")
     entries = [primary]
     if alt and abs(alt["entry"] - primary["entry"]) >= 0.4 * (entry * adr / 100 or 0.01):
         if distribution_today or extended or (parabolic and not worth_waiting):
@@ -946,6 +993,7 @@ def analyze(sym, bars, settings=None):
         "tight_x": round(tight / adr_safe, 1), "dist_hi": round(dist_hi, 1),
         "p1m": round(p1m, 1), "p3m": round(p3m, 1), "p6m": round(p6m, 1), "volc": round(volc, 2),
         "dollar_vol": dollar_vol, "liq_score": liq_score,
+        "avg_vol": round(st.mean(v[-20:])) if len(v) >= 20 else (round(st.mean(v)) if v else 0),
         "pull_from_52w": pull_from_52w, "above_50": above_50, "above_200": above_200,
         "ma_stack": ma_stack, "screen_1m": screen_1m, "screen_3m": screen_3m, "screen_6m": screen_6m,
         "tt_pass_price": tt_pass, "tt_count_price": tt_count_price, "tt_flags": tt_flags,
@@ -967,6 +1015,7 @@ def analyze(sym, bars, settings=None):
         "prev_high": round(h[-2], 2) if len(h) >= 2 else round(h[-1], 2),
         # current EMAs (the 50 is the deep-pullback line — a reclaim of it is itself a confirmation)
         "ema10": round(e10, 2), "ema20": round(e20, 2), "ema50": round(e50, 2),
+        "ema9": round(e9, 2), "ema21": round(e21, 2),       # 9/21 to match the trader's chart (entry logic)
         "recent_gap": recent_gap, "news_move": news_move,
         "vol_signal": vol_signal, "vol_note": vol_note,
         "distribution_today": distribution_today,
@@ -1030,6 +1079,108 @@ def _fetch_intraday(sym, rng="2d"):
         except Exception:
             time.sleep(0.3)
     return None, None
+
+
+_INTRADAY5 = {}     # sym -> {"t": cached_epoch, "bars": [today's regular-session 5-min OHLCV]}
+
+
+def get_5m_today(sym, max_age=120):
+    """Today's REGULAR-session (09:30–16:00 ET) 5-minute OHLCV bars, cached ~2 min in memory. Powers the
+    live confirmation engine's opening-range-high detection. Light: called only for the armed shortlist.
+    Returns [{et,'HH:MM', hour, open, high, low, close, volume}] (oldest→newest) or None."""
+    sym = sym.strip().upper()
+    now = time.time()
+    c = _INTRADAY5.get(sym)
+    if c and now - c["t"] < max_age:
+        return c["bars"]
+    for host in ("query1", "query2"):
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{sym}?interval=5m&range=1d")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                d = json.load(r)
+            res = d["chart"]["result"][0]
+            ts = res["timestamp"]
+            q = res["indicators"]["quote"][0]
+            gmt = res["meta"].get("gmtoffset", -14400)
+            vol = q.get("volume") or [0] * len(ts)
+            bars = []
+            for i in range(len(ts)):
+                o, h, l, cl = q["open"][i], q["high"][i], q["low"][i], q["close"][i]
+                if None in (h, l, cl):
+                    continue
+                secs = (ts[i] + gmt) % 86400
+                hour = secs / 3600
+                if not (9.5 <= hour < 16.0):                 # regular cash session only
+                    continue
+                bars.append({"et": f"{int(secs // 3600):02d}:{int((secs % 3600) // 60):02d}",
+                             "hour": round(hour, 3), "open": round(o or cl, 2), "high": round(h, 2),
+                             "low": round(l, 2), "close": round(cl, 2), "volume": int(vol[i] or 0)})
+            if bars:
+                _INTRADAY5[sym] = {"t": now, "bars": bars}
+                return bars
+        except Exception:
+            time.sleep(0.2)
+    return c["bars"] if c else None
+
+
+def orh_confirm(bars5, buf_pct=0.0, adr_pct=0.0):
+    """The verified Qulla/Luk intraday trigger: given today's regular-session 5-min bars, the setup is
+    CONFIRMED when price TAKES OUT the opening-range high (the high of the first 5-min candle). Stop = the
+    low of day (running min). `buf_pct` requires price to push a small % ABOVE the ORH (not merely tag it),
+    so a wick that pokes the level and reverses ('hit in the nose') doesn't trigger a false confirm.
+    Returns {orh, level, lod, confirmed, extended, trig_et, bars} or None (too few bars yet)."""
+    if not bars5:
+        return None
+    orh = bars5[0]["high"]                                    # opening-range high (first 5-min candle)
+    lod = min(b["low"] for b in bars5)                        # low of day = the structural stop
+    level = round(orh * (1 + (buf_pct or 0) / 100), 2)        # must clear the ORH by the buffer to count
+    # A 5-min candle must CLOSE above the level — not just wick through it. A candle whose HIGH pierced the
+    # resistance but CLOSED back below it got 'hit in the nose' (rejected) and does NOT count (user's rule).
+    # Exclude the LAST bar — Yahoo's last 5-min bar is the still-FORMING candle (its close = the live price),
+    # so we only count COMPLETED candles that closed above. The forming candle is used for 'holding' below.
+    closed = bars5[1:-1] if len(bars5) > 2 else []
+    broke = next((b["et"] for b in closed if b["close"] >= level), None)
+    last = bars5[-1]["close"]
+    # DON'T CHASE: if price has already run more than ~0.7× ADR ABOVE the ORH, the entry is stale — buying
+    # here means a day-low stop far wider than 1× ADR (the VIAV case: ORH $49.86, price $51.4, already +3%).
+    band = orh * (1 + 0.7 * (adr_pct or 0) / 100) if adr_pct else None
+    extended = bool(band and last > band)
+    holding = (last >= orh) and not extended                 # current price still above the ORH, not run away
+    return {"orh": orh, "level": level, "lod": lod, "extended": extended,
+            "confirmed": (broke is not None) and holding,
+            "broke": broke is not None, "holding": holding, "trig_et": broke, "bars": len(bars5)}
+
+
+def breakout_confirm(bars5, level, adr_pct=0.0):
+    """Confirmed when intraday price BREAKS ABOVE `level` (clearing overhead resistance — e.g. the EMA
+    cluster) and is HOLDING: a 5-min high took out the level and the latest close is back above it but hasn't
+    run away past ~0.7× ADR (don't chase). A poke that fades back below = not confirmed (re-arms). Returns
+    {level, lod, broke, holding, extended, confirmed, last, bars} or None."""
+    if not bars5 or not level:
+        return None
+    lod = min(b["low"] for b in bars5)
+    # a COMPLETED 5-min candle must CLOSE above the resistance (not just wick through). Exclude the last bar
+    # (the still-forming candle) so it can't confirm mid-candle before the real close.
+    closed = bars5[:-1] if len(bars5) > 1 else []
+    broke = any(b["close"] >= level for b in closed)
+    last = bars5[-1]["close"]                                 # forming candle = current price (for 'holding')
+    band = level * (1 + 0.7 * (adr_pct or 0) / 100)           # past this it already ran — don't chase
+    holding = level <= last <= max(band, level * 1.002)
+    return {"level": round(level, 2), "lod": lod, "broke": broke, "holding": holding,
+            "extended": last > band, "confirmed": broke and holding, "last": round(last, 2), "bars": len(bars5)}
+
+
+def ep_volume_ok(bars5, avg_daily_vol):
+    """EP volume gate (verified: volume is 'the #1 thing' for an episodic pivot). Confirmed when today's
+    cumulative volume is already running at a big fraction of the stock's avg DAILY volume — i.e. massive
+    open participation. Qualitative by design (the research REFUTED any hardcoded multiple). Returns
+    (ok: bool, ratio: float|None). If we lack avg volume, don't block (ok=True, ratio=None)."""
+    if not bars5 or not avg_daily_vol:
+        return True, None
+    cum = sum(b.get("volume", 0) for b in bars5)
+    ratio = cum / avg_daily_vol if avg_daily_vol else None
+    return (ratio is not None and ratio >= 0.7), ratio       # ≥0.7× ADV already traded = massive for an EP
 
 
 def eod_signal(sym):
@@ -1387,8 +1538,19 @@ def _regime_one(name, bars):
     gain_20 = (close / e20 - 1) * 100                       # shorter-term extension gauge
     atr_mult_20 = round(gain_20 / adr, 1)
     very_stretched = atr_mult_50 >= 4.5                     # far above the 50 -> chase risk
+    # Early turn / "bottoming": still BELOW the 50-MA (not a confirmed bull move yet), but the first
+    # leg up is CONFIRMED — price reclaimed both short EMAs with the 10 stacked over the 20, AND a
+    # higher low is in place (structure broke the downtrend). We do NOT anticipate bottoms: a bear
+    # bounce that merely pokes the 10-EMA without a higher low stays "correction". Graded 48 — just
+    # UNDER the weak-tape line (REGIME_WEAK 50) on purpose: it lifts the best patient leaders from C
+    # toward B as the turn starts, but A/A+ stay locked until price reclaims the 50 into "Recovery"
+    # (80). Don't be the first one in — warm up on the confirmed turn, press once it's above the 50.
+    turning = (len(l) >= 20 and close > e10 > e20 and close > e20
+               and min(l[-10:]) > min(l[-20:-10]))
     # base state from trend position
-    if close < s50 and off_high >= 8:
+    if close < s50 and turning:
+        state, posture = "Bottoming / turning up", 48
+    elif close < s50 and off_high >= 8:
         state, posture = "Deep correction", 15
     elif close < s50:
         state, posture = "Mid-correction", 25
@@ -1416,8 +1578,93 @@ def _regime_one(name, bars):
             "stretched_50": very_stretched}
 
 
-def market_regime(market="us"):
-    """Classify the market's benchmark indexes and return a blended posture (0-100)."""
+def _rsi(closes, n=14):
+    """Wilder-simple RSI on the close series (0-100). None if too little data."""
+    if len(closes) < n + 1:
+        return None
+    gains = losses = 0.0
+    for i in range(-n, 0):
+        ch = closes[i] - closes[i - 1]
+        gains += max(ch, 0.0)
+        losses += max(-ch, 0.0)
+    if losses == 0:
+        return 100.0
+    rs = (gains / n) / (losses / n)
+    return 100 - 100 / (1 + rs)
+
+
+def fear_greed(market="us", tickers=None):
+    """A 0-100 market-sentiment gauge (0 = extreme fear, 100 = extreme greed), blended from up to
+    five components built ENTIRELY from data we already fetch — CNN-Fear&Greed style:
+      • extension — how far the indexes sit above their 50-MA in ADR units (stretched = greed)
+      • rsi       — average index RSI-14 (overbought = greed)
+      • breadth   — % of the universe above its own 50-MA (participation)
+      • highs_lows— share of the universe near its 52-wk high vs near its low
+      • vix       — inverse 1-yr percentile of VIX (low vol / complacency = greed; US only)
+    Each component is 0-100; the score is their mean. Returns None if nothing is computable.
+    Used to NUDGE the regime posture (greed/froth trims it — see market_regime)."""
+    comps = {}
+    idxbars = [b for _, s in mcfg(market)["indexes"] for b in [get_bars(s)] if b and len(b) >= 60]
+    if idxbars:
+        exts, rsis = [], []
+        for b in idxbars:
+            c = [x["close"] for x in b]
+            try:
+                exts.append(_regime_one("idx", b)["atr_mult_50"])
+            except Exception:
+                pass
+            r = _rsi(c)
+            if r is not None:
+                rsis.append(r)
+        if exts:
+            comps["extension"] = max(0, min(100, 50 + st.mean(exts) * 5))   # 0 ADR=50, +10 ADR=100
+        if rsis:
+            comps["rsi"] = max(0, min(100, st.mean(rsis)))
+    if tickers:
+        above = tot = hi = lo = 0
+        for t in tickers:
+            b = get_bars(t)
+            if not b or len(b) < 60:
+                continue
+            c = [x["close"] for x in b]
+            tot += 1
+            if c[-1] > _sma(c, 50):
+                above += 1
+            if c[-1] >= max(x["high"] for x in b) * 0.98:
+                hi += 1
+            if c[-1] <= min(x["low"] for x in b) * 1.02:
+                lo += 1
+        if tot:
+            comps["breadth"] = round(100 * above / tot)
+        if hi + lo:
+            comps["highs_lows"] = round(100 * hi / (hi + lo))
+    if market == "us":                                                      # ^VIX is a US gauge only
+        vix = get_bars("^VIX")
+        if vix and len(vix) >= 60:
+            vc = [b["close"] for b in vix]
+            pct = 100 * sum(1 for x in vc if x <= vc[-1]) / len(vc)
+            comps["vix"] = round(100 - pct)                                 # low VIX percentile = greed
+    if not comps:
+        return None
+    score = round(st.mean(list(comps.values())))
+    label = ("Extreme Fear" if score < 20 else "Fear" if score < 40 else
+             "Neutral" if score <= 55 else "Greed" if score <= 75 else "Extreme Greed")
+    return {"score": score, "label": label, "components": {k: round(v) for k, v in comps.items()}}
+
+
+def _posture_label(p):
+    return ("Risk-on - uptrend" if p >= 80 else "Constructive" if p >= 60 else
+            "Mixed / pullback" if p >= 45 else "Caution - correction" if p >= 25 else
+            "Risk-off - deep correction")
+
+
+def market_regime(market="us", tickers=None):
+    """Classify the benchmark indexes -> blended posture (0-100), then NUDGE it with the Fear &
+    Greed gauge: a frothy/greedy tape (indexes stretched above the 50, overbought RSI, low VIX,
+    narrowing breadth) TRIMS the posture (correction risk) so grades cool when the market is
+    extended. Greed-only by design — fear never *adds* posture (the price-based states already
+    handle weakness; a fear boost would reward buying a falling knife). `tickers` = the universe,
+    for the breadth + highs/lows components (omitted if not supplied)."""
     idx = []
     for name, sym in mcfg(market)["indexes"]:
         bars = get_bars(sym)
@@ -1428,19 +1675,16 @@ def market_regime(market="us"):
                 pass
     if not idx:
         return None
-    avg = st.mean([i["posture"] for i in idx])
-    if avg >= 80:
-        label = "Risk-on - uptrend"
-    elif avg >= 60:
-        label = "Constructive"
-    elif avg >= 45:
-        label = "Mixed / pullback"
-    elif avg >= 25:
-        label = "Caution - correction"
-    else:
-        label = "Risk-off - deep correction"
-    return {"computed_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            "posture": round(avg), "label": label, "indexes": idx}
+    posture_raw = round(st.mean([i["posture"] for i in idx]))
+    fg = fear_greed(market, tickers)
+    nudge = max(-12, -round(max(0, fg["score"] - 55) * 0.35)) if fg else 0
+    posture = max(0, min(100, posture_raw + nudge))
+    out = {"computed_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+           "posture": posture, "posture_raw": posture_raw,
+           "label": _posture_label(posture), "indexes": idx}
+    if fg:
+        out["fear_greed"] = {**fg, "posture_nudge": nudge}
+    return out
 
 
 def _benchmark_returns(market="us"):

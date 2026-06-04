@@ -24,6 +24,7 @@ function dataCenter() {
   return {
     nav: [
       { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+      { id: 'autopilot', label: 'Auto Pilot', icon: '🛩️' },
       { id: 'suggestions', label: 'Suggestions', icon: '🎯' },
       { id: 'screeners', label: 'Screeners', icon: '🗂️' },
       { id: 'watchlist', label: 'Watchlist', icon: '👁️' },
@@ -32,13 +33,14 @@ function dataCenter() {
       { id: 'stats', label: 'Stats', icon: '📈' },
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
-    view: 'dashboard',
+    view: 'dashboard',           // the website is for browsing; the tray "live coach" makes the calls
     market: currentMarket(),     // 'us' (default) or 'il' (Tel Aviv) — switches all data
     backupMsg: '',
     mobileNav: false,
     hosted: false,
-    // pages hidden on the hosted free service (no persistent storage there, so they can't save)
-    hostedHidden: ['journal', 'watchlist', 'strategy'],
+    // pages hidden on the hosted free service for friends: journal/watchlist can't save (no storage), and
+    // stats/strategy are the owner's tools — friends only need Auto Pilot + browsing. (Auto Pilot is the headline.)
+    hostedHidden: ['journal', 'watchlist', 'stats', 'strategy'],
     settings: { account_size: null, risk_pct: 1 },
     screeners: [],
     suggestions: { items: [] },
@@ -63,13 +65,26 @@ function dataCenter() {
     refreshState: { running: false, stage: '', done: 0, total: 4 },
     gameplan: null,
     gameplanOpen: true,
+    now: null,                // /api/now — confirmation engine output (confirmed buys + armed setups)
+    // Auto Pilot is a STANDALONE page (web/autopilot.html @ /autopilot.html) — the nav item + the hosted
+    // landing redirect there, so its 5-min auto-refresh stays put (it is NOT an SPA view).
+    tgMsg: '',                // telegram test-send status
+    expandedPlan: {},         // per-ticker toggle for the 📋 setup plan in Live entries
+    nowByTicker() {           // ticker -> {state:'confirmed'|'armed', rec} for badging suggestion cards
+      const m = {};
+      (this.now && this.now.buys || []).forEach(b => m[b.ticker] = { state: 'confirmed', rec: b });
+      (this.now && this.now.armed || []).forEach(a => { if (!m[a.ticker]) m[a.ticker] = { state: 'armed', rec: a }; });
+      return m;
+    },
     expandedPos: {},          // per-position "show more" toggle in the gameplan (keyed by trade id)
     forward: null,
     openForwardDay: null,
+    fwdMonth: null,             // "YYYY-MM" shown in the forward calendar
+    fwdDayReport: null,         // the loaded per-day report (from /forward/day)
     pnlCal: {},
     // coach thresholds — fetched from /coach-config (single-sourced in rubric.py). Defaults match
     // the backend so the live coach still works if the fetch fails.
-    coachCfg: { parabolic_adr: 4.0, raise_r: 1.0, earn_soon_days: 7 },
+    coachCfg: { parabolic_adr: 4.0, raise_r: 1.0, earn_soon_days: 7, guard_min_lock: 40, guard_buffer_adr: 1.5, guard_step_dollars: 25 },
     pnlMonthOffset: 0,
     live: { prices: {}, market_state: null, updated_at: null, posture: null },
     liveOn: true,
@@ -121,6 +136,7 @@ function dataCenter() {
     buyableFilter: false,
     showFilters: false,
     showAllSug: false,
+    showPassed: false,        // reveal passed (✗-rejected) suggestions so a pass can be undone
     calcModal: { open: false, ticker: '' },
     chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null, entryIdx: 0 },
     tradeModal: { open: false, mode: 'take', ticker: '' },
@@ -180,6 +196,10 @@ function dataCenter() {
       this.applyScale();
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
       try { this.hosted = !!(await this.api('/env')).hosted; } catch (e) {}
+      // Auto Pilot is a STANDALONE page (/autopilot.html) so its 5-min auto-refresh stays put (a full
+      // SPA reload would drop back to the dashboard). On hosted, friends LAND there; the page's
+      // "Browse setups →" link comes back to the SPA with ?site=1 (loop-safe).
+      if (this.hosted && !location.search.includes('site')) { location.replace('/autopilot.html'); return; }
       try { this.coachCfg = await this.api('/coach-config'); } catch (e) {}
       if (this.hosted) { this.market = 'us'; localStorage.setItem('dc_market', 'us'); }   // IL is local-only; site stays US
       if (this.hosted && this.hostedHidden.includes(this.view)) this.view = 'dashboard';
@@ -236,6 +256,17 @@ function dataCenter() {
         this.live = { prices: r.prices || {}, market_state: r.market_state, updated_at: r.updated_at, posture: r.posture };
         this._liveAt = Date.now(); this.liveAgeSec = 0;
         this.mergeLive();
+        // CROSS-SURFACE SYNC: the live tick only merges PRICES into the cached trades/suggestions. Re-fetch
+        // them so a change made in the Live Coach app (✓/✗) or via the Telegram bot (stop move, close, take,
+        // pass) shows up here without a manual reload. Trades are light (re-fetch ~30s); the suggestions list
+        // re-grades, so refresh it gentler (~90s) and only where it's shown.
+        if (!this._lastTradeSync || Date.now() - this._lastTradeSync > 30000) {
+          this._lastTradeSync = Date.now(); this.loadTrades();
+        }
+        if ((this.view === 'dashboard' || this.view === 'suggestions')
+            && (!this._lastSugSync || Date.now() - this._lastSugSync > 90000)) {
+          this._lastSugSync = Date.now(); this.loadSuggestions();
+        }
         // pre/after-hours: keep the gameplan (and prediction, if open) in sync with the LIVE regime
         // — they recompute server-side off the extended-hours index prices (~every 3 min).
         if (this.live.posture && this.live.posture.extended
@@ -243,6 +274,12 @@ function dataCenter() {
           this._lastGpLive = Date.now();
           this.loadGameplan();
           if (this.view === 'news' && this.newsTab === 'prediction') this.loadPrediction();
+        }
+        // live entries (armed/confirmed) — refresh on the dashboard during market hours so a setup that
+        // confirms its trigger surfaces within ~45s. Light: the engine live-quotes only the ~12 shortlist.
+        if ((this.view === 'dashboard' || this.view === 'suggestions') && this.marketOpen
+            && (!this._lastNow || Date.now() - this._lastNow > 40000)) {
+          this._lastNow = Date.now(); this.loadNow();
         }
         // live Sector Heat — only while viewing that tab (it fetches all member quotes), throttled ~60s
         if (this.view === 'screeners' && this.screenTab === 'heat' && this.marketOpen
@@ -277,6 +314,20 @@ function dataCenter() {
     // Recompute the position coach from the LIVE price so the action never contradicts the live
     // P&L. Mirrors the backend ladder, with one intraday nuance: dipping under the 9-EMA mid-session
     // is a "watch" (the exit rule is a daily CLOSE under it), not a hard EXIT.
+    _guardReady(g, price, entry, stop, shares, adr) {
+      // The server found a structural guard stop (swing low / reclaimed level / EMA). Re-validate it
+      // against the LIVE price: it must still bank >= guard_min_lock, sit >= guard_buffer_adr ADR below
+      // the live price (room), and bank >= guard_step_dollars MORE than the current stop already locks.
+      // Otherwise hide it — never choke the position. Structure level is held from the server (no JS pivots).
+      if (!g || !entry || !shares || price == null) return false;
+      const adrPx = (adr ? price * adr / 100 : 0) || 0.01;
+      const lock = (g.guard_stop - entry) * shares;
+      const room = price - g.guard_stop;
+      const curLock = Math.max(0, (stop && stop > entry ? (stop - entry) * shares : 0));
+      return lock >= this.coachCfg.guard_min_lock
+          && room >= this.coachCfg.guard_buffer_adr * adrPx
+          && (lock - curLock) >= this.coachCfg.guard_step_dollars;
+    },
     liveCoach(t, price) {
       const e = t.entry || t.planned_entry, stop = t.stop;
       if (!e || !stop || price == null) return null;
@@ -289,14 +340,26 @@ function dataCenter() {
       const c = t.coach || {};
       const e9 = c.e9 != null ? c.e9 : null, e50 = c.e50 != null ? c.e50 : null;
       const patient = !!c.patient, armed = c.armed !== false;  // armed = has CLOSED above its line since entry
-      const trail = patient ? e50 : e9, trailLabel = patient ? '50 EMA' : '9 EMA';
+      const trail = c.trail != null ? c.trail : (patient ? e50 : e9);
+      const trailLabel = c.trail_n != null ? c.trail_n + ' EMA' : (patient ? '50 EMA' : '9 EMA');
       const adr = (c.ext9_adr ? Math.abs(c.ext9 / c.ext9_adr) : null);
       const ext9 = e9 ? (price / e9 - 1) * 100 : null;
       const ext9_adr = (ext9 != null && adr) ? ext9 / adr : null;
       const edays = c.earnings_days, earnSoon = edays != null && edays >= 0 && edays <= this.coachCfg.earn_soon_days;
       const rtxt = r != null ? ((r >= 0 ? '+' : '') + r.toFixed(1) + 'R') : '';
       const rsuffix = rtxt ? ' (' + rtxt + ')' : '';
+      // A stop/exit can only ACT during the REGULAR session — a broker stop won't fill pre/after-hours and
+      // exits are decided on the daily CLOSE. So an extended-hours dip below the stop/trail is NOT an exit
+      // (the MXL after-hours auto-close bug). Upside (raise/guard) still works live off the extended price.
+      const reg = this.live.market_state === 'REGULAR';
+      const extLabel = ['PRE', 'PREPRE'].includes(this.live.market_state) ? 'pre-market'
+        : ['POST', 'POSTPOST'].includes(this.live.market_state) ? 'after-hours' : 'extended hours';
       let action, tone, reason;
+      if (!reg && (price <= stop || (trail != null && price < trail))) {
+        return { action: 'WATCH', tone: 'warn',
+          reason: `under your stop/line in ${extLabel} only — your stop is regular-hours, so you're NOT out; exits confirm at the close.`,
+          r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
+      }
       if (price <= stop) {
         if (bePlus) { action = 'EXIT'; tone = 'warn'; reason = `stop $${stop} is your locked-in (breakeven+) exit${rtxt ? ' — ' + rtxt : ''}`; }
         else { action = 'EXIT'; tone = 'danger'; reason = `price $${price} is at/below your stop $${stop} — should be out`; }
@@ -308,7 +371,30 @@ function dataCenter() {
       // not on ordinary strength. ≥4× ADR above the 9 EMA. (ext9_adr is live → premarket-aware.)
       else if (r != null && r >= this.coachCfg.raise_r && ext9_adr != null && ext9_adr >= this.coachCfg.parabolic_adr) { action = 'TRIM'; tone = 'warn'; reason = `parabolic — ${ext9_adr.toFixed(1)}× ADR over the 9-EMA (far above 9/21/50)${rsuffix} — trim into the spike, trail the rest`; }
       else if (earnSoon) { action = 'WATCH'; tone = 'warn'; reason = `earnings in ${edays}d — binary event; hold through or reduce, your call${rsuffix}`; }
-      else if (r != null && r >= this.coachCfg.raise_r && stop < e) { action = 'RAISE STOP'; tone = 'good'; reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`; }
+      else if (this._guardReady(c.guard, price, e, stop, t.shares, c.adr || adr)) {
+        // Bank real money at a structural level with room below price — re-checked against the LIVE
+        // price (premarket-aware): only shows while the guard still keeps its breathing room.
+        const g = c.guard, adrPx = ((c.adr || adr) ? price * (c.adr || adr) / 100 : 0) || 0.01;
+        const lock = Math.round((g.guard_stop - e) * t.shares);
+        const roomAdr = (price - g.guard_stop) / adrPx, roomPct = (price - g.guard_stop) / price * 100;
+        const verb = stop >= e ? 'raise' : 'lock it in: raise';
+        action = 'GUARD STOP'; tone = 'good';
+        reason = `${rtxt} — ${verb} your stop to $${g.guard_stop} (just under the ${g.structure_label} $${g.structure}). Banks $${lock} if it pulls back, ${roomAdr.toFixed(1)}× ADR / ${roomPct.toFixed(1)}% under $${price} so noise won't hit it — exit on a daily close below it.`;
+      }
+      else if (r != null && r >= this.coachCfg.raise_r && stop < e) {
+        // Trail the stop just UNDER the EMA (the real exit line), not a fixed breakeven — the RGTI
+        // lesson: snapping to breakeven right where the 9 EMA sits gets wicked on noise. Give it room
+        // to the line and exit on a CLOSE under it. Falls back to breakeven if the EMA is below the stop.
+        action = 'RAISE STOP'; tone = 'good';
+        const adrPx = (adr ? price * adr / 100 : 0) || 0.01;
+        const emaStop = trail != null ? +(trail - 0.10 * adrPx).toFixed(2) : null;
+        if (emaStop != null && emaStop > stop) {
+          const qual = emaStop >= e ? 'locks in above breakeven' : 'risk a little to the line, not a tight breakeven that gets wicked';
+          reason = `${rtxt} — trail the stop to just under the ${trailLabel} ($${emaStop}) — ${qual}; exit on a daily close under the line`;
+        } else {
+          reason = `${rtxt} — raise the stop to breakeven ($${e}) so it can't turn red`;
+        }
+      }
       else { action = 'HOLD'; tone = 'good'; reason = `trend intact above the ${trailLabel}${rsuffix} — hold; exit on a daily close under it`; }
       return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
     },
@@ -350,6 +436,7 @@ function dataCenter() {
         this.marketRegime.posture = this.live.posture.posture;
         this.marketRegime.label = this.live.posture.label;
         if (this.live.posture.indexes) this.marketRegime.indexes = this.live.posture.indexes;
+        if (this.live.posture.fear_greed) this.marketRegime.fear_greed = this.live.posture.fear_greed;
       }
       // live re-rank: within each GRADE band, names that have pulled INTO their buy zone float up
       // (live actionability). Grade still dominates — a buyable C never outranks a B (sugRank).
@@ -431,12 +518,12 @@ function dataCenter() {
     async reloadAll() {
       // re-fetch everything under the new X-Market so the whole dashboard, account,
       // positions, suggestions and forward test swap to the selected market.
-      this.gameplan = null; this.forward = null; this.openForwardDay = null; this.pnlCal = {};
+      this.gameplan = null; this.now = null; this.forward = null; this.openForwardDay = null; this.fwdMonth = null; this.fwdDayReport = null; this.pnlCal = {};
       this.live = { prices: {}, market_state: null, updated_at: null, posture: null };
       await Promise.all([this.loadSettings(), this.loadScreeners(), this.loadSuggestions(),
         this.loadTrades(), this.loadWatchlist(), this.loadStats(),
         this.loadSectorHeat(), this.loadNews(), this.loadMarket(), this.loadUniverse(), this.loadThemes()]);
-      this.loadGameplan();
+      this.loadGameplan(); this.loadNow();
       this.loadForward(); this.loadPnlCal();
       const def = this.screeners.find(s => s.is_default) || this.screeners[0];
       this.scanScreener = this.suggestions.screener_id || (def && def.id) || '';
@@ -459,7 +546,89 @@ function dataCenter() {
     async loadStats() { this.stats = await this.api('/stats'); },
     async loadMarket() { this.marketRegime = await this.api('/market'); },
     async loadGameplan() { try { this.gameplan = await this.api('/gameplan'); } catch (e) {} },
-    async loadForward() { try { this.forward = await this.api('/forward'); if (this.forward && this.forward.by_day && this.forward.by_day.length && !this.openForwardDay) this.openForwardDay = this.forward.by_day[0].date; } catch (e) {} },
+    async loadNow() { try { this.now = await this.api('/now'); } catch (e) {} },
+    // which entry is winning live (higher avg R) — confirmation vs touch
+    bestEntry() {
+      const ec = this.forward && this.forward.entry_compare; if (!ec) return null;
+      const c = ec.confirmation && ec.confirmation.avg_r, t = ec.touch && ec.touch.avg_r;
+      if (c == null && t == null) return null;
+      if (c == null) return 'touch'; if (t == null) return 'confirmation';
+      return c >= t ? 'confirmation' : 'touch';
+    },
+    // how far an armed setup is from its trigger (breakout: % price must rise to break the prior-day high)
+    fwdArmedAway(a) {
+      if (!a || !a.trigger || !a.live_price) return null;
+      return Math.round((a.trigger / a.live_price - 1) * 1000) / 10;   // % to go (≤0 ⇒ already through)
+    },
+    // the per-setup PLAN (the 📋) rendered as the exact if-this-then-that the coach will execute
+    planHtml(p) {
+      const pl = (p && p.plan) || {};
+      const esc = s => (s == null ? '' : String(s)).replace(/[<>]/g, c => ({ '<': '&lt;', '>': '&gt;' }[c]));
+      const row = (label, val, color) => val
+        ? `<div class="flex gap-2 text-xs py-0.5"><span class="w-20 shrink-0 text-slate-500">${label}</span><span class="${color || 'text-slate-200'}">${esc(val)}</span></div>` : '';
+      return row('1 · Watch', pl.watch)
+        + row('2 · BUY', pl.trigger, 'text-up font-semibold')
+        + row('Stop', pl.stop, 'text-down')
+        + row('Size', pl.size)
+        + row('Target', pl.target)
+        + row('Invalidate', pl.invalidate, 'text-amber-300/90')
+        + row('Why', pl.why, 'text-slate-400');
+    },
+    async loadForward() {
+      try {
+        this.forward = await this.api('/forward');
+        const days = this.forward && this.forward.by_day || [];
+        if (days.length) {
+          if (!this.fwdMonth) this.fwdMonth = days[0].date.slice(0, 7);   // latest month with data
+          if (!this.openForwardDay) this.loadForwardDay(days[0].date);     // open the latest day
+        }
+      } catch (e) {}
+    },
+    async loadForwardDay(date) {
+      if (!date) return;
+      this.openForwardDay = date;
+      this.fwdDayReport = null;
+      try { this.fwdDayReport = await this.api('/forward/day?date=' + date); } catch (e) {}
+    },
+    // forward-test calendar helpers ------------------------------------------------
+    fwdByDate() { const m = {}; (this.forward && this.forward.by_day || []).forEach(d => m[d.date] = d); return m; },
+    fwdMonths() { const s = new Set((this.forward && this.forward.by_day || []).map(d => d.date.slice(0, 7))); return [...s].sort(); },
+    fwdMonthLabel() {
+      if (!this.fwdMonth) return '';
+      const [y, mo] = this.fwdMonth.split('-').map(Number);
+      return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    },
+    fwdStepMonth(dir) {
+      const ms = this.fwdMonths(); if (!ms.length) return;
+      let i = ms.indexOf(this.fwdMonth);
+      if (i < 0) i = ms.length - 1;
+      i = Math.max(0, Math.min(ms.length - 1, i + dir));
+      this.fwdMonth = ms[i];
+    },
+    fwdHasPrevMonth() { const ms = this.fwdMonths(); return ms.indexOf(this.fwdMonth) > 0; },
+    fwdHasNextMonth() { const ms = this.fwdMonths(); const i = ms.indexOf(this.fwdMonth); return i >= 0 && i < ms.length - 1; },
+    fwdWeeks() {
+      if (!this.fwdMonth) return [];
+      const [y, mo] = this.fwdMonth.split('-').map(Number);
+      const startDow = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay();
+      const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      const cells = [];
+      for (let i = 0; i < startDow; i++) cells.push(null);
+      for (let d = 1; d <= days; d++) cells.push(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      while (cells.length % 7) cells.push(null);
+      const weeks = []; for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+      return weeks;
+    },
+    fwdCellStyle(date) {
+      const d = this.fwdByDate()[date];
+      if (!d || !d.summary) return '';
+      const a = d.summary.avg_r;
+      if (a == null) return 'background:rgba(148,163,184,.10);border-color:rgba(148,163,184,.25)';
+      if (a > 0.3) return 'background:rgba(34,224,161,.18);border-color:rgba(34,224,161,.45)';
+      if (a < -0.3) return 'background:rgba(255,107,125,.16);border-color:rgba(255,107,125,.45)';
+      return 'background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.3)';
+    },
+    fwdDayNum(date) { return date ? Number(date.slice(8, 10)) : ''; },
     async loadPnlCal() { try { this.pnlCal = await this.api('/pnl-calendar'); } catch (e) {} },
     get pnlMonthDate() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + this.pnlMonthOffset); return d; },
     get pnlMonthLabel() { return this.pnlMonthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' }); },
@@ -553,7 +722,7 @@ function dataCenter() {
       return 'badge-breakout';
     },
     wl(r) { return this.wlData[r.ticker] || {}; },
-    get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected').slice(0, 8); },
+    get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected' && s.status !== 'taken').slice(0, 8); },
     // grade band from the rating (A+ 5 … D 1) — used so the sort respects GRADE first:
     // a buyable C must never rank above a B. Buyable-now only floats WITHIN a grade band.
     gradeBand(s) { const r = s.rating || 0; return r >= 82 ? 5 : r >= 73 ? 4 : r >= 63 ? 3 : r >= 52 ? 2 : 1; },
@@ -564,9 +733,13 @@ function dataCenter() {
         || (b.score || 0) - (a.score || 0);                    // raw-score tiebreak so the order is STABLE (no rating-72 reshuffle)
     },
     get filteredSuggestions() {
+      // DECIDED names leave the default queue: taken (✓) and passed (✗) are hidden so the list only
+      // shows what you still have to decide. status.json is shared, so a decision in the app or here
+      // syncs both. The 'approved' filter surfaces approved+taken; `showPassed` reveals passed ones.
       let items = (this.suggestions.items || []);
-      if (this.filter === 'pending') items = items.filter(s => s.status === 'pending');
-      else if (this.filter === 'approved') items = items.filter(s => s.status === 'approved' || s.status === 'taken');
+      if (this.filter === 'approved') items = items.filter(s => s.status === 'approved' || s.status === 'taken');
+      else if (this.filter === 'pending') items = items.filter(s => s.status === 'pending' || !s.status);
+      else items = items.filter(s => s.status !== 'taken' && (this.showPassed || s.status !== 'rejected'));
       const sf = this.setupFilter;
       if (sf === 'Pullback') items = items.filter(s => (s.setup_type || '').includes('Pullback'));
       else if (sf === 'AVWAP') items = items.filter(s => (s.setup_type || '').includes('AVWAP'));
@@ -724,10 +897,15 @@ function dataCenter() {
     // ---------- suggestion actions ----------
     async act(s, action) {
       let body = {};
-      if (action === 'reject') body.reason = prompt('Why reject ' + s.ticker + '? (optional)') || '';
+      if (action === 'reject') {
+        const r = prompt('Pass on ' + s.ticker + '? Reason (optional) — Cancel to abort:');
+        if (r === null) return;            // Cancel aborts, so a stray click doesn't pass it
+        body.reason = r;
+      }
       await this.api('/suggestions/' + s.ticker + '/' + action, 'POST', body);
       await this.loadSuggestions();
     },
+    get passedCount() { return (this.suggestions.items || []).filter(s => s.status === 'rejected').length; },
     async saveCatalyst(s, val) {
       await this.api('/suggestions/' + s.ticker + '/catalyst', 'POST', { catalyst: val });
     },
@@ -783,11 +961,13 @@ function dataCenter() {
 
     // ---------- view switching ----------
     selectView(id) {
+      if (id === 'autopilot') { window.location.href = '/autopilot.html'; return; }   // standalone page (reload-stable)
       this.view = id;
       this.mobileNav = false;          // close the mobile drawer after picking a view
       if (id === 'watchlist') this.loadWatchlistAnalysis();
       if (id === 'news') this.loadNews();
       if (id === 'dashboard' && !this.gameplan) this.loadGameplan();
+      if (id === 'dashboard' || id === 'suggestions') this.loadNow();   // suggestions show live confirmation status
       if (id === 'stats') { this.loadForward(); this.loadPnlCal(); }
     },
 
@@ -904,13 +1084,15 @@ function dataCenter() {
     },
     leanColor(lean) {
       if (!lean) return '#93a1b8';
-      if (lean === 'Bullish') return '#22e0a1';
-      if (lean === 'Constructive') return '#84cc16';
-      if (lean.startsWith('Neutral')) return '#eab308';
-      if (lean === 'Cautious') return '#f97316';
-      return '#ef4444';
+      const s = lean.toLowerCase();
+      if (s.includes('bullish') || s === 'likely up') return '#22e0a1';
+      if (s.includes('constructive') || s.includes('lean up')) return '#84cc16';
+      if (s.includes('neutral') || s.includes('mixed') || s.includes('chop')) return '#eab308';
+      if (s.includes('cautious') || s.includes('lean down')) return '#f97316';
+      return '#ef4444';   // risk-off / likely down
     },
     driverColor(d) { return d === 'pos' ? '#22e0a1' : d === 'neg' ? '#ff5d73' : '#93a1b8'; },
+    lightColor(l) { return l === 'green' ? '#22e0a1' : l === 'yellow' ? '#ffb53d' : '#ff5d73'; },
     // earnings proximity badge text/colour for a suggestion (or null when far out)
     earnBadge(s) {
       const d = s.earnings_days;
@@ -930,15 +1112,25 @@ function dataCenter() {
       if (p >= 25) return '#f97316';
       return '#ef4444';
     },
+    // Fear & Greed: greed reads as caution (amber/red, frothy), fear as cool (blue/green) —
+    // matches the gauge bar's blue→red gradient.
+    fgColor(s) {
+      if (s == null) return '#64748b';
+      if (s >= 75) return '#ff7a8c';
+      if (s >= 55) return '#ffb53d';
+      if (s > 45) return '#84cc16';
+      if (s > 20) return '#22e0a1';
+      return '#3b82f6';
+    },
     stateEmoji(s) {
-      return ({ 'Healthy uptrend': '🟢', 'Recovery': '🟢', 'Extended': '🟠',
-        'Pullback': '🟡', 'Mid-correction': '🔻', 'Deep correction': '🔻' })[s] || '➖';
+      return ({ 'Healthy uptrend': '🟢', 'Recovery': '🟢', 'Bottoming / turning up': '🟢',
+        'Extended': '🟠', 'Pullback': '🟡', 'Mid-correction': '🔻', 'Deep correction': '🔻' })[s] || '➖';
     },
     // color a regime STATE by its meaning (matches stateEmoji) — NOT by raw posture, so an
     // "Extended" index reads amber even though its posture number (55) sits in the green band.
     stateColor(s) {
-      return ({ 'Healthy uptrend': '#22c55e', 'Recovery': '#22c55e', 'Extended': '#f59e0b',
-        'Pullback': '#eab308', 'Mid-correction': '#f97316', 'Deep correction': '#ef4444' })[s] || '#64748b';
+      return ({ 'Healthy uptrend': '#22c55e', 'Recovery': '#22c55e', 'Bottoming / turning up': '#22c55e',
+        'Extended': '#f59e0b', 'Pullback': '#eab308', 'Mid-correction': '#f97316', 'Deep correction': '#ef4444' })[s] || '#64748b';
     },
     get majorNews() { return this.news.macro || []; },
     // leader-in-group medal: 🥇 for the strongest name in a theme (by RS), 🥈🥉 for a sizeable group
@@ -955,6 +1147,25 @@ function dataCenter() {
       if ((s.parabolic && !s.worth_waiting) || s.distribution_today || s.extended) return false;
       return s.entry_type === 'limit' ? s.close <= s.entry : s.close >= s.entry;
     },
+    // ---- LIVE confirmation status (ties a suggestion to the confirmation engine /api/now) ----
+    // 'confirmed' = the engine saw the trigger taken out (it's in now.buys); 'armed' = lined up &
+    // watched (now.armed); 'waiting' = not confirmed (not watched, faded, or market closed). A setup is
+    // only a real "BUYABLE NOW" when it's CONFIRMED *and* price is in the zone — being in the zone alone
+    // is NOT a buy (it just means price reached support; wait for the trigger). This kills the old
+    // "buyable now just because price is in the zone" that fed chasing.
+    confStatus(s) {
+      const n = this.now; if (!n || !s) return 'waiting';
+      if ((n.buys || []).some(b => b.ticker === s.ticker)) return 'confirmed';
+      if ((n.armed || []).some(a => a.ticker === s.ticker)) return 'armed';
+      return 'waiting';
+    },
+    confRec(s) {
+      const n = this.now; if (!n || !s) return null;
+      return (n.buys || []).find(b => b.ticker === s.ticker)
+        || (n.armed || []).find(a => a.ticker === s.ticker) || null;
+    },
+    // the green "BUYABLE NOW" only when the engine CONFIRMED the trigger AND price is in this leg's zone
+    isConfirmedBuyable(s, e) { return !!(e && e.buyable_now && this.confStatus(s) === 'confirmed'); },
     // typed status line for an entry plan: a buy-STOP is an upside trigger ("break above"),
     // a LIMIT is a dip to support ("wait for the pullback") — never "pull back" for a stop.
     // Prefer the plan's own trigger_note (set by the engine / the live rotation) when present.
@@ -1202,7 +1413,7 @@ function dataCenter() {
 
     // ---------- settings & docs ----------
     async saveSettings() {
-      await this.api('/settings', 'PUT', { account_size: this.settings.account_size, risk_pct: this.settings.risk_pct, max_position_pct: this.settings.max_position_pct });
+      await this.api('/settings', 'PUT', { account_size: this.settings.account_size, risk_pct: this.settings.risk_pct, max_position_pct: this.settings.max_position_pct, size_factor: this.settings.size_factor, telegram_token: this.settings.telegram_token, telegram_chat_id: this.settings.telegram_chat_id });
       await Promise.all([this.loadSuggestions(), this.loadTrades()]);
       this.flash('Saved');
     },
@@ -1212,6 +1423,13 @@ function dataCenter() {
       this.flash('Saved');
     },
     flash(m) { this.savedMsg = m; setTimeout(() => this.savedMsg = '', 1500); },
+    async testTelegram() {
+      this.tgMsg = 'sending…';
+      try { await this.saveSettings(); const r = await this.api('/telegram/test', 'POST', {});
+        this.tgMsg = r.ok ? '✅ sent — check your phone' : ('✗ ' + (r.error || 'failed'));
+      } catch (e) { this.tgMsg = '✗ failed'; }
+      setTimeout(() => this.tgMsg = '', 6000);
+    },
 
     // ---------- charts ----------
     // % actually made on a forward pick (the trader thinks in % gained, not R). The sim gives R =

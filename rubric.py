@@ -86,9 +86,30 @@ HIST_MIN_N     = 5      # min CLOSED trades per setup before the nudge arms
 COACH_PARABOLIC_ADR = 4.0   # ≥ this many ADR above the 9-EMA = a parabolic blow-off → TRIM
 COACH_RAISE_R       = 1.0   # at ≥ this R, raise the stop to breakeven
 COACH_EARN_SOON_D   = 7     # earnings within this many days = a binary event → WATCH
+TRAIL_EMA           = 20    # the DEFAULT trailing-exit EMA — exit on a daily CLOSE under it. Max-R intraday
+                            # backtest (2026-06-03, tools/sim_intraday.py): the 20-EMA trail beat the 9-EMA
+                            # +65.8R vs +53.6R over the month by letting winners run ~2× further. (Was 9.)
+TRAIL_EMA_PATIENT   = 50    # the LONG-HOLD trail for the patient deep-leader setups (Deep Pullback / Consolidation)
+
+# ----- Profit guard (lock in real money, don't choke on noise) -------------- #
+# The user's ask (2026-06-04): "I'm tired of giving my money back at breakeven. Let me KEEP some.
+# Raise the stop to a level with resistance/structure and ENOUGH distance from price — but only
+# where it makes sense; don't force me out." The guard only fires when a support level exists that
+# locks in >= GUARD_MIN_LOCK dollars AND sits >= GUARD_BUFFER_ADR ADR below the live price.
+GUARD_MIN_LOCK    = 40.0    # the SMALL $ floor a guard stop must bank to be worth suggesting ("take some money");
+                            # the structure picked banks as much as the position allows, often well past it
+GUARD_BUFFER_ADR  = 1.5     # the guard stop must sit at least this many ADR below the live price. The exit is a
+                            # daily CLOSE, so the stop must clear a NORMAL pullback (≈1–2 day-ranges), not a fraction
+                            # of one — else a single ordinary red day wicks it. On a hot, high-ATR vertical (INOD
+                            # ≈13% ADR) nothing is far enough above entry to guard yet → correctly no guard ("not the time").
+GUARD_STEP_DOLLARS = 25.0   # only re-suggest a guard if it banks at least this many $ MORE than the current stop
+                            # already locks (anti-nag: don't push you to nudge a profitable stop for trivial gain)
 
 
 def coach_config():
     """The coach threshold numbers, as a dict for the frontend to read (one source of truth)."""
     return {"parabolic_adr": COACH_PARABOLIC_ADR, "raise_r": COACH_RAISE_R,
-            "earn_soon_days": COACH_EARN_SOON_D}
+            "earn_soon_days": COACH_EARN_SOON_D,
+            "trail_ema": TRAIL_EMA, "trail_ema_patient": TRAIL_EMA_PATIENT,
+            "guard_min_lock": GUARD_MIN_LOCK, "guard_buffer_adr": GUARD_BUFFER_ADR,
+            "guard_step_dollars": GUARD_STEP_DOLLARS}

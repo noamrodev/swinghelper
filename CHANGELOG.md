@@ -1,5 +1,78 @@
 # Changelog
 
+## 2026-06-03 (Real-time intraday backtest + visual report — proves the confirmation engine works)
+- Built `tools/sim_intraday.py`: replays the LIVE coach on **5-minute bars** — watches each A/A+ setup and
+  fires the BUY the moment it breaks its trigger (prior-day high; Qulla/Luk's actual entry), stop = day low
+  clamped **0.5–1.2× ADR**, then manages forward to a daily 9-EMA-close / stop exit. Answers "how many
+  REAL-TIME calls, when, and how did they do" (the EOD `sim_alerts.py` only asked "in-zone at 4pm?"). Last 21
+  sessions: **28 calls (~1.5/day, 5× the EOD gate's 6), 54% win, +1.66R avg, +46R total** — Deep Pullback +5.1R
+  (100% win), Breakout +11R, AVWAP +1.0R, Consolidation +0.8R.
+- Fixed a stop bug mid-build (a 5-min bar low on a gap-up = near-zero risk → R exploded to +186R; now clamped
+  ≥0.5× ADR like the live app). Caveats noted: 8/28 still open at the data end, prior-day-high is a unified
+  trigger proxy, bull-month/small sample.
+- `tools/sim_report.py` → **`data/sim_report.html`**: dark self-contained visual report (lightweight-charts)
+  with a candlestick chart PER CALL — the ▲BUY (date/time/price), the red stop line, the ✕ exit.
+- **Conclusion: the EOD "in-zone" trigger threw away ~80% of good setups; intraday confirmation is more
+  frequent AND profitable → the validated #1 build.** Also added `data/cache_5m/` (5-min bar cache) +
+  `sim_alerts.live_rating` (faithful live-grader replica for backtests).
+- Live Coach window: `web/manifest.webmanifest` (window-controls-overlay → borderless look) + size 456×884
+  (anti-smush) + favicon `coach.ico`.
+
+## 2026-06-03 (Live Coach — DROPPED pywebview for an Edge app-mode window; fixes the freeze/crash for good)
+- **The freeze-then-crash was pywebview itself, not frameless.** Capturing coach_app's unbuffered stderr
+  showed a 271KB `[pywebview] Error while processing window.native.AccessibilityObject.Bounds.Empty.Empty…`
+  → **maximum recursion depth exceeded** — an infinite UI-Automation/accessibility recursion in
+  pywebview/WebView2 that crashes the GUI process a few seconds AFTER the page paints (hence "content shows,
+  then freezes"). It happens with the FRAMED window too — the earlier frameless revert didn't fix it. The
+  diagnostic tell: after launch only the server `pythonw` survived; the coach_app GUI process was gone, and
+  `/api/now` was healthy (2.1s).
+- **Fix: ditched pywebview entirely.** `coach_app.py` now opens `panel.html` in an **Edge/Chrome app-mode
+  window** (`msedge --app=… --user-data-dir=data/coach_window --window-size=420,772`) — chromeless,
+  native-feeling, and rock-solid browser tech. The pystray tray + single-instance lock + server desktop
+  notifications are unchanged; the tray's "Open Live Coach" now `open_window()`s (focuses the existing window
+  via Win32 EnumWindows/SetForegroundWindow by title, else launches). `panel.html` got a
+  `<link rel="icon" href="coach.ico">` so the app window + taskbar show the custom icon (served at
+  `/coach.ico`, verified 200). Falls back to the default browser if neither Edge nor Chrome is found.
+- Verified: coach_app **stays alive 30s+** (was crashing to 0), the Edge app window opens (chromeless),
+  server HTTP 200, favicon served. `pywebview` is no longer a runtime dependency of the coach.
+
+## 2026-06-03 (Live Coach — real-app redesign + "WATCH is MY job, not yours")
+- **`WATCH` is no longer a user action.** `compute_now` had WATCH in the `todo` ("⚡ do now") list, so the
+  coach literally told the user to "watch your position" — which the user (rightly) called dumb: watching is
+  the coach's job. WATCH (earnings / bad-news monitoring) now folds into the quiet `holds` list; **only EXIT /
+  RAISE STOP / TRIM are user actions.** The "nothing to do" verdicts were rewritten to say **I'm** watching
+  ("Nothing for you to do. I'm watching your N position(s) — I'll ping you the moment one needs action").
+- **`web/panel.html` fully redesigned** from a plain dark webpage into a real-feeling app, on the MAIN app's
+  design tokens (aurora backdrop, glassy sticky header/footer chrome, Inter font): a **stance hero**
+  (GO / SELECTIVE / STAND-ASIDE accent + the one-line verdict as the centerpiece), bold colour-coded
+  **⚡ Act-now** cards (EXIT/RAISE-STOP/TRIM), a confident **🟢 Buy** card (grade pill + entry/stop/size grid +
+  confirm note), a collapsible **👁️ I'm on it** section for held positions you DON'T need to touch, a clean
+  **alerts feed** with relative timestamps, and a calm **All-clear** empty state for the common no-trade day.
+  Same data contract (`/api/now`, `/api/notifications`). The native window's look needs the user's eyes —
+  pywebview can't be tool-screenshotted.
+- Verified against live data: a WATCH-only tape → `todo:(none)`, holds `[HOLD,WATCH]`, "Nothing for you to do."
+  **Restart the Coach (tray → Quit, relaunch) to load it (app.py + panel.html changed).**
+
+## 2026-06-03 (Live Coach notifier — a beep now means ACT; killed the random/heartbeat/startup beeps)
+- **Root cause of "random beeps" + "watch your positions isn't a notification":** the background notifier
+  (`_now_watcher`, app.py) toasted **and beeped** on (1) every app startup, (2) a 5-min *heartbeat* in the
+  default `all` mode, and (3) **any change to the verdict TEXT** — which drifts intraday (posture label,
+  position count, "frothy/weak/nothing's confirmed") with no action behind it. State was in-memory only, so
+  a crash/restart re-beeped everything. A `WATCH`/`HOLD`/"Sit tight" verdict therefore beeped despite having
+  nothing to do — exactly the user's complaint.
+- **Rebuilt around one rule: a beep means ACT.** Sound + toast fire ONLY for discrete *actionable* alerts —
+  the **single best confirmed BUY**, or **EXIT / RAISE STOP / TRIM** on a held position. `WATCH`, `HOLD`,
+  stance drift, "sit tight" and heartbeats are now **silent** (panel + tray colour only, never a beep).
+  EXIT/BUY = urgent triple-beep; RAISE STOP/TRIM = single chime.
+- **Per-alert dedupe + cooldowns, persisted** to `data/notify_state.json` so nothing double-fires (EXIT
+  re-reminds ≥90 min, TRIM ≥3 h, RAISE STOP/BUY ≥6 h). **The first loop after any (re)launch is always
+  silent** — the startup beep is gone for good.
+- **`compute_now` now surfaces the SINGLE best buy** (was up to 2): one decisive call, not a menu.
+- **DST-correct market-hours gating** (`_et_now` via `zoneinfo`, fixed-offset fallback) replaces the old
+  hard-coded −4 that drifted on DST-changeover days.
+- Verified against live data: a `LITE → WATCH` / no-buy tape now yields **"WOULD BEEP: nothing"** while still
+  showing LITE in the panel. **Restart the Coach (tray → Quit, relaunch) to load it (app.py changed).**
+
 ## 2026-06-02 (Chart UX — white price mark + declutter)
 - **Current price now marked in WHITE** on the chart, not the green/red candle color (confusing next to the
   green buy zone / red stop). Candlestick `lastValueVisible:false`; a neutral white price line is drawn in the

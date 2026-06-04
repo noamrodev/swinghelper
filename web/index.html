@@ -152,10 +152,77 @@
             <!-- ============ MAIN COLUMN ============ -->
             <div class="lg:col-span-8 space-y-6 min-w-0">
 
+          <!-- ===== Live entries — the confirmation engine (armed + confirmed buys) ===== -->
+          <div class="card p-5" x-show="now">
+            <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
+              <span>⚡ Live entries
+                <span class="text-xs font-normal text-slate-500">— the best A/A+ setups; I beep only when one CONFIRMS its trigger</span>
+              </span>
+              <span class="text-[11px]" :class="marketOpen?'text-up':'text-slate-500'" x-text="marketOpen?'● watching live':'market closed'"></span>
+            </div>
+            <template x-if="now">
+              <div class="space-y-3">
+                <!-- CONFIRMED buys (the actual "do this now" calls) -->
+                <template x-if="now.buys && now.buys.length">
+                  <div class="space-y-2">
+                    <template x-for="b in now.buys" :key="b.ticker">
+                      <div class="rounded-xl p-3 border" style="background:rgba(34,224,161,.12);border-color:rgba(34,224,161,.5)">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-base font-extrabold text-up">🟢 BUY <span x-text="b.ticker"></span></span>
+                            <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(b.grade)" x-text="b.grade"></span>
+                            <span class="text-xs text-slate-400 truncate" x-text="b.setup_type"></span>
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <div class="text-sm font-bold" x-text="(b.shares||'?')+' sh @ ~$'+(b.entry||'?')"></div>
+                            <button class="text-xs px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-300" @click="expandedPlan[b.ticker]=!expandedPlan[b.ticker]" title="Open the plan">📋 plan</button>
+                          </div>
+                        </div>
+                        <div class="text-sm text-slate-200 mt-1">stop <b x-text="'$'+(b.stop||'?')"></b>
+                          <span class="text-slate-500" x-text="' · '+(b.risk_pct_actual!=null?b.risk_pct_actual+'% risk':'')+(b.pct_acct!=null?' · '+b.pct_acct+'% of acct':'')"></span></div>
+                        <div class="text-xs mt-1" style="color:#9bf0cf" x-text="b.confirm"></div>
+                        <div x-show="expandedPlan[b.ticker]" x-transition.opacity class="mt-2 pt-2 border-t border-emerald-500/20" x-html="planHtml(b)"></div>
+                        <div class="text-[10px] text-slate-500 mt-1">You place the order — this is the call, the decision is yours.</div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <!-- ARMED setups (lined up, waiting for the trigger — silent) -->
+                <template x-if="now.armed && now.armed.length">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">Armed — waiting for confirmation (no call yet)</div>
+                    <div class="space-y-1">
+                      <template x-for="a in now.armed" :key="a.ticker">
+                        <div class="rounded-lg" style="background:rgba(255,181,61,.10);border:1px solid rgba(255,181,61,.28)">
+                          <div class="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer" @click="expandedPlan[a.ticker]=!expandedPlan[a.ticker]" title="Open the plan">
+                            <span class="shrink-0">📋</span>
+                            <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(a.grade)" x-text="a.grade"></span>
+                            <span class="font-bold w-16 shrink-0" x-text="a.ticker"></span>
+                            <span class="text-slate-500 text-xs flex-1 truncate min-w-0" x-text="a.setup_type"></span>
+                            <span class="text-xs text-amber-300 shrink-0" x-text="a.break_level ? ('break $'+a.break_level) : a.orh ? ('OR hi $'+a.orh) : (a.kind==='breakout' ? 'on OR-high break' : 'zone $'+(a.zone||a.entry))"></span>
+                            <span class="text-[10px] text-slate-500 shrink-0" x-text="expandedPlan[a.ticker]?'▲':'▼'"></span>
+                          </div>
+                          <div x-show="expandedPlan[a.ticker]" x-transition.opacity class="px-3 pb-2.5 pt-1 border-t" style="border-color:rgba(255,181,61,.2)" x-html="planHtml(a)"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <!-- empty states -->
+                <div class="text-sm text-slate-500" x-show="(!now.buys||!now.buys.length) && (!now.armed||!now.armed.length)">
+                  <span x-show="now.light==='red'">Stand aside — weak tape. No new entries.</span>
+                  <span x-show="now.light!=='red' && marketOpen">Nothing armed right now — I'll surface a setup here the moment one sets up, and beep when it confirms.</span>
+                  <span x-show="now.light!=='red' && !marketOpen">Market closed — the best setups arm here during market hours, and I beep when one confirms its trigger.</span>
+                </div>
+                <div class="text-[11px] text-slate-500" x-text="'Watches only the ~12 best setups live (not the whole universe) · '+(now.computed_at||'')"></div>
+              </div>
+            </template>
+          </div>
+
           <!-- ===== Daily Gameplan — one synthesized plan from all the data ===== -->
           <div class="card p-5" x-show="gameplan">
             <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
-              <span>🗒️ Daily Gameplan <span class="text-xs font-normal text-slate-500" x-show="gameplan" x-text="gameplan ? '· '+gameplan.date : ''"></span><span class="text-[10px] font-bold text-amber-300 ml-1" x-show="gameplan && gameplan.regime_live" x-text="['PRE','PREPRE'].includes(gameplan.market_state)?'🌙 live pre-market read':'🌙 live after-hours read'"></span></span>
+              <span>🗒️ Daily Gameplan <span class="text-xs font-normal text-slate-500" x-show="gameplan" x-text="gameplan ? '· '+gameplan.date : ''"></span><span class="text-[10px] font-bold text-amber-300 ml-1" x-show="gameplan && gameplan.regime_live" x-text="(gameplan&&['PRE','PREPRE'].includes(gameplan.market_state))?'🌙 live pre-market read':'🌙 live after-hours read'"></span></span>
               <div class="flex items-center gap-2">
                 <button class="btn-sm" @click="loadGameplan()" title="Rebuild from the latest data">↻</button>
                 <button class="btn-sm" @click="gameplanOpen=!gameplanOpen" x-text="gameplanOpen?'Hide':'Show'"></button>
@@ -271,7 +338,7 @@
               <div class="flex items-center gap-3 px-5 py-2.5 border-t border-line text-sm">
                 <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
                 <div class="w-20 font-bold flex items-center gap-1">
-                  <span x-show="inZone(s)" title="buyable now">🟢</span><span x-text="s.ticker"></span>
+                  <span x-show="confStatus(s)==='confirmed' && inZone(s)" title="confirmed — buyable now">🟢</span><span x-show="inZone(s) && !(confStatus(s)==='confirmed')" title="in the zone — waiting for confirmation">⏳</span><span x-text="s.ticker"></span>
                   <span x-show="groupMedal(s)" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme" x-text="groupMedal(s)"></span>
                 </div>
                 <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
@@ -290,11 +357,29 @@
               <!-- Market regime (compact) -->
               <div class="card p-5" x-show="marketRegime.indexes && marketRegime.indexes.length">
                 <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
-                  <span title="Is the tape too extended, mid-correction, or recovering? Equal-blend of SPX/QQQ/IWM feeds 15% of every suggestion's grade. During pre/after-hours this re-blends from the live extended-hours index prices.">📊 Market regime <span class="text-[10px] font-bold text-amber-300" x-show="live.posture && live.posture.extended" x-text="['PRE','PREPRE'].includes(live.market_state)?'🌙 PRE':'🌙 AFTER'"></span></span>
+                  <span :title="'Is the tape too extended, mid-correction, or recovering? Equal-blend of '+(marketRegime.indexes||[]).map(i=>i.name).join('/')+' feeds 14% of every suggestion\'s grade. During pre/after-hours this re-blends from the live extended-hours index prices.'">📊 Market regime <span class="text-[10px] font-bold text-amber-300" x-show="live.posture && live.posture.extended" x-text="['PRE','PREPRE'].includes(live.market_state)?'🌙 PRE':'🌙 AFTER'"></span></span>
                   <span class="text-xs font-bold px-2 py-0.5 rounded" :style="'color:'+postureColor(marketRegime.posture)+';border:1px solid '+postureColor(marketRegime.posture)+'55'">
                     <span x-text="marketRegime.label"></span> · <span x-text="marketRegime.posture"></span>/100
                   </span>
                 </div>
+                <!-- Fear & Greed gauge (sentiment) — greed/froth trims the regime posture -->
+                <template x-if="marketRegime.fear_greed">
+                <div class="mb-3 rounded-lg px-3 py-2" style="background:rgba(7,10,18,.5)">
+                  <div class="flex items-center justify-between gap-2 text-[11px]">
+                    <span class="font-bold text-slate-300"
+                          :title="'Market sentiment 0–100 (extreme fear → extreme greed). '+Object.entries((marketRegime.fear_greed||{}).components||{}).map(([k,v])=>k+' '+v).join(' · ')+'. Greed/froth trims the regime posture (correction risk).'">
+                      😶‍🌫️ Fear &amp; Greed
+                    </span>
+                    <span class="font-extrabold" :style="'color:'+fgColor(marketRegime.fear_greed.score)">
+                      <span x-text="marketRegime.fear_greed.score"></span>/100 · <span x-text="marketRegime.fear_greed.label"></span><span
+                        x-show="marketRegime.fear_greed.posture_nudge" class="text-warn" x-text="' ('+marketRegime.fear_greed.posture_nudge+')'"></span>
+                    </span>
+                  </div>
+                  <div class="mt-1.5 relative h-1.5 rounded-full" style="background:linear-gradient(90deg,#3b82f6 0%,#22e0a1 35%,#ffb53d 70%,#ff7a8c 100%)">
+                    <div class="absolute top-1/2 -translate-y-1/2 w-1 h-3 rounded bg-white" :style="'left:calc('+marketRegime.fear_greed.score+'% - 2px)'"></div>
+                  </div>
+                </div>
+                </template>
                 <div class="space-y-2">
                   <template x-for="ix in marketRegime.indexes" :key="ix.name">
                     <div class="rounded-lg px-3 py-2" :style="'border-left:3px solid '+stateColor(ix.state)+';background:rgba(7,10,18,.5)'">
@@ -391,6 +476,8 @@
               <button @click="buyableFilter=!buyableFilter" class="fchip" :class="buyableFilter?'on':''" title="Price is in the buy zone right now">🟢 Buyable now</button>
               <button @click="waitFilter=!waitFilter" class="fchip" :class="waitFilter?'on':''" title="Patient entry — buy zone below price / deep pullback into the 50 EMA">⏳ Worth waiting</button>
               <span class="text-xs text-slate-500 ml-auto"><b class="text-slate-300" x-text="filteredSuggestions.length"></b> match<span x-show="filteredSuggestions.length!==1">es</span></span>
+              <button class="btn-ghost text-xs" x-show="passedCount" @click="showPassed=!showPassed"
+                x-text="(showPassed?'hide':'show')+' passed ('+passedCount+')'"></button>
               <button class="btn-ghost text-xs" x-show="activeFilterCount" @click="clearFilters()">✕ clear</button>
             </div>
             <div x-show="showFilters" x-transition.opacity class="card p-3 space-y-2.5">
@@ -437,7 +524,14 @@
               <div class="card card-hover anim-in p-4 space-y-3" :style="`animation-delay:${Math.min(i*40,400)}ms`" :class="s.extended?'ring-1 ring-amber-500/40':''">
                 <div class="flex items-start justify-between">
                   <div>
-                    <div class="text-xl font-extrabold tracking-tight" x-text="s.ticker"></div>
+                    <div class="flex items-center gap-1.5">
+                      <div class="text-xl font-extrabold tracking-tight" x-text="s.ticker"></div>
+                      <template x-if="nowByTicker()[s.ticker]">
+                        <span class="badge shrink-0" :title="nowByTicker()[s.ticker].rec.confirm"
+                          :style="nowByTicker()[s.ticker].state==='confirmed' ? 'background:rgba(34,224,161,.2);color:#9bf0cf;border-color:rgba(34,224,161,.6)' : 'background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)'"
+                          x-text="nowByTicker()[s.ticker].state==='confirmed' ? '🟢 BUYERS CONFIRMED' : '⏳ armed'"></span>
+                      </template>
+                    </div>
                     <div class="flex items-center gap-1.5 mt-1 flex-wrap">
                       <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
                       <span class="badge" :class="s.theme_hot?'badge-hot':''" x-show="s.theme"><span x-show="s.theme_hot" class="fire">🔥</span><span x-text="s.theme"></span></span>
@@ -501,10 +595,17 @@
                         <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
                         <div class="lvl"><div class="lvl-l" x-text="(e.rotation||e.dayLowStop)?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
                       </div>
-                      <div x-show="e.buyable_now" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)">🟢 BUYABLE NOW · <span x-text="cur"></span><span x-text="s.close"></span> is in the zone</div>
-                      <div x-show="!e.buyable_now" class="text-xs text-slate-500 mt-1.5" x-text="entryHint(e, s.close)"></div>
-                      <!-- confirmation context for a buy-zone (limit) entry: don't buy the first touch -->
-                      <div x-show="e.entry_type==='limit' && !e.stale" class="text-[11px] text-slate-400 mt-1.5 leading-snug px-2 py-1.5 rounded-lg" style="background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.2)">✋ <b class="text-slate-200">Confirm before buying</b> — don't grab the first touch. Either price <b>settles in the zone</b> for a bit, or it tags the zone and <b>reclaims the day's high</b> (a green candle off it = buyers stepping in, signaling the low).</div>
+                      <!-- LIVE CONFIRMATION STATUS — the only "buyable now" is CONFIRMED + in the zone -->
+                      <!-- 1) confirmed + in zone → BUYABLE NOW (shows the engine's confirm line) -->
+                      <div x-show="isConfirmedBuyable(s,e)" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)"
+                        :title="(confRec(s)&&confRec(s).confirm)||''">🟢 BUYABLE NOW · confirmed — <span x-text="cur"></span><span x-text="s.close"></span> in the zone, trigger taken out</div>
+                      <!-- 2) in the zone but NOT confirmed → waiting (price reached support; wait for the trigger) -->
+                      <div x-show="e.buyable_now && !isConfirmedBuyable(s,e)" class="text-center text-xs font-bold py-1.5 mt-2 rounded-lg" style="background:rgba(255,181,61,.14);color:#ffd591;border:1px solid rgba(255,181,61,.38)"
+                        title="Price is in the buy zone, but the entry isn't confirmed yet. Wait for the confirmation: it settles in the zone and reclaims the day's high (a green candle off support = buyers stepping in / the low is in), or breaks its level on volume. Don't grab the first touch.">⏳ In the zone — waiting for confirmation</div>
+                      <!-- 3) not in the zone → where the trigger is + waiting -->
+                      <div x-show="!e.buyable_now" class="text-xs mt-1.5"><span class="text-amber-300/80 font-semibold">⏳ Waiting for confirmation</span><span class="text-slate-500"> · </span><span class="text-slate-500" x-text="entryHint(e, s.close)"></span></div>
+                      <!-- armed note: the engine is actively watching this one for its trigger -->
+                      <div x-show="confStatus(s)==='armed' && !isConfirmedBuyable(s,e)" class="text-[11px] text-cyan-300/80 mt-1" x-text="(confRec(s)&&confRec(s).confirm)||'Armed — the confirmation engine is watching this for its trigger.'"></div>
                       <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk <span x-text="cur"></span><span x-text="e.risk_ps"></span>/sh</div>
                     </div>
                   </template>
@@ -515,11 +616,15 @@
                 <div class="text-xs text-slate-400">primary ≈<span x-text="cur"></span><span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> at 1% risk<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
                 <div class="text-xs text-slate-500" x-text="(s.why||'').replaceAll('$',cur)"></div>
                 <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
-                <div class="flex gap-2 pt-1">
+                <div class="flex flex-wrap gap-2 pt-1">
                   <button class="btn-sm flex-1" @click="showChart(s.ticker, s)">📈 Chart</button>
                   <button class="btn-sm flex-1" :class="onWatch(s.ticker)?'':'btn-up text-white'" @click="addSugToWatch(s)"
                     x-text="onWatch(s.ticker)?'✓ Watchlist':'+ Watchlist'"></button>
                   <button class="btn-sm flex-1" style="background:rgba(106,141,255,.25);border-color:rgba(106,141,255,.5)" @click="openTake(s)">Took it</button>
+                  <button class="btn-sm flex-1"
+                    :style="s.status==='rejected' ? 'background:rgba(148,163,184,.2);border-color:rgba(148,163,184,.45)' : 'background:rgba(255,93,115,.16);border-color:rgba(255,93,115,.4);color:#ffb3bf'"
+                    @click="act(s, s.status==='rejected' ? 'unpass' : 'reject')"
+                    x-text="s.status==='rejected' ? '↩ Un-pass' : '✗ Pass'"></button>
                 </div>
               </div>
             </template>
@@ -1037,12 +1142,43 @@
             </template>
             <template x-if="prediction">
               <div class="space-y-5">
+
+                <!-- 📅 DAILY — what's likely this session -->
                 <div class="card p-5">
+                  <div class="card-head -m-5 mb-4 px-5 py-3">📅 Today <span class="text-xs font-normal text-slate-500">— what's likely this session</span></div>
                   <div class="flex items-center justify-between gap-2 flex-wrap">
-                    <div class="text-2xl font-extrabold" :style="'color:'+leanColor(prediction.lean)" x-text="prediction.lean"></div>
-                    <span class="text-xs font-bold px-2 py-1 rounded border border-line text-slate-400" x-text="prediction.confidence+' confidence'"></span>
+                    <div class="text-2xl font-extrabold" :style="'color:'+leanColor(prediction.daily.lean)" x-text="prediction.daily.lean"></div>
+                    <span class="text-xs font-bold px-2 py-1 rounded border border-line text-slate-400" x-text="prediction.daily.confidence+' confidence'"></span>
                   </div>
-                  <div class="text-sm text-slate-300 mt-3 leading-relaxed" x-html="prediction.outlook"></div>
+                  <div class="text-sm text-slate-300 mt-3 leading-relaxed" x-text="prediction.daily.outlook"></div>
+                  <!-- 🌙 pre/after-hours sector moves — what's moving NOW -->
+                  <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-line" x-show="prediction.pm_sectors && (prediction.pm_sectors.up.length || prediction.pm_sectors.down.length)">
+                    <span class="text-xs text-amber-300/90 self-center font-bold">🌙 <span x-text="prediction.pm_sectors && prediction.pm_sectors.when"></span> now:</span>
+                    <template x-for="x in (prediction.pm_sectors? prediction.pm_sectors.up : [])" :key="'pu'+x.sector"><span class="badge badge-pullback" x-text="x.sector+' '+(x.pct>=0?'+':'')+x.pct+'%'"></span></template>
+                    <template x-for="x in (prediction.pm_sectors? prediction.pm_sectors.down : [])" :key="'pd'+x.sector"><span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)" x-text="x.sector+' '+x.pct+'%'"></span></template>
+                    <span class="text-[10px] text-slate-500 self-center w-full">Extended-hours moves often fade at the open — a heads-up, not the multi-day trend.</span>
+                  </div>
+                  <div class="mt-4 -mx-5" x-show="prediction.daily.drivers && prediction.daily.drivers.length">
+                    <template x-for="(d,di) in prediction.daily.drivers" :key="'d'+di">
+                      <div class="flex items-start gap-3 px-5 py-2 border-t border-line text-sm">
+                        <span class="shrink-0 mt-0.5" :style="'color:'+driverColor(d.dir)" x-text="d.dir==='pos'?'▲':d.dir==='neg'?'▼':'■'"></span>
+                        <span class="text-slate-300" x-text="d.text"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- 🌐 OVERALL — state of the market -->
+                <div class="card p-5">
+                  <div class="card-head -m-5 mb-4 px-5 py-3">🌐 Overall <span class="text-xs font-normal text-slate-500">— state of the market</span></div>
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div class="text-2xl font-extrabold" :style="'color:'+leanColor(prediction.overall.lean)" x-text="prediction.overall.lean"></div>
+                      <div class="text-xs font-bold text-slate-400 mt-0.5" x-text="prediction.overall.state"></div>
+                    </div>
+                    <span class="text-xs font-bold px-2 py-1 rounded border border-line text-slate-400" x-text="prediction.overall.confidence+' confidence'"></span>
+                  </div>
+                  <div class="text-sm text-slate-300 mt-3 leading-relaxed" x-html="prediction.overall.outlook"></div>
                   <div class="flex flex-wrap gap-2 mt-4" x-show="prediction.rising && prediction.rising.length">
                     <span class="text-xs text-slate-500 self-center">Into:</span>
                     <template x-for="r in prediction.rising" :key="'r'+r"><span class="badge badge-pullback">🚀 <span x-text="r"></span></span></template>
@@ -1052,23 +1188,16 @@
                     <template x-for="r in prediction.falling" :key="'f'+r"><span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)">🔻 <span x-text="r"></span></span></template>
                     <template x-for="r in prediction.slowing" :key="'s'+r"><span class="badge badge-ep">🐢 <span x-text="r"></span></span></template>
                   </div>
-                  <!-- 🌙 pre/after-hours sector moves — what's moving NOW, separate from the multi-day trend above -->
-                  <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-line" x-show="prediction.pm_sectors && (prediction.pm_sectors.up.length || prediction.pm_sectors.down.length)">
-                    <span class="text-xs text-amber-300/90 self-center font-bold">🌙 <span x-text="prediction.pm_sectors && prediction.pm_sectors.when"></span> now:</span>
-                    <template x-for="x in (prediction.pm_sectors? prediction.pm_sectors.up : [])" :key="'pu'+x.sector"><span class="badge badge-pullback" x-text="x.sector+' '+(x.pct>=0?'+':'')+x.pct+'%'"></span></template>
-                    <template x-for="x in (prediction.pm_sectors? prediction.pm_sectors.down : [])" :key="'pd'+x.sector"><span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)" x-text="x.sector+' '+x.pct+'%'"></span></template>
-                    <span class="text-[10px] text-slate-500 self-center w-full">Extended-hours moves often fade at the open — a heads-up, not the multi-day trend.</span>
+                  <div class="mt-4 -mx-5" x-show="prediction.overall.drivers && prediction.overall.drivers.length">
+                    <template x-for="(d,di) in prediction.overall.drivers" :key="'o'+di">
+                      <div class="flex items-start gap-3 px-5 py-2 border-t border-line text-sm">
+                        <span class="shrink-0 mt-0.5" :style="'color:'+driverColor(d.dir)" x-text="d.dir==='pos'?'▲':d.dir==='neg'?'▼':'■'"></span>
+                        <span class="text-slate-300" x-text="d.text"></span>
+                      </div>
+                    </template>
                   </div>
                 </div>
-                <div class="card">
-                  <div class="card-head">What's driving this read</div>
-                  <template x-for="(d,di) in prediction.drivers" :key="di">
-                    <div class="flex items-start gap-3 px-5 py-2.5 border-t border-line text-sm">
-                      <span class="shrink-0 mt-0.5" :style="'color:'+driverColor(d.dir)" x-text="d.dir==='pos'?'▲':d.dir==='neg'?'▼':'■'"></span>
-                      <span class="text-slate-300" x-text="d.text"></span>
-                    </div>
-                  </template>
-                </div>
+
                 <div class="text-[11px] text-slate-500 leading-relaxed" x-text="prediction.note"></div>
               </div>
             </template>
@@ -1104,7 +1233,7 @@
                 <button class="btn-sm" @click="pnlMonthOffset--">‹</button>
                 <span class="font-bold w-32 text-center" x-text="pnlMonthLabel"></span>
                 <button class="btn-sm" @click="pnlMonthOffset++" :disabled="pnlMonthOffset>=0">›</button>
-                <span class="ml-2 text-xs" x-show="pnlMonthTotal!=null">month: <b :class="pnlMonthTotal>=0?'text-up':'text-down'" x-text="(pnlMonthTotal>=0?'+':'')+cur+pnlMonthTotal.toLocaleString()"></b></span>
+                <span class="ml-2 text-xs" x-show="pnlMonthTotal!=null">month: <b :class="pnlMonthTotal>=0?'text-up':'text-down'" x-text="(pnlMonthTotal>=0?'+':'')+cur+(pnlMonthTotal||0).toLocaleString()"></b></span>
               </div>
             </div>
             <div class="grid grid-cols-7 gap-1.5 text-center">
@@ -1128,7 +1257,7 @@
           <!-- Forward (paper) test: live A/A+ picks tracked day-by-day -->
           <div class="card p-5" x-show="forward">
             <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between">
-              <span>🔬 Forward test <span class="text-xs font-normal text-slate-500">— a STATIC record: each day's top setups by grade, frozen at the prior close &amp; tracked as that session trades (the dashboard's "Top suggestions" is the live view and may re-order intraday). Status updates every market close, no hindsight.</span></span>
+              <span>🔬 Forward test <span class="text-xs font-normal text-slate-500">— a STATIC record: EVERY real setup each day, frozen at the prior close &amp; tracked forward as that session trades. Click a calendar day for its full report. Status updates every market close, no hindsight, no survivorship.</span></span>
               <button class="btn-sm" @click="loadForward()">↻</button>
             </div>
             <template x-if="forward && !forward.days_logged">
@@ -1150,6 +1279,28 @@
                   </div>
                 </template>
                 <div class="text-xs text-slate-500" x-show="!forward.aggregate">Picks logged — none matured yet (each needs ~7 sessions of forward data). The win rate / avg % appear here once they do.</div>
+                <!-- CONFIRMATION vs TOUCH — both entries recorded per setup; live data decides which wins -->
+                <template x-if="forward.entry_compare && (forward.entry_compare.confirmation || forward.entry_compare.touch)">
+                  <div class="rounded-xl border border-line p-3" style="background:rgba(91,140,255,.05)">
+                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">⚔️ Confirmation vs Touch — which entry wins (live, no hindsight)</div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <template x-for="m in [['confirmation','🟢 Confirmation','buy the rotation up (ORH break)'],['touch','🎯 Touch','buy the dip into support']]" :key="m[0]">
+                        <div class="lvl" :class="bestEntry()===m[0]?'ring-1 ring-emerald-500/50':''">
+                          <div class="lvl-l" x-text="m[1]"></div>
+                          <template x-if="forward.entry_compare[m[0]]">
+                            <div>
+                              <div class="text-lg font-extrabold" :class="forward.entry_compare[m[0]].avg_r>=0?'text-up':'text-down'" x-text="(forward.entry_compare[m[0]].avg_r>=0?'+':'')+forward.entry_compare[m[0]].avg_r+'R'"></div>
+                              <div class="text-[10px] text-slate-500" x-text="forward.entry_compare[m[0]].win_rate+'% win · n='+forward.entry_compare[m[0]].n"></div>
+                            </div>
+                          </template>
+                          <div class="text-sm text-slate-600" x-show="!forward.entry_compare[m[0]]">—</div>
+                          <div class="text-[10px] text-slate-600 mt-0.5" x-text="m[2]"></div>
+                        </div>
+                      </template>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-2">Both entries are simulated on every setup as it matures. The ring marks the current leader. The system trades the <b>Confirmation</b> entry live; this is the honest scoreboard for whether the touch would've done better — decided by real data, not the backtest.</div>
+                  </div>
+                </template>
                 <template x-if="(forward.by_grade && Object.keys(forward.by_grade).length) || (forward.by_setup && Object.keys(forward.by_setup).length)">
                   <div class="grid md:grid-cols-2 gap-4">
                     <div>
@@ -1180,48 +1331,135 @@
                     </div>
                   </div>
                 </template>
+                <!-- CALENDAR — click a day for its full report -->
                 <template x-if="forward.by_day && forward.by_day.length">
                   <div class="space-y-3">
-                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">Day-by-day — top picks &amp; the day's lesson</div>
-                    <template x-for="d in forward.by_day" :key="d.date">
-                      <div class="rounded-xl border border-line overflow-hidden">
-                        <div class="flex items-center justify-between gap-2 px-3 py-2 bg-panel2 cursor-pointer" @click="openForwardDay = (openForwardDay===d.date ? null : d.date)">
-                          <div class="flex items-center gap-2 text-sm min-w-0">
-                            <span class="font-bold shrink-0" x-text="d.date"></span>
-                            <span class="text-[10px] text-slate-500 shrink-0 hidden sm:inline" title="The top dashboard setups frozen at the prior close. Each fills if/when price reaches its entry trigger over the following sessions — a pullback entry only fills if price pulls back to it (on an up day it may never trigger). Status updates every market close.">act this session · frozen at prior close</span>
-                            <span class="badge shrink-0" x-show="d.posture!=null" :title="'blended market posture that day'" x-text="'regime '+d.posture"></span>
-                          </div>
-                          <div class="flex items-center gap-2 text-xs shrink-0">
-                            <template x-if="d.summary && d.summary.avg_r!=null">
-                              <span class="text-slate-400"><b :class="(fwdAvgPct(d.picks)||0)>=0?'text-up':'text-down'" :title="'avg '+d.summary.avg_r+'R across the filled picks'" x-text="(fwdAvgPct(d.picks)>=0?'+':'')+fwdAvgPct(d.picks)+'% avg'"></b> · <span x-text="d.summary.win_rate"></span>% win · <span x-text="d.summary.matured"></span>✓/<span x-text="d.summary.open"></span> open</span>
+                    <div class="flex items-center justify-between">
+                      <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">📅 Calendar — click a day for its report</div>
+                      <div class="flex items-center gap-2 text-sm">
+                        <button class="btn-sm" :disabled="!fwdHasPrevMonth()" :style="!fwdHasPrevMonth()?'opacity:.35':''" @click="fwdStepMonth(-1)">‹</button>
+                        <span class="font-bold w-32 text-center" x-text="fwdMonthLabel()"></span>
+                        <button class="btn-sm" :disabled="!fwdHasNextMonth()" :style="!fwdHasNextMonth()?'opacity:.35':''" @click="fwdStepMonth(1)">›</button>
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-500 font-bold">
+                      <template x-for="w in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="w"><div x-text="w"></div></template>
+                    </div>
+                    <template x-for="(week,wi) in fwdWeeks()" :key="wi">
+                      <div class="grid grid-cols-7 gap-1">
+                        <template x-for="(date,di) in week" :key="di">
+                          <div>
+                            <template x-if="date && fwdByDate()[date]">
+                              <div class="rounded-lg border p-1 sm:p-1.5 cursor-pointer transition hover:brightness-125 min-h-[3.2rem]"
+                                   :style="fwdCellStyle(date) + (openForwardDay===date?';outline:2px solid var(--up);outline-offset:-2px':'')"
+                                   @click="loadForwardDay(date)"
+                                   :title="date+' — '+(fwdByDate()[date].summary.n_setups||0)+' setups · '+(fwdByDate()[date].summary.avg_r!=null?('avg '+fwdByDate()[date].summary.avg_r+'R'):'tracking')">
+                                <div class="text-[11px] font-bold leading-none" x-text="fwdDayNum(date)"></div>
+                                <div class="text-[9px] text-slate-400 leading-tight mt-0.5" x-text="(fwdByDate()[date].summary.n_setups||0)+' set'"></div>
+                                <div class="text-[10px] font-extrabold leading-none mt-0.5"
+                                     :class="fwdByDate()[date].summary.avg_r>0?'text-up':(fwdByDate()[date].summary.avg_r<0?'text-down':'text-slate-500')"
+                                     x-text="fwdByDate()[date].summary.avg_r!=null ? ((fwdByDate()[date].summary.avg_r>0?'+':'')+fwdByDate()[date].summary.avg_r+'R') : '·'"></div>
+                              </div>
                             </template>
-                            <template x-if="d.summary && d.summary.avg_r==null">
-                              <span class="text-slate-500" x-text="(d.summary.awaiting||0)+' tracking — updates each close'"></span>
+                            <template x-if="!(date && fwdByDate()[date])">
+                              <div class="rounded-lg p-1 min-h-[3.2rem] text-[11px] text-slate-700" :class="date?'border border-line/40':''" x-text="date?fwdDayNum(date):''"></div>
                             </template>
-                            <span x-text="openForwardDay===d.date?'▲':'▼'"></span>
                           </div>
-                        </div>
-                        <div class="px-3 py-2 text-xs leading-snug border-t border-line" style="color:#ffd591" x-text="'💡 '+d.lesson"></div>
-                        <div x-show="openForwardDay===d.date" x-transition.opacity class="border-t border-line">
-                          <template x-for="(p,pi) in d.picks" :key="pi">
-                            <div class="flex items-center gap-2 px-3 py-1.5 text-sm border-t border-line/50 cursor-pointer hover:bg-white/5" @click="showChart(p.ticker, p, {frozen:true, date:d.date, status:p.fstatus, R:p.R, pct:fwdPct(p.R,p.entry,p.stop), exit:p.exit, entry:p.entry, stop:p.stop})" :title="'Chart with the FROZEN snapshot levels from '+d.date+' (entry '+(p.entry||'?')+' · stop '+(p.stop||'?')+') — not live'">
-                              <span class="text-[10px] text-slate-600 shrink-0">📈</span>
-                              <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(p.grade)" x-text="p.grade"></span>
-                              <span class="font-bold w-16 shrink-0" x-text="p.ticker"></span>
-                              <span class="text-slate-500 text-xs flex-1 truncate min-w-0" x-text="p.setup_type"></span>
-                              <span class="badge shrink-0" x-show="p.filled_kind==='breakout' && p.setup_type!=='Breakout' && p.setup_type!=='Episodic Pivot'" style="background:rgba(245,158,11,.18);color:#fcd34d;border-color:rgba(245,158,11,.45)" title="The planned pullback never triggered, but the breakout leg filled — so this is scored on the breakout entry (the forward test no longer counts it as a miss).">⚡bkt</span>
-                              <span class="badge shrink-0" x-show="p.trend_template" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)" title="passed the Minervini Trend Template">✓TT</span>
-                              <span class="badge shrink-0" x-show="p.vcp" style="background:rgba(168,85,247,.18);color:#d9b3ff;border-color:rgba(168,85,247,.45)" title="VCP">🌀</span>
-                              <span class="font-bold shrink-0 w-16 text-right" :class="(p.R!=null?(fwdPct(p.R,p.entry,p.stop)||0):(p.progress_pct||0))>=0?'text-up':'text-down'" :style="p.R==null?'opacity:.55':''" :title="p.R!=null?('trade result = '+p.R+'R (entry → '+(p.fstatus==='open'?'now':'exit')+')'):(p.progress_pct!=null?('idea progress: the stock is '+(p.progress_pct>=0?'+':'')+p.progress_pct+'% from the entry $'+p.entry+' to now — but the entry never triggered, so hypothetical'):'')" x-text="p.R!=null ? ((fwdPct(p.R,p.entry,p.stop)>=0?'+':'')+fwdPct(p.R,p.entry,p.stop)+'%') : (p.progress_pct!=null ? ((p.progress_pct>=0?'+':'')+p.progress_pct+'%') : '—')"></span>
-                              <span class="text-[10px] shrink-0 w-24 text-right" :class="p.fstatus==='no-fill'?'text-slate-600':'text-slate-500'" :title="p.fstatus==='matured'?('filled, then exited on the '+(p.exit==='stop'?'snapshot stop $'+p.stop:(p.exit==='50ema'?'50-EMA close':'9-EMA close'))):p.fstatus==='open'?('filled — still open, tracking to the trailing-EMA close / stop'):p.fstatus==='no-fill'?('price never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry+' within the window — this setup gave no entry'):p.fstatus==='awaiting'?('entry $'+p.entry+' not '+(p.entry_type==='limit'?'pulled back to':'broken above')+' yet — fills if it triggers in a coming session'):''" x-text="p.fstatus==='matured' ? (p.exit==='stop'?'stopped out':p.exit==='9ema'?'9-EMA exit':p.exit==='50ema'?'50-EMA exit':'exited') : (p.fstatus==='open' ? 'filled · open' : p.fstatus==='no-fill' ? 'never triggered' : p.fstatus==='awaiting' ? 'no fill yet' : '—')"></span>
-                            </div>
-                          </template>
-                        </div>
+                        </template>
                       </div>
                     </template>
+                    <div class="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
+                      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded" style="background:rgba(34,224,161,.45)"></span> positive day</span>
+                      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded" style="background:rgba(255,107,125,.45)"></span> negative</span>
+                      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded" style="background:rgba(148,163,184,.30)"></span> flat / tracking</span>
+                      <span>· number = setups tracked · avg R across the filled ones</span>
+                    </div>
                   </div>
                 </template>
-                <div class="text-[11px] text-slate-500">True out-of-sample: the real current universe, scored with the same exit rules (9-EMA close / stop). The day's lesson highlights which trait (Trend Template / VCP / buyable-now / setup) carried the edge. Grows every day you scan.</div>
+
+                <!-- PER-DAY REPORT (loaded for the clicked day) -->
+                <template x-if="openForwardDay && fwdDayReport && fwdDayReport.picks">
+                  <div class="rounded-xl border border-line overflow-hidden">
+                    <div class="px-4 py-3 bg-panel2 flex items-center justify-between flex-wrap gap-2">
+                      <div class="flex items-center gap-2">
+                        <span class="text-base font-extrabold" x-text="'📊 '+openForwardDay"></span>
+                        <span class="badge" x-show="fwdDayReport.posture!=null"
+                              :style="(fwdDayReport.posture>=55?'background:rgba(34,224,161,.16);color:#9bf0cf':(fwdDayReport.posture>=45?'background:rgba(148,163,184,.16);color:#cbd5e1':'background:rgba(255,107,125,.16);color:#fda4af'))"
+                              x-text="fwdDayReport.regime+' · posture '+fwdDayReport.posture"></span>
+                      </div>
+                      <div class="text-xs text-slate-500" x-text="fwdDayReport.summary.n_setups+' setups tracked · '+fwdDayReport.summary.matured+' matured · '+fwdDayReport.summary.open+' open · '+fwdDayReport.summary.awaiting+' awaiting'"></div>
+                    </div>
+                    <div class="px-4 py-2 text-xs leading-snug border-t border-line" style="color:#ffd591" x-text="'💡 '+fwdDayReport.lesson"></div>
+                    <!-- KPI strip -->
+                    <div class="grid grid-cols-3 sm:grid-cols-5 gap-2 p-3 text-center border-t border-line">
+                      <div class="lvl"><div class="lvl-l">Scored</div><div class="font-bold" x-text="fwdDayReport.summary.n_scored"></div></div>
+                      <div class="lvl"><div class="lvl-l">Avg R</div><div class="font-extrabold" :class="(fwdDayReport.summary.avg_r||0)>=0?'text-up':'text-down'" x-text="fwdDayReport.summary.avg_r!=null?((fwdDayReport.summary.avg_r>=0?'+':'')+fwdDayReport.summary.avg_r+'R'):'—'"></div></div>
+                      <div class="lvl"><div class="lvl-l">Total R</div><div class="font-extrabold" :class="(fwdDayReport.summary.total_r||0)>=0?'text-up':'text-down'" x-text="fwdDayReport.summary.total_r!=null?((fwdDayReport.summary.total_r>=0?'+':'')+fwdDayReport.summary.total_r+'R'):'—'"></div></div>
+                      <div class="lvl"><div class="lvl-l">Win rate</div><div class="font-bold" x-text="fwdDayReport.summary.win_rate!=null?(fwdDayReport.summary.win_rate+'%'):'—'"></div></div>
+                      <div class="lvl"><div class="lvl-l">No-fill</div><div class="font-bold text-slate-400" x-text="fwdDayReport.summary.no_fill"></div></div>
+                    </div>
+                    <!-- exit-rule comparison + dimension breakdowns -->
+                    <div class="grid md:grid-cols-2 gap-4 p-3 border-t border-line" x-show="fwdDayReport.summary.matured>0">
+                      <div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">Exit rule (same trades) <span class="font-normal normal-case text-slate-600">— which trail wins</span></div>
+                        <table class="w-full text-sm">
+                          <template x-for="(v,k) in fwdDayReport.dims.by_exit" :key="k">
+                            <tr class="border-t border-line"><td class="py-1" x-text="k"></td>
+                              <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                              <td class="py-1 text-right text-slate-500" x-text="'tot '+(v.total_r>=0?'+':'')+v.total_r+'R'"></td></tr>
+                          </template>
+                        </table>
+                      </div>
+                      <div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">By setup type</div>
+                        <table class="w-full text-sm">
+                          <template x-for="(v,k) in fwdDayReport.dims.by_setup" :key="k">
+                            <tr class="border-t border-line"><td class="py-1 truncate" x-text="k"></td>
+                              <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                              <td class="py-1 text-right text-slate-500" x-text="'n='+v.n"></td></tr>
+                          </template>
+                        </table>
+                      </div>
+                      <div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">By relative strength</div>
+                        <table class="w-full text-sm">
+                          <template x-for="(v,k) in fwdDayReport.dims.by_rs" :key="k">
+                            <tr class="border-t border-line"><td class="py-1" x-text="k"></td>
+                              <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                              <td class="py-1 text-right text-slate-500" x-text="'n='+v.n"></td></tr>
+                          </template>
+                        </table>
+                      </div>
+                      <div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">By entry that filled</div>
+                        <table class="w-full text-sm">
+                          <template x-for="(v,k) in fwdDayReport.dims.by_entry" :key="k">
+                            <tr class="border-t border-line"><td class="py-1" x-text="k"></td>
+                              <td class="py-1 text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'" x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                              <td class="py-1 text-right text-slate-500" x-text="'n='+v.n"></td></tr>
+                          </template>
+                        </table>
+                      </div>
+                    </div>
+                    <!-- every tracked setup -->
+                    <div class="border-t border-line max-h-[28rem] overflow-y-auto">
+                      <template x-for="(p,pi) in fwdDayReport.picks" :key="pi">
+                        <div class="flex items-center gap-2 px-3 py-1.5 text-sm border-t border-line/50 cursor-pointer hover:bg-white/5" @click="showChart(p.ticker, p, {frozen:true, date:openForwardDay, status:p.fstatus, R:p.R, pct:fwdPct(p.R,p.entry,p.stop), exit:p.exit, entry:p.entry, stop:p.stop})" :title="'Chart with the FROZEN snapshot levels from '+openForwardDay+' (entry '+(p.entry||'?')+' · stop '+(p.stop||'?')+')'">
+                          <span class="text-[10px] text-slate-600 shrink-0">📈</span>
+                          <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(p.grade)" x-text="p.grade"></span>
+                          <span class="font-bold w-16 shrink-0" x-text="p.ticker"></span>
+                          <span class="text-slate-500 text-xs flex-1 truncate min-w-0" x-text="p.setup_type"></span>
+                          <span class="badge shrink-0 hidden sm:inline" x-show="p.rs_score!=null" :title="'relative strength percentile'" x-text="'RS'+(p.rs_score!=null?Math.round(p.rs_score):'')"></span>
+                          <span class="badge shrink-0" x-show="p.filled_kind==='breakout' && p.setup_type!=='Breakout' && p.setup_type!=='Episodic Pivot'" style="background:rgba(245,158,11,.18);color:#fcd34d;border-color:rgba(245,158,11,.45)" title="The planned pullback never triggered, but the breakout leg filled — scored on the breakout entry.">⚡bkt</span>
+                          <span class="badge shrink-0" x-show="p.trend_template" style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)" title="passed the Minervini Trend Template">✓TT</span>
+                          <span class="font-bold shrink-0 w-16 text-right" :class="(p.R!=null?(fwdPct(p.R,p.entry,p.stop)||0):(p.progress_pct||0))>=0?'text-up':'text-down'" :style="p.R==null?'opacity:.55':''" :title="p.R!=null?('trade result = '+p.R+'R (entry → '+(p.fstatus==='open'?'now':'exit')+')'):(p.progress_pct!=null?('idea progress: '+(p.progress_pct>=0?'+':'')+p.progress_pct+'% from entry — but it never triggered, hypothetical'):'')" x-text="p.R!=null ? ((p.R>=0?'+':'')+p.R+'R') : (p.progress_pct!=null ? ((p.progress_pct>=0?'+':'')+p.progress_pct+'%') : '—')"></span>
+                          <span class="text-[10px] shrink-0 w-24 text-right" :class="p.fstatus==='no-fill'?'text-slate-600':'text-slate-500'" :title="p.fstatus==='matured'?('filled, then exited on the '+(p.exit==='stop'?'snapshot stop $'+p.stop:p.exit)):p.fstatus==='open'?('filled — still open, tracking to the trailing-EMA close / stop'):p.fstatus==='no-fill'?('price never reached the '+(p.entry_type==='limit'?'pullback':'breakout')+' entry $'+p.entry):p.fstatus==='awaiting'?('entry $'+p.entry+' not triggered yet'):''" x-text="p.fstatus==='matured' ? (p.exit==='stop'?'stopped out':(p.exit||'exited')) : (p.fstatus==='open' ? 'filled · open' : p.fstatus==='no-fill' ? 'never triggered' : p.fstatus==='awaiting' ? 'no fill yet' : '—')"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <div class="text-[11px] text-slate-500">True out-of-sample: the real current universe, ALL setups tracked daily (not just the best), scored with the config-E exit rules (close under the 20-EMA / 50 for patient leaders / stop) — and each trade's R is also recorded under the 9 &amp; 50-EMA exits so we keep learning which trail wins. No survivorship, no hindsight. Grows every day the app runs.</div>
               </div>
             </template>
           </div>
@@ -1253,8 +1491,30 @@
                 <input class="input w-28 block mt-1" type="number" step="0.1" x-model.number="settings.risk_pct"></label>
               <label class="text-sm">Max position (% of acct)
                 <input class="input w-36 block mt-1" type="number" step="1" x-model.number="settings.max_position_pct"></label>
+              <label class="text-sm" title="Trade at a fraction of full size while validating the new system live. 0.33 = one-third size (the current test setting). Set to 1 for full size once the forward test confirms the edge.">Test size (× full)
+                <input class="input w-28 block mt-1" type="number" step="0.01" min="0.05" max="1" x-model.number="settings.size_factor"></label>
               <button class="btn" @click="saveSettings()">Save</button>
               <span class="text-xs text-emerald-400" x-show="savedMsg" x-text="savedMsg"></span>
+            </div>
+            <!-- Phone alerts via your own Telegram bot (local only — never leaves your machine) -->
+            <div class="mt-4 pt-3 border-t border-line">
+              <div class="text-sm font-semibold mb-1">📱 Phone alerts (Telegram)</div>
+              <div class="text-xs text-slate-500 mb-2 leading-relaxed">
+                Get the actual BUY / EXIT / TRIM / RAISE-STOP calls on your phone. One-time setup:
+                (1) in Telegram, message <b>@BotFather</b> → <code>/newbot</code> → copy the <b>token</b>;
+                (2) message your new bot once, then open
+                <code>https://api.telegram.org/bot&lt;token&gt;/getUpdates</code> and copy the <b>chat id</b>.
+                Paste both below — they stay on this machine only.
+              </div>
+              <div class="flex gap-3 items-end flex-wrap">
+                <label class="text-sm">Bot token
+                  <input class="input w-64 block mt-1" type="password" placeholder="123456:ABC-..." x-model="settings.telegram_token"></label>
+                <label class="text-sm">Chat id
+                  <input class="input w-40 block mt-1" type="text" placeholder="987654321" x-model="settings.telegram_chat_id"></label>
+                <button class="btn" @click="saveSettings()">Save</button>
+                <button class="btn-sm" @click="testTelegram()">Send test</button>
+                <span class="text-xs" :class="tgMsg.includes('✅')?'text-emerald-400':'text-down'" x-show="tgMsg" x-text="tgMsg"></span>
+              </div>
             </div>
           </div>
           <div class="flex gap-2">
@@ -1341,7 +1601,6 @@
           <label class="text-sm block">Setup <input class="input w-full" x-model="tradeModal.setup_type"></label>
           <label class="text-sm block">Entry <input class="input w-full" type="number" x-model.number="tradeModal.entry"></label>
           <label class="text-sm block">Stop <input class="input w-full" type="number" x-model.number="tradeModal.stop"></label>
-          <label class="text-sm block">Target <input class="input w-full" type="number" x-model.number="tradeModal.target"></label>
           <label class="text-sm block">Shares <input class="input w-full" type="number" x-model.number="tradeModal.shares"></label>
         </div>
       </template>

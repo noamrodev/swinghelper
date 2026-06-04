@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>🛩️ Auto Pilot</title>
+<style>
+  :root{ --bg:#0b0e14; --card:#121722; --line:rgba(255,255,255,.08); --txt:#e6ecf7; --mut:#93a1b8; --dim:#5b6b85; --up:#22e0a1; --warn:#ffb53d; --down:#ff5a72; --cyan:#34d3ee; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:760px; margin:0 auto; padding:16px 14px 40px; }
+  a{ color:var(--cyan); text-decoration:none; }
+  .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .between{ justify-content:space-between; }
+  h1{ font-size:20px; font-weight:800; margin:0; display:flex; align-items:center; gap:8px; }
+  .sub{ color:var(--mut); font-size:12px; margin-top:2px; }
+  .btn{ background:#1a2030; border:1px solid var(--line); color:var(--txt); border-radius:9px; padding:6px 10px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .btn:hover{ border-color:rgba(255,255,255,.22); }
+  .btn.on-green{ border-color:rgba(34,224,161,.5); color:#9bf0cf; }
+  .btn.on-sky{ border-color:rgba(52,170,255,.5); color:#9cd2ff; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .pill{ display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:2px 8px; border-radius:999px; }
+  .mut{ color:var(--mut); } .dim{ color:#6b7890; } .up{ color:var(--up); } .warn{ color:var(--warn); } .down{ color:var(--down); }
+  .sec-l{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:800; margin:14px 0 6px; }
+  .disc{ background:rgba(255,181,61,.10); border:1px solid rgba(255,181,61,.30); color:#ffd591; border-radius:12px; padding:10px 12px; font-size:12px; line-height:1.5; }
+  .buy{ background:rgba(34,224,161,.12); border:1px solid rgba(34,224,161,.5); border-radius:12px; padding:11px 12px; margin-bottom:8px; }
+  .buy.flash{ animation:fl 1.1s ease-out 3; }
+  @keyframes fl{ 0%{ box-shadow:0 0 0 0 rgba(34,224,161,.6);} 60%{ box-shadow:0 0 0 10px rgba(34,224,161,0);} 100%{ box-shadow:0 0 0 0 rgba(34,224,161,0);} }
+  .armed{ background:rgba(255,181,61,.10); border:1px solid rgba(255,181,61,.28); border-radius:10px; margin-bottom:6px; }
+  .armed-h{ display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer; font-size:13px; }
+  .grade{ font-weight:800; width:22px; text-align:center; flex:none; }
+  .tk{ font-weight:800; }
+  .plan{ padding:6px 12px 10px; border-top:1px solid rgba(255,255,255,.06); font-size:12px; }
+  .plan .pr{ display:flex; gap:8px; padding:1px 0; }
+  .plan .pl{ width:74px; flex:none; color:var(--mut); }
+  .empty{ color:var(--mut); text-align:center; padding:22px 10px; font-size:14px; }
+  .foot{ color:#5b6b85; font-size:10px; text-align:center; margin-top:18px; line-height:1.6; }
+  .light{ width:11px; height:11px; border-radius:50%; flex:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- header -->
+  <div class="row between" style="align-items:flex-start">
+    <div>
+      <h1>🛩️ Auto Pilot</h1>
+      <div class="sub">The best momentum setups, watched live — you get a ping the moment one confirms its entry.</div>
+    </div>
+    <div class="row" style="gap:6px">
+      <span id="liveBadge" class="dim" style="font-size:11px"></span>
+    </div>
+  </div>
+
+  <!-- controls -->
+  <div class="row" style="margin-top:10px; gap:6px">
+    <button class="btn" id="soundBtn" onclick="AP.toggleSound()">🔔 Sound on</button>
+    <button class="btn" id="alertBtn" onclick="AP.enableAlerts()">🔔 Enable alerts</button>
+    <button class="btn on-sky" id="refBtn" onclick="AP.toggleAutoRefresh()">🔄 Auto-refresh: ON</button>
+    <button class="btn" onclick="location.reload()" title="Refresh now">↻</button>
+    <a class="btn" href="/?site=1" style="margin-left:auto">Browse setups →</a>
+  </div>
+
+  <!-- disclaimer -->
+  <div class="disc" id="disc" style="margin-top:12px; display:none">
+    <b>⚠️ Not financial advice — experimental, work-in-progress.</b> <span id="discTxt"></span>
+  </div>
+
+  <!-- stance -->
+  <div class="card" id="stanceCard" style="margin-top:12px; display:none">
+    <div class="row" style="flex-wrap:nowrap; align-items:flex-start">
+      <span class="light" id="light" style="margin-top:5px"></span>
+      <div>
+        <div id="stance" style="font-weight:600"></div>
+        <div class="mut" id="verdict" style="font-size:12px; margin-top:2px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="content"></div>
+
+  <div class="foot">
+    Keep this tab open for live alerts — it auto-refreshes every 5 min to keep the free site awake.<br>
+    Powered by a momentum-strategy engine · no personal data · nothing guaranteed · your decision.
+  </div>
+</div>
+
+<script>
+const AP = {
+  data: null, prev: null,
+  sound: true, alertsOn: false, autoRefresh: true,
+  flash: {},
+  _ac: null, _poll: null, _reload: null,
+
+  fmt(v){ return (v==null?'?':v); },
+  gradeColor(g){ return ({ 'A+':'#22e0a1','A':'#22e0a1','B':'#7fd7ff','C':'#ffd591','D':'#ff9bb0' })[g] || '#c3cee0'; },
+  esc(s){ return (s==null?'':String(s)).replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); },
+
+  alertKey(){ return 'ap_alerted_' + new Date().toISOString().slice(0,10); },
+  loadAlerted(){ try{ return new Set(JSON.parse(localStorage.getItem(this.alertKey())||'[]')); }catch(e){ return new Set(); } },
+  saveAlerted(s){ try{ localStorage.setItem(this.alertKey(), JSON.stringify([...s])); }catch(e){} },
+
+  marketOpen(){ return ['PRE','PREPRE','REGULAR','POST','POSTPOST'].includes(this.data && this.data.market_state); },
+
+  async load(){
+    let d; try{ d = await (await fetch('/api/autopilot', {cache:'no-store'})).json(); }catch(e){ return; }
+    this.prev = this.data; this.data = d;
+    // fresh-confirmation alerts: a ticker now in buys that we haven't alerted today
+    const alerted = this.loadAlerted();
+    (d.buys||[]).forEach(b=>{
+      if (alerted.has(b.ticker)) return;
+      alerted.add(b.ticker); this.saveAlerted(alerted);
+      this.flash[b.ticker] = true; setTimeout(()=>{ delete this.flash[b.ticker]; this.render(); }, 8500);
+      if (this.prev) this.fire(b);     // don't burst on first load
+    });
+    this.render();
+  },
+
+  fire(b){
+    if (this.sound) this.beep();
+    if (this.alertsOn && 'Notification' in window && Notification.permission==='granted'){
+      try{ const n = new Notification('🛩️ Auto Pilot — BUY '+b.ticker, { body: b.confirm || (b.setup_type+' confirmed — entry ~$'+b.entry+', stop $'+b.stop), tag:'ap-'+b.ticker });
+        n.onclick = ()=>{ window.focus(); n.close(); }; }catch(e){}
+    }
+  },
+  beep(){
+    try{ const C = window.AudioContext||window.webkitAudioContext; if(!C) return;
+      const ac = this._ac || (this._ac = new C());
+      [880,1180].forEach((f,i)=>{ const o=ac.createOscillator(), g=ac.createGain(); o.type='sine'; o.frequency.value=f;
+        o.connect(g); g.connect(ac.destination); const t=ac.currentTime+i*0.16;
+        g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.25,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
+        o.start(t); o.stop(t+0.16); }); }catch(e){}
+  },
+  async enableAlerts(){
+    if (!('Notification' in window)){ this.alertsOn = true; }
+    else { try{ this.alertsOn = (await Notification.requestPermission())==='granted'; }catch(e){ this.alertsOn=false; } }
+    try{ if (this._ac && this._ac.state==='suspended') this._ac.resume(); }catch(e){}
+    this.beep(); this.renderControls();
+  },
+  toggleSound(){ this.sound=!this.sound; if(this.sound) this.beep(); this.renderControls(); },
+  toggleAutoRefresh(){ this.autoRefresh=!this.autoRefresh; try{ localStorage.setItem('ap_autorefresh', this.autoRefresh?'1':'0'); }catch(e){} this.scheduleReload(); this.renderControls(); },
+  scheduleReload(){ clearTimeout(this._reload); if(!this.autoRefresh) return; this._reload = setTimeout(()=>location.reload(), 5*60*1000); },
+
+  planHtml(p){
+    const pl = (p && p.plan) || {}; const e=this.esc;
+    const row=(l,v,c)=> v ? `<div class="pr"><span class="pl">${l}</span><span style="color:${c||'#cdd6e6'}">${e(v)}</span></div>` : '';
+    return row('Watch',pl.watch) + row('BUY',pl.trigger,'#22e0a1') + row('Stop',pl.stop,'#ff8aa0')
+         + row('Target',pl.target) + row('Invalidate',pl.invalidate,'#ffd591') + row('Why',pl.why,'#93a1b8');
+  },
+
+  renderControls(){
+    const sb=document.getElementById('soundBtn'); sb.textContent = this.sound?'🔔 Sound on':'🔕 Sound off';
+    const ab=document.getElementById('alertBtn'); ab.textContent = this.alertsOn?'✅ Alerts on':'🔔 Enable alerts'; ab.className='btn'+(this.alertsOn?' on-green':'');
+    const rb=document.getElementById('refBtn'); rb.textContent = this.autoRefresh?'🔄 Auto-refresh: ON':'🔄 Auto-refresh: OFF'; rb.className='btn'+(this.autoRefresh?' on-sky':'');
+  },
+
+  render(){
+    const d = this.data; if (!d){ document.getElementById('content').innerHTML = '<div class="empty">Loading the live setups…</div>'; return; }
+    const e = this.esc;
+    // live badge
+    document.getElementById('liveBadge').textContent = this.marketOpen() ? ('● watching live'+(d.updated_at?' · '+d.updated_at:'')) : 'market closed';
+    document.getElementById('liveBadge').className = this.marketOpen() ? 'up' : 'dim';
+    // disclaimer
+    if (d.disclaimer){ document.getElementById('disc').style.display='block'; document.getElementById('discTxt').textContent = d.disclaimer; }
+    // stance
+    const sc=document.getElementById('stanceCard'); sc.style.display='block';
+    const col = ({green:'#22e0a1',yellow:'#ffb53d',red:'#ff5a72'})[d.light]||'#7889b4';
+    const lt=document.getElementById('light'); lt.style.background=col; lt.style.boxShadow='0 0 10px '+col;
+    document.getElementById('stance').textContent = d.stance||'';
+    document.getElementById('verdict').textContent = d.verdict||'';
+    // body
+    let html = '';
+    const buys = d.buys||[], armed = d.armed||[];
+    if (buys.length){
+      html += '<div class="sec-l up">🟢 Buy now — confirmed</div>';
+      buys.forEach(b=>{
+        html += `<div class="buy${this.flash[b.ticker]?' flash':''}">
+          <div class="row between">
+            <div class="row" style="gap:6px"><span class="up" style="font-weight:800">🟢 BUY ${e(b.ticker)}</span>
+              <span class="grade" style="color:${this.gradeColor(b.grade)}">${e(b.grade)}</span>
+              <span class="mut" style="font-size:12px">${e(b.setup_type)}</span></div>
+            <div style="font-weight:700; font-size:13px">~$${this.fmt(b.entry)} · stop $${this.fmt(b.stop)}</div>
+          </div>
+          <div style="color:#9bf0cf; font-size:12px; margin-top:3px">${e(b.confirm||'')}</div>
+          <details style="margin-top:4px"><summary class="dim" style="cursor:pointer; font-size:12px">📋 plan</summary><div class="plan" style="border:0; padding-left:0">${this.planHtml(b)}</div></details>
+          <div class="dim" style="font-size:10px; margin-top:3px">A setup idea, not a recommendation — you decide.</div>
+        </div>`;
+      });
+    }
+    if (armed.length){
+      html += '<div class="sec-l warn">⏳ Armed — waiting to confirm</div>';
+      armed.forEach((a,i)=>{
+        const trig = a.break_level ? ('break $'+a.break_level) : a.orh ? ('OR hi $'+a.orh) : (a.kind==='breakout'?'on OR-high break':('zone $'+this.fmt(a.zone||a.entry)));
+        html += `<div class="armed">
+          <div class="armed-h" onclick="AP.toggle(${i})">
+            <span>📋</span><span class="grade" style="color:${this.gradeColor(a.grade)}">${e(a.grade)}</span>
+            <span class="tk" style="width:58px">${e(a.ticker)}</span>
+            <span class="mut" style="flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${e(a.setup_type)}</span>
+            <span class="warn" style="font-size:12px">${e(trig)}</span>
+            <span class="dim" id="arw${i}" style="font-size:10px">▼</span>
+          </div>
+          <div class="plan" id="plan${i}" style="display:none">${this.planHtml(a)}</div>
+        </div>`;
+      });
+    }
+    if (!buys.length && !armed.length){
+      html = '<div class="empty">' + (d.light==='red'
+        ? '🔴 Stand aside — weak tape. No setups armed; cash is a position.'
+        : (this.marketOpen()
+            ? 'Nothing armed right now — the best setups appear here the moment they line up, and you’ll be pinged when one confirms.'
+            : 'Market closed — the best setups arm here during market hours, and you’ll be pinged when one confirms its trigger.')) + '</div>';
+    }
+    document.getElementById('content').innerHTML = html;
+    this.renderControls();
+  },
+  toggle(i){ const p=document.getElementById('plan'+i), a=document.getElementById('arw'+i);
+    const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
+
+  start(){
+    // restore prefs (survive the 5-min reload)
+    try{ if (localStorage.getItem('ap_autorefresh')==='0') this.autoRefresh=false; }catch(e){}
+    if ('Notification' in window && Notification.permission==='granted') this.alertsOn = true;
+    window.addEventListener('pointerdown', ()=>{ try{ if (this._ac && this._ac.state==='suspended') this._ac.resume(); }catch(e){} }, { once:true });
+    this.renderControls();
+    this.load();
+    this._poll = setInterval(()=>this.load(), 20000);
+    this.scheduleReload();
+  },
+};
+AP.start();
+</script>
+</body>
+</html>
