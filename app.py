@@ -3923,14 +3923,18 @@ class _Server(ThreadingHTTPServer):
 
 
 def _shared_refresh_loop():
-    """Hosted only: the site runs its OWN independent scan — same engine + same universe as local, so the
-    same fixed (post-close) data produces the same grades. It scans once at boot (the shipped warm snapshot is
-    just an instant-boot placeholder so friends aren't staring at a cold scan), then ~daily. The site and local
-    are NOT coupled — they each scan independently; they line up on the same post-close data and drift only on
-    LIVE-moving inputs scanned at different moments (index posture, sector heat, and the Google-News feed)."""
+    """Hosted only. ⚠️ Render's FREE plan sleeps after ~15 min idle and WIPES the filesystem; on the next
+    visit the dyno wakes and (if this re-scanned) would rebuild a DIFFERENT scan — so the site's setup list
+    changed every time a friend's click happened to wake it (the "I went to Auto Pilot and it re-scanned and
+    showed a different list" bug; local never does this because it's always-on). So we DON'T auto-rescan: we
+    serve the shipped snapshot, which is STABLE across the sleep/wake cycle (it resets to the same shipped
+    file every wake). Friends can still MANUALLY scan (endpoints are open); we only scan automatically if
+    there's no snapshot at all (a cold deploy). The site is now stable: Suggestions + Auto Pilot read the
+    same unchanging data. (For a self-updating fresh scan, the site needs the PAID plan + a persistent disk.)"""
     while True:
         try:
-            run_refresh_all()
+            if not read_json(suggest_f(), {}).get("items"):   # only when there's genuinely no snapshot to serve
+                run_refresh_all()
         except Exception:
             pass
         time.sleep(24 * 3600)
