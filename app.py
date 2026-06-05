@@ -3649,12 +3649,6 @@ class Handler(BaseHTTPRequestHandler):
         if HOSTED and route == "screeners":
             # screeners (incl. the auto-built universe) are shared / owner-managed
             self._json({"ok": False, "error": "screeners are shared in hosted mode"}, 403); return
-        if HOSTED and route in ("refresh-all", "scan", "sector-heat", "news", "universe", "suspicious", "spinning", "groups"):
-            # ⚠️ SHARED market data (regime / scan / sector heat / news / universe / suspicious / spinning / groups) is the
-            # OWNER's WARM SNAPSHOT, shipped with each build. Friends must NOT re-scan and overwrite it — an independent
-            # hosted scan is exactly what made the site diverge from the owner's local. It's read-only on the hosted site;
-            # the owner refreshes what friends see by making a NEW BUILD.
-            self._json({"ok": False, "error": "market data is read-only on the hosted site — it mirrors the owner's build"}, 403); return
         if route == "screeners":
             screeners = read_json(screeners_f(), [])
             raw = body.get("tickers", "")
@@ -3930,14 +3924,14 @@ class _Server(ThreadingHTTPServer):
 
 def _shared_refresh_loop():
     """Hosted only: the SHARED market data (regime, scan, sector heat, news) ships as a WARM SNAPSHOT with
-    every build, so the site mirrors the owner's last build EXACTLY (deterministic; no cold-scan wait).
+    every build, so by default the site shows EXACTLY the owner's build (same setups + grades).
 
-    ⚠️ BUG FIX (2026-06-05): this used to run_refresh_all() on boot, which RE-SCANNED the universe + recomputed
-    the regime on the hosted server — OVERWRITING the shipped snapshot with the hosted's own independent scan
-    (different prices/regime/timing). So the site never matched the owner's local and NO rebuild could fix it
-    (the owner saw site=792 matches / A-grades vs local=780 / B-grades). Now we serve the shipped snapshot and
-    only scan if there is genuinely NO snapshot to serve (a cold deploy with no data). The owner updates what
-    friends see by making a NEW BUILD — not by the hosted server re-scanning itself."""
+    ⚠️ ROOT-CAUSE FIX (2026-06-05): this used to run_refresh_all() on boot, which re-scanned + RE-FETCHED ITS
+    OWN news/sector/regime on the hosted server and OVERWROTE the shipped snapshot. Result: the site attached
+    different live context (e.g. TSEM got a fresh news + theme tag the owner's build didn't have) → graded the
+    same setups differently (site A / local B) with the IDENTICAL engine. We now serve the shipped snapshot and
+    only scan if there is NO snapshot at all (a cold deploy). Friends can still MANUALLY scan (the scan/refresh
+    endpoints are NOT blocked) — but the default is the owner's build, so the site mirrors local out of the box."""
     while True:
         try:
             if not read_json(suggest_f(), {}).get("items"):   # ONLY when there's no shipped snapshot to serve
