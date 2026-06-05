@@ -3923,19 +3923,14 @@ class _Server(ThreadingHTTPServer):
 
 
 def _shared_refresh_loop():
-    """Hosted only: the SHARED market data (regime, scan, sector heat, news) ships as a WARM SNAPSHOT with
-    every build, so by default the site shows EXACTLY the owner's build (same setups + grades).
-
-    ⚠️ ROOT-CAUSE FIX (2026-06-05): this used to run_refresh_all() on boot, which re-scanned + RE-FETCHED ITS
-    OWN news/sector/regime on the hosted server and OVERWROTE the shipped snapshot. Result: the site attached
-    different live context (e.g. TSEM got a fresh news + theme tag the owner's build didn't have) → graded the
-    same setups differently (site A / local B) with the IDENTICAL engine. We now serve the shipped snapshot and
-    only scan if there is NO snapshot at all (a cold deploy). Friends can still MANUALLY scan (the scan/refresh
-    endpoints are NOT blocked) — but the default is the owner's build, so the site mirrors local out of the box."""
+    """Hosted only: the site runs its OWN independent scan — same engine + same universe as local, so the
+    same fixed (post-close) data produces the same grades. It scans once at boot (the shipped warm snapshot is
+    just an instant-boot placeholder so friends aren't staring at a cold scan), then ~daily. The site and local
+    are NOT coupled — they each scan independently; they line up on the same post-close data and drift only on
+    LIVE-moving inputs scanned at different moments (index posture, sector heat, and the Google-News feed)."""
     while True:
         try:
-            if not read_json(suggest_f(), {}).get("items"):   # ONLY when there's no shipped snapshot to serve
-                run_refresh_all()
+            run_refresh_all()
         except Exception:
             pass
         time.sleep(24 * 3600)
