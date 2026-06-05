@@ -42,6 +42,32 @@
           </button>
         </template>
       </nav>
+      <!-- ❤️ vital signs — heartbeat that the app is watching & all connections are healthy -->
+      <div class="px-3 pt-2 pb-1">
+        <div class="relative group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-default border"
+             :style="'background:'+(health.healthy?'rgba(34,224,161,.08)':health.ok?'rgba(255,181,61,.08)':'rgba(255,90,114,.08)')+';border-color:'+(health.healthy?'rgba(34,224,161,.3)':health.ok?'rgba(255,181,61,.3)':'rgba(255,90,114,.3)')">
+          <span class="relative flex h-2.5 w-2.5 shrink-0">
+            <span x-show="health.scanning" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" :style="'background:'+(health.healthy?'#22e0a1':'#ffb53d')"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5" :style="'background:'+(health.healthy?'#22e0a1':health.ok?'#ffb53d':'#ff5a72')"></span>
+          </span>
+          <span class="text-xs font-bold" :style="'color:'+(health.healthy?'#22e0a1':health.ok?'#ffb53d':'#ff5a72')"
+                x-text="health.scanning?'Scanning live':(health.healthy?'Connected':(health.ok?'Partial':'Offline'))"></span>
+          <span class="text-[10px] text-slate-500 ml-auto" x-show="health.time" x-text="health.time"></span>
+          <!-- hover breakdown -->
+          <div class="absolute left-0 bottom-full mb-2 w-64 p-3 rounded-xl bg-panel2 border border-line shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition z-50">
+            <div class="text-xs font-bold mb-2 flex items-center gap-2">❤️ Vital signs <span class="text-[10px] text-slate-500 font-normal ml-auto" x-text="health.market_state||''"></span></div>
+            <template x-for="s in (health.subs||[])" :key="s.key">
+              <div class="flex items-center gap-2 py-1 text-xs">
+                <span class="w-2 h-2 rounded-full shrink-0" :style="'background:'+(s.state==='ok'?'#22e0a1':s.state==='connecting'?'#ffb53d':s.state==='off'?'#5a6883':'#ff5a72')"></span>
+                <span class="font-medium" x-text="s.label"></span>
+                <span class="text-[10px] text-slate-500 ml-auto text-right" x-text="s.note + (s.age!=null?(' · '+s.age+'s ago'):'')"></span>
+              </div>
+            </template>
+            <div class="text-[10px] text-slate-400 mt-2 pt-2 border-t border-line/60" x-show="health.armed!=null" x-text="(health.armed||0)+' armed · '+(health.buys||0)+' confirmed buys'"></div>
+            <div class="text-[10px] text-slate-500 mt-1">Updated <span x-text="health.time||'—'"></span> · refreshes ~20s</div>
+          </div>
+        </div>
+      </div>
       <div class="px-5 py-4 border-t border-line text-xs text-slate-500 leading-relaxed space-y-2">
         <div class="flex items-center gap-2">
           <span>Display size</span>
@@ -146,6 +172,21 @@
             <div class="stat"><div class="stat-label">Win rate</div><div class="stat-val" x-text="stats.win_rate!=null ? stats.win_rate+'%' : '—'"></div></div>
             <div class="stat"><div class="stat-label">Avg R</div><div class="stat-val" :class="(stats.avg_r||0)>=0?'text-up':'text-down'" x-text="stats.avg_r!=null ? stats.avg_r+'R' : '—'"></div></div>
           </div>
+
+          <!-- 🛡️ DEFEND MODE banner — extended + weak tape: flatten momentum into the close, no overnight risk -->
+          <template x-if="(now&&now.defend&&now.defend.on)||(gameplan&&gameplan.defend&&gameplan.defend.on)">
+            <div class="rounded-xl px-4 py-3 flex items-start gap-3" style="background:rgba(255,90,114,.13);border:1px solid rgba(255,90,114,.5)">
+              <span class="text-2xl leading-none shrink-0">🛡️</span>
+              <div class="min-w-0">
+                <div class="text-base font-extrabold" style="color:#ff8aa0">DEFEND MODE
+                  <span class="text-[11px] font-bold align-middle ml-1 px-1.5 py-0.5 rounded" style="background:rgba(255,90,114,.2);color:#ffb3c1"
+                        x-text="((now&&now.defend)||(gameplan&&gameplan.defend)||{}).flatten_now ? 'FLATTEN NOW' : 'armed — flatten by the close'"></span>
+                </div>
+                <div class="text-sm text-slate-200 mt-1 leading-snug" x-text="((now&&now.defend)||(gameplan&&gameplan.defend)||{}).reason"></div>
+                <div class="text-[11px] text-slate-400 mt-1">New setups are still fine to take — just don't carry momentum overnight. Only Deep-Pullback 50-EMA holds (a leader bought deep at the 50) are exempt; a consolidation bought near the 9/21 trails the 9 and flattens too. Alert-only — you place every order.</div>
+              </div>
+            </div>
+          </template>
 
           <!-- two-column work area: main column + right rail (stacks on mobile) -->
           <div class="grid lg:grid-cols-12 gap-6 items-start">
@@ -471,14 +512,16 @@
                 ⚙ Filters <span x-show="activeFilterCount" class="badge" style="background:rgba(255,255,255,.28);color:#fff;border:none" x-text="activeFilterCount"></span>
                 <span class="text-[10px]" x-text="showFilters?'▲':'▼'"></span>
               </button>
+              <button class="btn-ghost text-xs" x-show="passedCount" @click="showPassed=!showPassed"
+                x-text="(showPassed?'hide':'show')+' passed ('+passedCount+')'"></button>
               <!-- most-used signals, always visible -->
               <button @click="ttFilter=!ttFilter" class="fchip" :class="ttFilter?'on':''" title="Minervini Trend Template — confirmed Stage-2 uptrend leader: price > 50/150/200 SMAs (stacked), 200-SMA rising, ≥30% off the 52w low, within 25% of the 52w high, RS rating ≥70">✓ Trend Template</button>
               <button @click="buyableFilter=!buyableFilter" class="fchip" :class="buyableFilter?'on':''" title="Price is in the buy zone right now">🟢 Buyable now</button>
               <button @click="waitFilter=!waitFilter" class="fchip" :class="waitFilter?'on':''" title="Patient entry — buy zone below price / deep pullback into the 50 EMA">⏳ Worth waiting</button>
               <span class="text-xs text-slate-500 ml-auto"><b class="text-slate-300" x-text="filteredSuggestions.length"></b> match<span x-show="filteredSuggestions.length!==1">es</span></span>
-              <button class="btn-ghost text-xs" x-show="passedCount" @click="showPassed=!showPassed"
-                x-text="(showPassed?'hide':'show')+' passed ('+passedCount+')'"></button>
               <button class="btn-ghost text-xs" x-show="activeFilterCount" @click="clearFilters()">✕ clear</button>
+              <button class="btn flex items-center gap-2 text-sm font-bold px-4 py-2" @click="toggleWatch()"
+                title="Open the live market watchlist — every name split by sector">📋 Watchlist</button>
             </div>
             <div x-show="showFilters" x-transition.opacity class="card p-3 space-y-2.5">
               <div class="flex items-start gap-2 flex-wrap">
@@ -1459,7 +1502,7 @@
                     </div>
                   </div>
                 </template>
-                <div class="text-[11px] text-slate-500">True out-of-sample: the real current universe, ALL setups tracked daily (not just the best), scored with the config-E exit rules (close under the 20-EMA / 50 for patient leaders / stop) — and each trade's R is also recorded under the 9 &amp; 50-EMA exits so we keep learning which trail wins. No survivorship, no hindsight. Grows every day the app runs.</div>
+                <div class="text-[11px] text-slate-500">True out-of-sample: the real current universe, ALL setups tracked daily (not just the best), scored with the exit rules (close under the 9-EMA / 50 for deep-at-the-50 leaders / stop) — and each trade's R is also recorded under the 9 &amp; 50-EMA exits so we keep learning which trail wins. No survivorship, no hindsight. Grows every day the app runs.</div>
               </div>
             </template>
           </div>
@@ -1478,6 +1521,52 @@
             <div class="card-head">Lessons (the coach reads these before every scan)</div>
             <pre class="p-5 text-xs whitespace-pre-wrap text-slate-400" x-text="docs.lessons"></pre>
           </div>
+        </section>
+
+        <!-- ===== 📡 ARMED LOG (every setup the engine armed live, incl. near-misses) ===== -->
+        <section x-show="view==='armedlog'" x-transition.opacity.duration.250ms class="space-y-4 max-w-4xl">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <h2 class="text-lg font-extrabold">📡 Armed Log <span class="text-xs font-normal text-slate-500">— every setup the engine armed live this session, incl. the near-misses (armed but never confirmed). Data for learning.</span></h2>
+            <button class="btn-sm" @click="loadArmedHistory()">🔄 Refresh</button>
+          </div>
+          <template x-if="!armedHistoryDays.length">
+            <div class="card p-6 text-sm text-slate-500">Nothing logged yet. This fills in live during market hours — the logger starts once the server is restarted to load it. Every name the confirmation engine arms (and whether it later confirmed) gets recorded here.</div>
+          </template>
+          <template x-for="d in armedHistoryDays" :key="d.date">
+            <div class="card p-4">
+              <div class="flex items-center gap-2 mb-3 flex-wrap">
+                <span class="font-bold" x-text="d.date"></span>
+                <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(255,255,255,.06)" x-text="d.rows.length+' armed'"></span>
+                <span class="text-xs px-2 py-0.5 rounded text-up" style="background:rgba(34,224,161,.12)" x-text="d.confirmed+' confirmed'"></span>
+                <span class="text-xs px-2 py-0.5 rounded text-slate-400" style="background:rgba(255,255,255,.04)" x-text="(d.rows.length-d.confirmed)+' near-miss'"></span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                  <thead><tr class="text-slate-500 text-left border-b border-line/60">
+                    <th class="py-1 pr-2">Gr</th><th class="pr-2">Ticker</th><th class="pr-2">Setup</th>
+                    <th class="pr-2">Armed</th><th class="pr-2">Outcome</th>
+                    <th class="pr-2 text-right">Entry</th><th class="text-right">Stop</th></tr></thead>
+                  <tbody>
+                    <template x-for="r in d.rows" :key="r.ticker+r.setup_type">
+                      <tr class="border-b border-line/30 hover:bg-white/5 cursor-pointer" @click="showChart(r.ticker)">
+                        <td class="py-1 pr-2"><span class="font-extrabold" :style="r.grade?('color:'+gradeColor(r.grade)):''" x-text="r.grade||'—'"></span></td>
+                        <td class="pr-2 font-bold" x-text="r.ticker"></td>
+                        <td class="pr-2 text-slate-400 truncate max-w-[10rem]" x-text="r.setup_type"></td>
+                        <td class="pr-2 text-slate-300" x-text="r.first_armed"></td>
+                        <td class="pr-2">
+                          <span x-show="r.ever_confirmed" class="text-up font-semibold" x-text="'✓ confirmed '+r.confirmed_at"></span>
+                          <span x-show="!r.ever_confirmed" class="text-slate-500">armed only · last seen <span x-text="r.last_seen"></span></span>
+                        </td>
+                        <td class="pr-2 text-right tabular-nums" x-text="r.entry!=null?('$'+r.entry):'—'"></td>
+                        <td class="text-right tabular-nums" x-text="r.stop!=null?('$'+r.stop):'—'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-[11px] text-slate-500 mt-2">Tap a row for its chart. "Near-miss" = it armed (A/A+, watched) but never took out its trigger — study these to see what almost worked.</div>
+            </div>
+          </template>
         </section>
 
         <!-- ===== STRATEGY & RULES ===== -->
@@ -1532,6 +1621,97 @@
       </div>
     </main>
   </div>
+
+  <!-- ===== 📋 Live-market watchlist drawer (all names by Sector Heat theme) — opened from the Suggestions toolbar ===== -->
+  <!-- backdrop (mobile) -->
+  <div x-show="watchOpen" @click="watchOpen=false" x-cloak class="fixed inset-0 bg-black/50 z-40 sm:hidden"></div>
+  <!-- the drawer -->
+  <aside x-show="watchOpen" x-cloak x-transition:enter="transition-transform duration-200" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition-transform duration-150" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+         class="fixed right-0 inset-y-0 w-full sm:w-96 bg-panel border-l border-line z-50 flex flex-col shadow-2xl">
+    <!-- header -->
+    <div class="px-3 py-3 border-b border-line flex items-center gap-2">
+      <span class="font-extrabold text-sm">📋 Market Watch</span>
+      <span class="text-[11px] text-slate-500" x-show="watchCount" x-text="watchCount+' names'"></span>
+      <span x-show="sectorHeat.live" class="text-[10px] font-bold flex items-center gap-1" style="color:#22e0a1"><span class="w-1.5 h-1.5 rounded-full" style="background:#22e0a1"></span>live <span x-text="sectorHeat.live_at"></span></span>
+      <button class="ml-auto text-slate-400 hover:text-slate-100 text-lg leading-none px-1" @click="watchOpen=false" title="Close">✕</button>
+    </div>
+    <!-- sort / organize controls -->
+    <div class="flex items-center gap-1.5 px-2.5 py-2 border-b border-line flex-wrap">
+      <button @click="watchSort='sector'" class="fchip" :class="watchSort==='sector'?'on':''">🗂 Sectors</button>
+      <button @click="watchSort='gainers'" class="fchip" :class="watchSort==='gainers'?'on':''">📈 Gainers</button>
+      <button @click="watchSort='losers'" class="fchip" :class="watchSort==='losers'?'on':''">📉 Losers</button>
+      <button @click="watchSort='grade'" class="fchip" :class="watchSort==='grade'?'on':''">⭐ By grade</button>
+    </div>
+    <!-- column header -->
+    <div class="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 font-bold border-b border-line/60">
+      <span class="w-6 text-center shrink-0">Gr</span>
+      <span class="flex-1">Symbol</span>
+      <span class="w-14 text-right">Last</span>
+      <span class="w-14 text-right">Chg%</span>
+      <span class="w-11 text-right">Ext</span>
+    </div>
+    <!-- INDEX strip — ALWAYS pinned at the top, never sorted -->
+    <div class="border-b border-line bg-white/[.04]">
+      <template x-for="ix in watchIndexes" :key="ix.name">
+        <div class="flex items-center gap-1.5 px-2.5 py-1 text-xs">
+          <span class="w-6 shrink-0"></span>
+          <span class="font-bold flex-1 min-w-0 truncate" x-text="ix.name"></span>
+          <span class="w-14 text-right tabular-nums text-slate-300" x-text="ix.last!=null?ix.last.toLocaleString(undefined,{maximumFractionDigits:2}):'—'"></span>
+          <span class="w-14 text-right tabular-nums" :class="(ix.chg_pct||0)>=0?'text-up':'text-down'" x-text="ix.chg_pct!=null?((ix.chg_pct>=0?'+':'')+ix.chg_pct+'%'):''"></span>
+          <span class="w-11 text-right tabular-nums text-[10px]" :class="(ix.ext_pct||0)>=0?'text-up':'text-down'" x-text="ix.ext_pct!=null?((ix.ext_pct>=0?'+':'')+ix.ext_pct+'%'):''"></span>
+        </div>
+      </template>
+    </div>
+    <!-- names list -->
+    <div class="flex-1 overflow-y-auto">
+      <template x-if="!sectorHeat.sectors || !sectorHeat.sectors.length">
+        <div class="p-5 text-sm text-slate-500">No sector data yet — run a scan / refresh Sector Heat to populate the universe.</div>
+      </template>
+      <!-- SECTORS view (grouped, collapsible) -->
+      <template x-if="watchSort==='sector'">
+        <div>
+          <template x-for="s in watchSectors" :key="s.sector">
+            <div class="border-b border-line/40">
+              <button @click="watchCollapsed[s.sector]=!watchCollapsed[s.sector]"
+                      class="w-full flex items-center gap-2 px-2.5 py-1.5 bg-white/[.03] hover:bg-white/[.06] sticky top-0 z-10 backdrop-blur">
+                <span class="text-[9px] text-slate-500 w-2" x-text="watchCollapsed[s.sector]?'▸':'▾'"></span>
+                <span class="font-bold text-xs flex-1 text-left truncate" x-text="s.sector"></span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0" :class="s.tier==='Hot'?'bg-rose-500/20 text-rose-300':(s.tier==='Warm'?'bg-amber-500/20 text-amber-300':'bg-slate-600/30 text-slate-400')" x-text="s.tier"></span>
+                <span class="w-12 text-right text-[11px] font-bold tabular-nums" :class="(s.perf_1d||0)>=0?'text-up':'text-down'" x-text="s.perf_1d!=null?((s.perf_1d>=0?'+':'')+s.perf_1d+'%'):''"></span>
+              </button>
+              <div x-show="!watchCollapsed[s.sector]">
+                <template x-for="m in (s.members||[])" :key="m.ticker">
+                  <div class="flex items-center gap-1.5 px-2.5 py-1 text-xs hover:bg-white/5 cursor-pointer" @click="showChart(m.ticker)">
+                    <span class="w-6 text-center text-[10px] font-extrabold shrink-0" :class="m._sug.grade?'':'text-slate-600'" :style="m._sug.grade?('color:'+gradeColor(m._sug.grade)):''" x-text="m._sug.grade||'·'" :title="m._sug.setup_type||''"></span>
+                    <span class="font-semibold flex-1 min-w-0 truncate" x-text="m.ticker"></span>
+                    <span class="w-14 text-right tabular-nums text-slate-300" x-text="m.close!=null?m.close.toLocaleString(undefined,{maximumFractionDigits:2}):'—'"></span>
+                    <span class="w-14 text-right tabular-nums" :class="(m.perf_1d||0)>=0?'text-up':'text-down'" x-text="m.perf_1d!=null?((m.perf_1d>=0?'+':'')+m.perf_1d+'%'):''"></span>
+                    <span class="w-11 text-right tabular-nums text-[10px]" :class="(m.ext_pct||0)>=0?'text-up':'text-down'" x-text="m.ext_pct!=null?((m.ext_pct>=0?'+':'')+m.ext_pct+'%'):''"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+      <!-- FLAT view (gainers / losers / grade) -->
+      <template x-if="watchSort!=='sector'">
+        <div>
+          <template x-for="m in watchRows" :key="m.ticker+'@'+m.sector">
+            <div class="flex items-center gap-1.5 px-2.5 py-1 text-xs hover:bg-white/5 cursor-pointer border-b border-line/20" @click="showChart(m.ticker)">
+              <span class="w-6 text-center text-[10px] font-extrabold shrink-0" :class="m._sug.grade?'':'text-slate-600'" :style="m._sug.grade?('color:'+gradeColor(m._sug.grade)):''" x-text="m._sug.grade||'·'" :title="m._sug.setup_type||''"></span>
+              <span class="flex-1 min-w-0 truncate"><span class="font-semibold" x-text="m.ticker"></span> <span class="text-[10px] text-slate-600" x-text="m.sector"></span></span>
+              <span class="w-14 text-right tabular-nums text-slate-300" x-text="m.close!=null?m.close.toLocaleString(undefined,{maximumFractionDigits:2}):'—'"></span>
+              <span class="w-14 text-right tabular-nums" :class="(m.perf_1d||0)>=0?'text-up':'text-down'" x-text="m.perf_1d!=null?((m.perf_1d>=0?'+':'')+m.perf_1d+'%'):''"></span>
+              <span class="w-11 text-right tabular-nums text-[10px]" :class="(m.ext_pct||0)>=0?'text-up':'text-down'" x-text="m.ext_pct!=null?((m.ext_pct>=0?'+':'')+m.ext_pct+'%'):''"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+    <div class="px-3 py-1.5 border-t border-line text-[10px] text-slate-500">Gr = setup grade (A+→D) · tap a name for its chart · index pinned up top · Ext = pre/after-hours move</div>
+  </aside>
 
   <!-- ===== Chart modal ===== -->
   <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="closeChart()" x-cloak>

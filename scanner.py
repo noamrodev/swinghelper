@@ -222,6 +222,13 @@ def _fetch_earnings(sym):
 
 
 _QUOTE_CACHE = {}                       # sym -> {price, prev_close, change_pct, market_state, _t}
+_QUOTE_HEALTH = {"last_ok": None, "last_err": None}   # Yahoo price-feed heartbeat (for the /api/health vital signs)
+
+
+def quote_health():
+    """Yahoo price-feed health: when we last got a good quote response, and the last error. The /api/health
+    endpoint turns this into the green/red 'Yahoo connected' dot in the app + website vital-signs indicator."""
+    return dict(_QUOTE_HEALTH)
 
 
 def fetch_quotes(symbols, max_age=30):
@@ -279,7 +286,9 @@ def fetch_quotes(symbols, max_age=30):
                                "market_state": ms, "_t": now}
                         _QUOTE_CACHE[sym] = rec
                         out[sym] = rec
+                    _QUOTE_HEALTH["last_ok"] = now           # a good Yahoo response landed
                 except Exception:
+                    _QUOTE_HEALTH["last_err"] = now
                     _YF["opener"] = _YF["crumb"] = None     # crumb may have expired
     return out
 

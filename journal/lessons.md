@@ -59,10 +59,12 @@ lessons, newest insights merged in (not an endless list of duplicates).
   tested every "fix" for patchy setups — waiting for the opening-range break, dip-buying, requiring the full
   base breakout — and EVERY one raised the win rate but *cut* total R (they enter higher / trade less / clip
   the big winners). The max-R recipe is the momentum one: enter **EARLY** (the prior-day-high break), stop at
-  the **DAY'S LOW** (wide enough not to get wicked), trail the **20 EMA** not the 9 (the looser trail let DOCN
-  run +21R vs +11R; +65.8R vs +53.6R over the month, +28.7% vs +25.2% on the real account). A 48–52% win rate
-  with monster winners beats a 60%+ win rate that clips them. **Full ruleset:
-  [strategy/swing-system.md](../strategy/swing-system.md).** (from the intraday backtest, 2026-06-03)
+  the **DAY'S LOW** (wide enough not to get wicked), and trail (the backtest favored the looser 20 EMA — DOCN
+  +21R vs +11R — **but I overrode it back to the 9 EMA on 2026-06-05** for tighter discipline: *"the only long
+  positions is when i buy a market leader on the 50 emas, the rest is using the 9 ema."* The 50-EMA trail is
+  ONLY for a leader bought DEEP at the 50, like CIEN; everything else trails the 9). A 48–52% win rate with
+  monster winners beats a 60%+ win rate that clips them. **Full ruleset:
+  [strategy/swing-system.md](../strategy/swing-system.md).** (from the intraday backtest, 2026-06-03; trail revised 2026-06-05)
 - **Don't trade a deep correction — stand aside.** Backtesting March (posture 18, a real correction): the
   system correctly graded NOTHING A-worthy → 0 trades. Forcing it to trade the "RS leaders" anyway lost −13%
   at a 9% win rate — even the strongest names get whipsawed in a crash. The monsters that "came out of" March

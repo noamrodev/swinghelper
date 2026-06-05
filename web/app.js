@@ -31,16 +31,22 @@ function dataCenter() {
       { id: 'journal', label: 'Journal', icon: '📓' },
       { id: 'news', label: 'News', icon: '📰' },
       { id: 'stats', label: 'Stats', icon: '📈' },
+      { id: 'armedlog', label: 'Armed Log', icon: '📡' },
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
     view: 'dashboard',           // the website is for browsing; the tray "live coach" makes the calls
+    watchOpen: false,            // 📋 live-market watchlist drawer (right edge) — all names by sector
+    watchCollapsed: {},          // per-sector collapse state in the watchlist drawer
+    watchSort: 'sector',         // sector | gainers | losers | grade — how the watchlist is organized
     market: currentMarket(),     // 'us' (default) or 'il' (Tel Aviv) — switches all data
     backupMsg: '',
     mobileNav: false,
     hosted: false,
     // pages hidden on the hosted free service for friends: journal/watchlist can't save (no storage), and
     // stats/strategy are the owner's tools — friends only need Auto Pilot + browsing. (Auto Pilot is the headline.)
-    hostedHidden: ['journal', 'watchlist', 'stats', 'strategy'],
+    hostedHidden: ['journal', 'watchlist', 'stats', 'strategy', 'armedlog'],
+    armedHistory: {},            // 📡 per-day log of every setup the engine armed/confirmed live (local learning data)
+    health: { ok: false, healthy: false, subs: [] },   // ❤️ vital signs — scan/Yahoo/Telegram heartbeat
     settings: { account_size: null, risk_pct: 1 },
     screeners: [],
     suggestions: { items: [] },
@@ -213,6 +219,8 @@ function dataCenter() {
       this.loadDoc(this.docTab);
       this.startLive();
       setInterval(() => { if (this.live.updated_at) this.liveAgeSec = Math.round((Date.now() - this._liveAt) / 1000); }, 1000);
+      this.loadHealth();                                     // ❤️ vital signs now + every 20s
+      setInterval(() => this.loadHealth(), 20000);
     },
 
     // ---------- live updates (free Yahoo quotes, polled while the market is open) ----------
@@ -281,8 +289,8 @@ function dataCenter() {
             && (!this._lastNow || Date.now() - this._lastNow > 40000)) {
           this._lastNow = Date.now(); this.loadNow();
         }
-        // live Sector Heat — only while viewing that tab (it fetches all member quotes), throttled ~60s
-        if (this.view === 'screeners' && this.screenTab === 'heat' && this.marketOpen
+        // live Sector Heat — while viewing that tab OR the 📋 watchlist drawer is open (both use member quotes), throttled ~60s
+        if (((this.view === 'screeners' && this.screenTab === 'heat') || this.watchOpen) && this.marketOpen
             && (!this._lastHeatLive || Date.now() - this._lastHeatLive > 60000)) {
           this.loadSectorHeatLive();
         }
@@ -396,6 +404,13 @@ function dataCenter() {
         }
       }
       else { action = 'HOLD'; tone = 'good'; reason = `trend intact above the ${trailLabel}${rsuffix} — hold; exit on a daily close under it`; }
+      // DEFEND MODE — in the closing window (server sets flatten_now only in RTH after 15:30 ET), flip every
+      // momentum position to FLATTEN. Patient 50-EMA holds are exempt; an EXIT already means 'get out'.
+      const dfd = this.now && this.now.defend;
+      if (dfd && dfd.flatten_now && !patient && reg && action !== 'EXIT') {
+        action = 'FLATTEN'; tone = 'warn';
+        reason = `🛡️ defend mode — sell into the close; don't hold this overnight (extended + weak tape tends to give the gains back). Your call.`;
+      }
       return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
     },
     mergeLive() {
@@ -969,11 +984,69 @@ function dataCenter() {
       if (id === 'dashboard' && !this.gameplan) this.loadGameplan();
       if (id === 'dashboard' || id === 'suggestions') this.loadNow();   // suggestions show live confirmation status
       if (id === 'stats') { this.loadForward(); this.loadPnlCal(); }
+      if (id === 'armedlog') this.loadArmedHistory();
+    },
+    async loadArmedHistory() { try { this.armedHistory = await this.api('/armed-history'); } catch (e) {} },
+    async loadHealth() { try { this.health = await this.api('/health'); } catch (e) { this.health = { ok: false, healthy: false, subs: [] }; } },
+    get armedHistoryDays() {       // [{date, rows[], confirmed}] newest day first, rows by arm time
+      const h = this.armedHistory || {};
+      return Object.keys(h).sort().reverse().map(date => {
+        const rows = Object.values(h[date] || {}).sort((a, b) => (a.first_armed || '').localeCompare(b.first_armed || ''));
+        return { date, rows, confirmed: rows.filter(r => r.ever_confirmed).length };
+      });
     },
 
     // ---------- sector heat ----------
     async loadSectorHeat() { this.sectorHeat = await this.api('/sector-heat'); },
     async loadSectorHeatLive() { try { this.sectorHeat = await this.api('/sector-heat/live'); this._lastHeatLive = Date.now(); } catch (e) {} },
+    // ----- 📋 live-market watchlist drawer (all names split by Sector Heat theme) -----
+    toggleWatch() {
+      this.watchOpen = !this.watchOpen;
+      if (this.watchOpen) {
+        if (!this.sectorHeat.sectors || !this.sectorHeat.sectors.length) this.loadSectorHeat();
+        if (!this.suggestions.items || !this.suggestions.items.length) this.loadSuggestions();   // grade badges
+        if (this.marketOpen) this.loadSectorHeatLive();
+      }
+    },
+    gradeRank(g) { return { 'A+': 5, 'A': 4, 'B': 3, 'C': 2, 'D': 1 }[g] || 0; },
+    get watchSugMap() { const m = {}; (this.suggestions.items || []).forEach(s => { m[(s.ticker || '').toUpperCase()] = s; }); return m; },
+    get watchSectors() {               // sectors by rank (hottest first), each member enriched with its setup grade
+      const sm = this.watchSugMap;
+      return [...(this.sectorHeat.sectors || [])]
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+        .map(s => ({ sector: s.sector, tier: s.tier, perf_1d: s.perf_1d,
+          members: (s.members || []).map(m => ({ ...m, _sug: sm[(m.ticker || '').toUpperCase()] || {} })) }));
+    },
+    get watchRows() {                  // FLAT list (all names) enriched + sorted for gainers/losers/grade views
+      const sm = this.watchSugMap, rows = [];
+      (this.sectorHeat.sectors || []).forEach(s => (s.members || []).forEach(m =>
+        rows.push({ ...m, sector: s.sector, _sug: sm[(m.ticker || '').toUpperCase()] || {} })));
+      const d = this.watchSort, P = (m, def) => (m.perf_1d != null ? m.perf_1d : def);
+      if (d === 'gainers') rows.sort((a, b) => P(b, -999) - P(a, -999));
+      else if (d === 'losers') rows.sort((a, b) => P(a, 999) - P(b, 999));
+      else if (d === 'grade') rows.sort((a, b) => this.gradeRank(b._sug.grade) - this.gradeRank(a._sug.grade) || (P(b, -999) - P(a, -999)));
+      return rows;
+    },
+    get watchIndexes() {               // SPX/QQQ/IWM (or TA125/TA35) live strip at the top of the drawer
+      const map = { us: [['SPX', '^GSPC'], ['QQQ', 'QQQ'], ['IWM', 'IWM']], il: [['TA125', '^TA125.TA'], ['TA35', 'TA35.TA']] };
+      const px = this.live.prices || {};
+      const stored = {}; (this.market.indexes || []).forEach(i => { stored[i.name] = i; });
+      return (map[this.market] || map.us).map(([name, sym]) => {
+        const q = px[sym.toUpperCase()] || {};
+        const last = q.price != null ? q.price : (stored[name] ? stored[name].close : null);
+        const prev = q.prev_close;
+        const chg = (last != null && prev != null) ? +(last - prev).toFixed(2) : null;
+        let chg_pct = q.change_pct;
+        if (chg_pct == null && last != null && prev != null) chg_pct = +((last / prev - 1) * 100).toFixed(2);
+        return { name, last, chg, chg_pct, ext_pct: q.ext_change_pct };
+      });
+    },
+    get watchCount() { return (this.sectorHeat.sectors || []).reduce((n, s) => n + (s.members || []).length, 0); },
+    memChg(m) {                        // $ change today — live `chg` if present, else derived from close & perf_1d
+      if (m.chg != null) return m.chg;
+      if (m.close != null && m.perf_1d != null) { const prev = m.close / (1 + m.perf_1d / 100); return +(m.close - prev).toFixed(2); }
+      return null;
+    },
     async loadGroups() { this.groups = await this.api('/groups'); },
     async detectGroups() {
       const r = await this.api('/groups/detect', 'POST');

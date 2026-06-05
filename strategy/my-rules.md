@@ -29,13 +29,26 @@ here to match how you actually trade.
 - **Earnings:** not an automatic trim â€” a binary event I decide to hold through or reduce case by case.
 - **Exit (momentum):** I ride winners and **exit when price closes under the 9 EMA.** Charts show
   the **9 / 21 / 50 EMA**; the 9 EMA is my trailing line.
-- **Exit OUTLIER â€” the deep-pullback LONG HOLD (50-EMA trail):** the one exception to the 9-EMA exit.
+- **Exit OUTLIER â€” the deep-pullback LONG HOLD (50-EMA trail):** the ONLY exception to the 9-EMA exit.
   When I catch a **strong long-term leader (consistent uptrend ~6+ months) in a DEEP PULLBACK down to the
-  50 EMA** (grabbed at/near the 50, like LITE), it's a long play â€” I **hold until it closes under the 50
-  EMA**, NOT the 9. These setups sit below the 9 EMA by design, so a close under the 9 is normal and not an
-  exit. (Applies to **Deep Pullback / Consolidation** â€” the patient "worth-waiting" dip-buys at the 50. The
-  position coach and the forward test both trail the 50 for these.)
+  50 EMA** (grabbed at/near the 50, like CIEN / LITE), it's a long play â€” I **hold until it closes under the
+  50 EMA**, NOT the 9. It sits below the 9 by design, so a close under the 9 is normal and not an exit.
+  **This applies ONLY to a Deep Pullback bought AT the 50 â€” NOT to a Consolidation.** A consolidation I buy
+  up near the 9/21 (like MXL) is a normal momentum trade and trails the **9 EMA**; letting it ride to the
+  50 (which can be 25â€“30% below price) would hand the whole move back. **The trail = the EMA I entered
+  against:** bought at the 50 â†’ trail the 50; bought anywhere else â†’ trail the 9. (2026-06-05.)
 - **Minimum R to first target:** 2.
+- **DEFEND MODE (added 2026-06-05) â€” flatten momentum into the close when the tape is extended AND weak
+  right now.** When the market is **both** stretched/frothy (â‰¥2 of SPX/QQQ/IWM above the 50-MA in ADR
+  terms, or "frothy/late-stage", or Fear&Greed â‰¥ 72) **AND showing weakness on the current session**
+  (â‰¥2 indexes red â€” premarket/after-hours or intraday), I don't hold momentum trades overnight. The
+  classic trigger: a good up day, then a red premarket â€” an extended, fearful tape round-trips the gains.
+  So I **sell momentum positions into the close** and go to cash overnight; I re-enter fresh the next day
+  if the setup is still there. **Exemption:** ONLY the Deep-Pullback 50-EMA long holds (a leader bought
+  deep at the 50) are NOT flattened â€” a Consolidation bought near the 9/21 trails the 9 and IS flattened.
+  **New entries are unaffected** â€” I still trade daily;
+  the rule is purely "don't carry momentum overnight." The app **alerts** me to flatten (it never sells
+  for me), firing in the last ~30 min (after 15:30 ET); a normal extended-but-GREEN tape does NOT arm it.
 
 ## Hard "don'ts" (seed list â€” `/review-trades` will add to this)
 - Don't chase: no entries more than ~1Ã— ADR above the trigger.

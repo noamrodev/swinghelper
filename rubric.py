@@ -69,6 +69,11 @@ CAP_BREAKOUT_MIXED = 72   # breakout/EP in mixed tape (posture < MIXED) → max 
 CAP_PATIENT_WEAK   = 72   # best patient at-support setup in weak tape → max B
 CAP_PLAIN_WEAK     = 52   # plain pullback / other in weak tape → max C
 CAP_PLAIN_MIXED    = 78   # plain pullback / other in mixed tape → allow A, not A+
+# LEADERSHIP GATE (user 2026-06-05, the TER case): A/A+ is reserved for LEADERS. A name that is neither a
+# strong-RS leader NOR a confirmed Stage-2 trend-template uptrend caps at B — a tidy AVWAP/pullback on a
+# choppy non-leader (TER: RS 58, fails the trend template, months of chop) is a B at best, never an A.
+LEADER_RS     = 70        # rs_pct (percentile) at/above this = leader-grade strength (Minervini RS-rating bar)
+CAP_NONLEADER = 72        # not a leader (RS < LEADER_RS and not trend-template) → max B
 
 EARN_SOON_PEN = 18      # earnings within ~a week → hard demote
 EARN_NEAR_PEN = 6       # earnings ~8-14 days out → lighter caution
@@ -86,10 +91,29 @@ HIST_MIN_N     = 5      # min CLOSED trades per setup before the nudge arms
 COACH_PARABOLIC_ADR = 4.0   # ≥ this many ADR above the 9-EMA = a parabolic blow-off → TRIM
 COACH_RAISE_R       = 1.0   # at ≥ this R, raise the stop to breakeven
 COACH_EARN_SOON_D   = 7     # earnings within this many days = a binary event → WATCH
-TRAIL_EMA           = 20    # the DEFAULT trailing-exit EMA — exit on a daily CLOSE under it. Max-R intraday
-                            # backtest (2026-06-03, tools/sim_intraday.py): the 20-EMA trail beat the 9-EMA
-                            # +65.8R vs +53.6R over the month by letting winners run ~2× further. (Was 9.)
-TRAIL_EMA_PATIENT   = 50    # the LONG-HOLD trail for the patient deep-leader setups (Deep Pullback / Consolidation)
+TRAIL_EMA           = 9     # the DEFAULT trailing-exit EMA — exit on a daily CLOSE under it. The user's core
+                            # method (Qulla 9-EMA trail, CLAUDE.md ground rule), reaffirmed 2026-06-05: "the rest
+                            # is using the 9 ema." (A 2026-06-03 backtest had set this to 20 for max-R — the looser
+                            # trail let DOCN run +21R vs +11R — but the user prefers the tighter 9-EMA discipline.)
+TRAIL_EMA_PATIENT   = 50    # the LONG-HOLD trail — ONLY for a market leader bought DEEP at the 50 EMA (Deep
+                            # Pullback, like CIEN). NOT consolidations bought up near the 9/21 (user 2026-06-05:
+                            # "the only long positions is when i buy a market leader on the 50 emas, the rest is 9").
+
+# ----- Defend mode (extended + weak tape → flatten momentum into the close) -- #
+# The user's ask (2026-06-05): when the market is BOTH extended AND showing weakness RIGHT NOW (the
+# classic "good day yesterday, red premarket, it gives the money back" tape), don't hold momentum
+# trades overnight — flatten them into the close and go to cash. ALERT-only (the app never sells for
+# you). Patient 50-EMA holds (Deep Pullback only — a leader bought DEEP at the 50) are EXEMPT; a Consolidation
+# bought near the 9/21 trails the 9 and is NOT exempt (user 2026-06-05).
+# New entries are NOT paused (the user trades daily); the rule is purely "don't carry momentum overnight".
+DEFEND_FG          = 72     # Fear&Greed at/above this alone counts as "extended" (frothy/greedy)
+DEFEND_STRETCHED_N = 2      # this many of the 3 indexes stretched above the 50-MA also = "extended"
+DEFEND_RED_PCT     = -0.15  # an index counts as "red on the session" at/below this % (ext-hours or intraday)
+DEFEND_WEAK_RED_N  = 2      # need this many of the 3 indexes red → the tape is "weak right now"
+DEFEND_WEAK_AVG    = -0.20  # ...AND the average index session move must be at/below this (kills flicker)
+DEFEND_FLATTEN_ET  = 15.0   # the FLATTEN reminder fires after this ET hour — 15:00 = ~1 HOUR before the 16:00
+                            # close (user wants the heads-up an hour out, BEFORE the bell, while it can still be
+                            # acted on in the regular session). Before the window it's a quiet "plan to flatten".
 
 # ----- Profit guard (lock in real money, don't choke on noise) -------------- #
 # The user's ask (2026-06-04): "I'm tired of giving my money back at breakeven. Let me KEEP some.
