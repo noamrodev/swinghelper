@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-06-06 (evening — Telegram upgrade · macro-layer rewire · Today-prediction fix)
+- **Telegram bot upgraded (LOCAL-ONLY, free)** — inline action buttons on alerts ([✅ Took it]/[👀 Watch]/[❌ Pass];
+  [🔴 Closed it]/[🟡 Raise stop]), a `/` command menu (`setMyCommands`: /setups /positions /pnl /brief /recap /regime
+  /defend /size /help), auto **AM gameplan (~9:00 ET) + EOD recap (~16:10 ET) + defend-flip** phone digests (weekday,
+  `briefing_enabled` toggle in Settings), and a `/size` 1%-risk sizer (longs-only + ≤1×ADR gated). `handle_callback_query`
+  + `tg_send_buttons`/`tg_answer_callback`/`tg_edit_markup`; loop handles `callback_query`. **Took-it reuses the guarded
+  `_chat_take`** (asks for your fill / refuses >1×ADR — never books a stale price). Telegram is **local-only forever**;
+  its Settings UI is now `x-show="!hosted"` so it never shows on the friends' site.
+- **5 latent trade-logging rule-violations fixed** in the chat path (`_chat_take`/`_chat_move_stop`): 1×ADR check on log
+  (G1), no stale bar-close as a "fill" (G2), require a stop / no fake 0R (G3), preserve setup_type for the 50-EMA trail
+  (G4), refuse a stop that widens risk (G5).
+- **Macro layer rewired (blind-research-validated, Burry 7/7, grades byte-for-byte unchanged).** New `regime_signal()` =
+  ONE canonical band+light+`risk_off` classifier (collapses the divergent threshold tables in compute_now/gameplan).
+  **Defend mode now arms on `(extended AND weak) OR risk_off`** — the data-backed independent path (posture<30 / no index
+  above its 50-day / VIX spike) — fixing defend turning OFF in a real correction (a correction bled −225R/−264R on
+  breakouts in the study; pullback-at-support stayed flat → patient-50 holds exempt). Phase-0 wiring: `_effective_regime`
+  carries `vix_trend` into the live PRE/POST regime (the VIX arm was dead live); gameplan passes `frothy` to defend (tabs
+  agree). Research harness: `tools/research_macro.py` → `data/research_macro.json`. Rejected as noise: VIX-level bands,
+  breadth-%, 200-MA count.
+- **"Today" prediction fixed** — it printed "Likely up" while Overall said Risk-off. Causes fixed in `compute_prediction`
+  DAILY block: capped the catalyst tilt (±0.6) so a few headlines can't outvote breadth; anchored the daily lean to
+  `regime_signal` (no up-call in risk_off unless indexes are LIVE green); gated stale pre-market/catalyst files behind
+  `_us_session_active()` (off-hours falls back to the regime base case). OVERALL state/frothy untouched → defend/grades safe.
+- **Standing rules set:** Telegram is local-only/private forever; research runs on a cheap model (haiku). Roadmap task
+  added: compact + route the always-read docs (CLAUDE.md/ROADMAP/PROJECT/MEMORY) to cut standing token cost.
+- **Synced to the build** (`make-build.ps1`, test-gate 7/7) — NOT pushed (user pushes). ⚠️ **Restart the server** to load
+  the Telegram + macro + prediction changes. Friend handout written: `UNIVERSE_AND_DATA_HOWTO.md`.
+
 ## 2026-06-06 (VIX velocity · grader fixes · build gate · Learning Hub)
 - **VIX velocity feature** — `scanner.vix_trend()` (a SIBLING of fear_greed, never folded into posture → can't
   touch grades) reads "panic building vs fading" via a 5-state classifier (calm/falling/rising/spiking/

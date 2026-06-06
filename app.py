@@ -30,8 +30,17 @@ from urllib.parse import urlparse, unquote, quote, parse_qs
 import scanner
 import universe
 import rubric
-import bots
-import learning
+# bots (Competition) + learning (Learning Hub) are LOCAL-ONLY features and are NOT shipped to the hosted
+# build (make-build.ps1 omits them by design). Guard the imports so the hosted server boots without them —
+# every bots.*/learning.* call site is HOSTED-gated or only runs on the local path, so None is never used there.
+try:
+    import bots
+except ImportError:
+    bots = None
+try:
+    import learning
+except ImportError:
+    learning = None
 
 BASE = Path(__file__).resolve().parent
 SEED = BASE / "data"                       # shared files baked into the image / repo
