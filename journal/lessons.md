@@ -42,6 +42,16 @@ lessons, newest insights merged in (not an endless list of duplicates).
   Same setup, opposite execution: the retest gives a tight stop and big R; chasing with a far-back
   stop oversizes risk and caps R. Real-time **phone alerts** would let me catch the retest live.
   (from CRWV & INOD, 2026)
+- **ENGINE/coach issue, not a chase: the confirmation must fire NEAR the planned zone, not far above it.**
+  On 2026-06-05 the app gave CRDO (*Pullback @ AVWAP*, planned $205.44) and AAOI (*Consolidation*,
+  planned $157.19), and the confirmation engine froze the BUY well above those levels — CRDO at
+  $219.67 (~+7%) and AAOI at $197.08. Following the app is correct execution (I did NOT chase these),
+  but a pullback/consolidation confirmation that fills 7%+ above its own zone produces a stop near 1×
+  ADR and leaves the trade exposed to exactly the overnight gap-down that stopped both out (−1R each).
+  FIX (system, on me as the coach): a Pullback/Consolidation confirmation should only fire inside (or
+  just reclaiming) the planned zone; if live price has run far above the zone before the trigger, the
+  engine should re-base the setup or stand down — not freeze a buy at the extended price. (from CRDO &
+  AAOI, 2026-06-05)
 - **Check the room to target before entering — overhead resistance caps the grade.** RGTI was a clean
   rising-sector (quantum) pullback-to-the-9-EMA entry with tight risk, but it's a *recovering* name
   (not a new-high leader) and a clear ceiling (~$27.67, the 400 EMA / AVWAP) sat ~11% up — so a clean
@@ -76,6 +86,26 @@ lessons, newest insights merged in (not an endless list of duplicates).
   the future to make or tune the decision is cheating. Stay honest about survivorship too (today's universe
   applied to the past) — the live forward test is the only true judge. (methodology, 2026-06-03)
 
+- **A pullback entry is a RESPECTED-SUPPORT BOUNCE, not a passive limit fill in mid-air.** TSEM showed a
+  "buy zone" (232–248) sitting in air — the stock rocketed $200→$300 then knifed straight down through the
+  band, yet the engine flagged it *buyable now* on a big red day. Wrong. The rule: price must pull back TO
+  real support, **respect it** (not close decisively below), and **jump off it** — either a same-day spin
+  reclaim (intraday 9-EMA / OR break with buyers) or a next-day green candle off the held support. Being
+  *inside* the zone = ARMED (watch), never an auto-buy. **Backtest-validated** (blind, winsorized,
+  `tools/research_bounce.py`): vs the passive-limit fill the bounce rule **~halved the trades (233→107),
+  lifted win rate (28→34%), and ~doubled avg R (+0.62→+1.27R)** — it discards exactly the falling-knife
+  fills. Shipped in `scanner.analyze` (`_respected_bounce` gates `buyable_now` for limit entries) +
+  reinforced live by the 2026-06-05 buyers-confirm gate. (from TSEM, 2026-06-05)
+
+- **Deep Pullback vs Consolidation = EMA fan, not range.** AXTI (a +650%/6mo leader pulled back to the 50
+  EMA, just like TSEM) was mislabeled "Consolidation." The tell that separates them: a real **consolidation
+  has the 9/21 EMAs bunched near the 50** (sideways long enough to converge); a **deep pullback has the 9/21
+  fanned well above the 50** (it dropped fast). The old detector keyed on range scaled by ADR — useless on a
+  15%-ADR name (a 62% "tight base"!) and fooled by an up-then-down round trip reading as "sideways." Fixed:
+  consolidation now requires the EMAs converged; deep pullback keys on PROXIMITY to the 50 EMA (not a pull-%
+  cap, since explosive leaders pull >50% off the high and still just be at the 50). Matters because the trail
+  rule differs — a deep pullback bought at the 50 is the 50-EMA hold; a consolidation trails the 9. (AXTI, 2026-06-05)
+
 <!--
 Format for each lesson:
 - **[short rule]** — what went wrong + how to avoid it. (from TICKER, YYYY-MM-DD)
@@ -83,5 +113,16 @@ Example:
 - **Wait for the trigger** — bought before the breakout confirmed and got faked out. Only enter on
   a real break of the level. (from XYZ, 2026-05-12)
 -->
-- **Break even** (from ONDS, 2026-06-03)
-- **revenge trade** (from RGTI, 2026-06-03)
+- **Place the stop at the STRUCTURE you found at entry — never a hair under the entry price.** RKLB
+  (Consolidation) was entered at $116.58 with the real structural stop at $110.30 (the base low), but the
+  LIVE stop was set at $116.44 — 0.12% away — and it stopped out instantly at −0.02R on normal noise. A stop
+  that tight isn't risk control, it's a coin-flip exit that throws the setup away before it can work. The
+  initial_stop you identify at entry IS the stop; if 1× ADR of wiggle is too much to risk, the trade is too
+  big — cut size, don't choke the stop. (from RKLB, 2026-06-05)
+- **The chase leak is quantified: 12 of 21 closed trades filled >5% above plan and averaged ≈ −0.7R; that
+  pattern is the bulk of the −12R book.** AAOI Consolidation was bought +25.4% and +16.5% above its planned
+  zone (both −1R); MXL +20.7%/+16.1%; INTC +8.2%. The fix is split across both actors: the ENGINE now stays
+  *armed* (won't freeze a buy) once price runs >½× ADR past the zone (2026-06-06), and ME — wait for the dip
+  back to the zone or skip it. Re-entering the SAME name repeatedly after a failure (AAOI appears 3×) is the
+  revenge/over-concentration tell — one position per name, and if a setup already failed today, demand a
+  genuinely fresh base before going again. (from the 30-trade review, 2026-06-06)

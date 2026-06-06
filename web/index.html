@@ -117,6 +117,267 @@
       </header>
       <div class="p-4 sm:p-7 overflow-x-hidden">
 
+        <!-- ===== HQ — AGENT CREW (animated office + plain-English cards, LOCAL ONLY) ===== -->
+        <section x-show="view==='hq'" x-transition.opacity.duration.250ms class="hqx">
+          <h1 class="hqx-h1">🛰️ Agent Crew</h1>
+          <div class="hqx-sub">Your team — what each one does, in plain English.</div>
+
+          <div class="hqx-office">
+            <div class="hqx-win"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="hqx-floor"></div>
+            <div class="hqx-desk" style="left:14%;--g:#22d3ee"></div>
+            <div class="hqx-desk" style="left:44%;--g:#ff5fa2"></div>
+            <div class="hqx-desk" style="left:74%;--g:#22e0a1"></div>
+            <div class="hqx-plant" style="left:33%"></div>
+            <div class="hqx-plant" style="left:64%"></div>
+            <template x-for="(a,i) in (hq.agents||[])" :key="a.name">
+              <div class="hqx-wog" :style="hqOfficeStyle(a,i)">
+                <span class="hqx-wnm" x-text="a.persona"></span>
+                <div class="hqx-bob"><div class="hqx-gb"></div><div class="hqx-ey"><i></i><i></i></div><div class="hqx-ft"><b></b><b></b><b></b></div></div>
+              </div>
+            </template>
+          </div>
+
+          <div class="hqx-priority" x-show="hq.consensus">
+            <span class="hqx-pt">⚑ TOP PRIORITY</span><span class="hqx-px" x-text="hq.consensus"></span>
+          </div>
+
+          <div class="hqx-roster">
+            <template x-for="a in (hq.agents||[])" :key="a.name">
+              <div class="hqx-card" :class="{ chief: a.leader, idle: a.status==='idle' }" :style="'--c:'+(a.color||'#6a8dff')">
+                <div class="hqx-av"><div class="hqx-gb"></div><div class="hqx-ey"><i></i><i></i></div><div class="hqx-ft"><b></b><b></b><b></b></div></div>
+                <div class="hqx-cbody">
+                  <div class="hqx-nameline"><h3 x-text="a.persona"></h3><span x-show="a.leader" class="hqx-star">★</span><span class="hqx-role" x-text="a.name.replace('-',' ')"></span><span class="hqx-dot" :class="a.status==='idle'?'off':'on'"></span></div>
+                  <div class="hqx-does" x-text="a.summary || a.tagline"></div>
+                  <div class="hqx-props">
+                    <template x-for="(p,pi) in (a.proposals||[])" :key="pi">
+                      <div class="hqx-prop"><span class="hqx-pi">▸</span><b x-text="p.t"></b> <span class="hqx-d" x-text="' — '+p.d"></span></div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="hqx-foot">💡 Say e.g. <span class="hqx-kbd">have Simons fix the deep-pullback trigger</span> or <span class="hqx-kbd">run an improvement sprint</span>.</div>
+        </section>
+
+        <!-- ===== 🏆 COMPETITION ===== -->
+        <section x-show="view==='competition'" x-transition.opacity.duration.250ms class="space-y-4 cmp">
+          <div class="flex items-end justify-between flex-wrap gap-2">
+            <div>
+              <h2 class="text-lg font-extrabold flex items-center gap-2">🏆 The Competition</h2>
+              <p class="text-xs text-slate-500 max-w-2xl">10 long-only strategy bots — $10k each, 1% risk — trading the live universe FOR REAL going forward. They fill on real intraday 5-min data once the market opens; no backtest, no hindsight.
+                <span x-show="competition.live_start" class="text-emerald-300/70" x-text="'Live since '+competition.live_start+'.'"></span></p>
+            </div>
+            <span class="text-[11px] text-slate-500" x-show="competition.updated">updated <span x-text="competition.updated"></span></span>
+          </div>
+
+          <template x-if="competition.loaded && (!competition.bots || !competition.bots.length)">
+            <div class="card p-6 text-sm text-slate-400">⏳ The competition is seeding — a ~30s warm-up backfill runs in the background on first launch. Refresh in a moment.</div>
+          </template>
+
+          <!-- race banner -->
+          <template x-if="competition.bots && competition.bots.length && competition.bots.some(b=>b.closed_n>0||b.open_n>0)">
+            <div class="rounded-xl px-4 py-2 text-sm font-bold flex items-center gap-1.5 flex-wrap" style="background:linear-gradient(90deg,rgba(255,207,90,.12),transparent);border:1px solid rgba(255,207,90,.28);color:#ffcf5a">
+              👑 <span x-text="competition.bots[0].emoji"></span> <span x-text="competition.bots[0].name"></span> leads at
+              <span x-text="(competition.bots[0].return_pct>=0?'+':'')+competition.bots[0].return_pct+'%'"></span>
+              <span class="text-amber-200/60 font-normal">($<span x-text="Math.round(competition.bots[0].equity).toLocaleString()"></span>)</span>
+            </div>
+          </template>
+          <template x-if="competition.bots && competition.bots.length && !competition.bots.some(b=>b.closed_n>0||b.open_n>0)">
+            <div class="rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-1.5 flex-wrap" style="background:linear-gradient(90deg,rgba(34,224,161,.1),transparent);border:1px solid rgba(34,224,161,.28);color:#22e0a1">
+              🟢 All bots flat at $10,000 — armed and waiting for the market to open. They'll take their first real trades when their setups trigger live.
+            </div>
+          </template>
+
+          <!-- leaderboard -->
+          <div class="space-y-2">
+            <template x-for="b in competition.bots" :key="b.id">
+              <div>
+                <div class="cmp-row" :class="b.rank===1?'leader':''" :style="'--c:'+b.color" @click="openBot(b.id)">
+                  <div class="w-6 text-center font-extrabold text-lg shrink-0" :style="b.rank===1?'color:#ffcf5a':'color:#64748b'" x-text="b.rank"></div>
+                  <img :src="'https://api.dicebear.com/9.x/pixel-art/svg?radius=10&backgroundColor=transparent&seed='+encodeURIComponent(b.avatar_seed)" class="w-9 h-9 rounded-lg shrink-0" :style="'box-shadow:0 0 0 1.5px '+b.color+'66'" alt="">
+                  <div class="min-w-0 flex-1">
+                    <div class="font-bold truncate flex items-center gap-1"><span x-text="b.emoji"></span><span x-text="b.name"></span><span x-show="b.rank===1">👑</span></div>
+                    <div class="text-[11px] text-slate-500 truncate" x-text="b.persona"></div>
+                  </div>
+                  <svg viewBox="0 0 80 32" class="cmp-spark" preserveAspectRatio="none"><polyline :points="sparkPath(b.spark)" fill="none" :stroke="b.return_pct>=0?'#22e0a1':'#ff5d73'" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>
+                  <div class="text-right shrink-0 ml-auto" style="min-width:84px">
+                    <div class="text-lg font-extrabold leading-none" :class="b.return_pct>=0?'text-up':'text-down'" x-text="(b.return_pct>=0?'+':'')+b.return_pct+'%'"></div>
+                    <div class="text-[11px] text-slate-500">$<span x-text="Math.round(b.equity).toLocaleString()"></span></div>
+                  </div>
+                  <div class="text-right shrink-0 hidden sm:block" style="min-width:66px">
+                    <div class="text-xs" :class="(b.today_pnl||0)>=0?'text-up':'text-down'" x-show="b.today_pnl!=null" x-text="(b.today_pnl>=0?'+$':'-$')+Math.abs(Math.round(b.today_pnl))"></div>
+                    <div class="text-[11px] text-slate-500" x-show="b.win_rate!=null"><span x-text="b.win_rate"></span>% · <span x-text="b.closed_n"></span>t</div>
+                  </div>
+                  <div class="shrink-0 hidden sm:flex items-center gap-1 text-xs" style="min-width:40px">
+                    <span x-show="b.streak>=2">🔥<span x-text="b.streak"></span></span>
+                    <span x-show="b.streak<=-2">❄️<span x-text="-b.streak"></span></span>
+                  </div>
+                </div>
+
+                <!-- DETAIL PANEL -->
+                <div x-show="compSelected===b.id" x-transition class="cmp-detail" :style="'--c:'+b.color" @click.stop>
+                  <template x-if="!compDetail"><div class="p-4 text-sm text-slate-500">Loading…</div></template>
+                  <template x-if="compDetail && compDetail.id===b.id">
+                    <div class="p-4 space-y-3">
+                      <!-- header: full name + description (never truncated) -->
+                      <div class="flex items-start gap-3">
+                        <img :src="'https://api.dicebear.com/9.x/pixel-art/svg?radius=10&backgroundColor=transparent&seed='+encodeURIComponent(compDetail.avatar_seed)" class="w-10 h-10 rounded-lg shrink-0" :style="'box-shadow:0 0 0 1.5px '+compDetail.color+'66'" alt="">
+                        <div class="min-w-0">
+                          <div class="font-extrabold text-base flex items-center gap-1.5"><span x-text="compDetail.emoji"></span><span x-text="compDetail.name"></span></div>
+                          <div class="text-xs text-slate-400" x-text="compDetail.persona"></div>
+                        </div>
+                      </div>
+                      <!-- tabs -->
+                      <div class="flex gap-2 overflow-x-auto no-scrollbar">
+                        <template x-for="t in ['overview','trades','calendar','memory']" :key="t">
+                          <button class="btn-sm capitalize shrink-0" :class="compTab===t?'bg-accent/30 border-accent/50':''" @click="setCompTab(t)" x-text="t"></button>
+                        </template>
+                      </div>
+
+                      <!-- OVERVIEW -->
+                      <div x-show="compTab==='overview'" class="space-y-3">
+                        <div class="rounded-lg p-3 text-[13px] text-slate-300" style="background:var(--panel2);border-left:3px solid var(--c)" x-text="compDetail.strategy"></div>
+                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                          <div class="lvl"><div class="lvl-l">Return</div><div class="font-extrabold" :class="compDetail.metrics.return_pct>=0?'text-up':'text-down'" x-text="(compDetail.metrics.return_pct>=0?'+':'')+compDetail.metrics.return_pct+'%'"></div></div>
+                          <div class="lvl"><div class="lvl-l">Win rate</div><div class="font-bold" x-text="(compDetail.metrics.win_rate??'—')+'%'"></div></div>
+                          <div class="lvl"><div class="lvl-l">Avg R</div><div class="font-bold" :class="(compDetail.metrics.avg_r||0)>=0?'text-up':'text-down'" x-text="compDetail.metrics.avg_r??'—'"></div></div>
+                          <div class="lvl"><div class="lvl-l">Median R</div><div class="font-bold" x-text="compDetail.metrics.median_r??'—'"></div></div>
+                          <div class="lvl"><div class="lvl-l">Max DD</div><div class="font-bold text-down" x-text="'-'+compDetail.metrics.max_dd+'%'"></div></div>
+                          <div class="lvl"><div class="lvl-l">Trades</div><div class="font-bold" x-text="compDetail.metrics.closed_n"></div></div>
+                        </div>
+                        <div id="compEquityBox" class="cmp-chart" style="height:190px"></div>
+                        <!-- by-regime -->
+                        <template x-if="Object.keys(compDetail.by_regime||{}).length">
+                          <div>
+                            <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-1">By market regime</div>
+                            <div class="grid grid-cols-3 gap-2">
+                              <template x-for="reg in ['bull','soft','correction']" :key="reg">
+                                <div class="lvl" x-show="compDetail.by_regime[reg]">
+                                  <div class="lvl-l capitalize" x-text="reg"></div>
+                                  <div class="font-bold" :class="(compDetail.by_regime[reg]?.avg_r||0)>=0?'text-up':'text-down'" x-text="(compDetail.by_regime[reg]?.avg_r||0)+'R'"></div>
+                                  <div class="text-[10px] text-slate-500"><span x-text="compDetail.by_regime[reg]?.win_rate"></span>% · n=<span x-text="compDetail.by_regime[reg]?.n"></span><span x-show="compDetail.by_regime[reg]?.thin" class="text-warn"> thin</span></div>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </template>
+                        <!-- open positions -->
+                        <template x-if="(compDetail.open||[]).length">
+                          <div>
+                            <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-1">Open positions (<span x-text="compDetail.open.length"></span>)</div>
+                            <div class="flex flex-wrap gap-2">
+                              <template x-for="p in compDetail.open" :key="p.ticker">
+                                <div class="lvl text-xs"><span class="font-bold" x-text="p.ticker"></span> <span class="text-slate-500">@</span> <span x-text="p.entry"></span> <span class="text-down">/ <span x-text="p.stop"></span></span></div>
+                              </template>
+                            </div>
+                          </div>
+                        </template>
+                        <!-- armed: setups lined up & waiting to fill (the bot's "watching now" list) -->
+                        <template x-if="(compDetail.armed||[]).length">
+                          <div>
+                            <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-1">⏳ Armed — watching to enter (<span x-text="compDetail.armed.length"></span>)</div>
+                            <div class="flex flex-wrap gap-2">
+                              <template x-for="a in compDetail.armed.slice(0,12)" :key="a.ticker">
+                                <div class="lvl text-xs flex items-center gap-1.5">
+                                  <span class="font-bold" x-text="a.ticker"></span>
+                                  <span class="text-slate-500" x-show="a.setup" x-text="a.setup"></span>
+                                  <span class="text-cyan-300/80" x-show="a.trig_kind==='break'">break &gt; <span x-text="a.trig_price"></span></span>
+                                  <span class="text-cyan-300/80" x-show="a.trig_kind==='limit'">limit @ <span x-text="a.trig_price"></span></span>
+                                  <span class="text-cyan-300/80" x-show="a.trig_kind==='open'">at the open</span>
+                                  <span class="text-slate-500" x-show="a.rs!=null">· RS<span x-text="Math.round(a.rs)"></span></span>
+                                </div>
+                              </template>
+                              <div class="text-xs text-slate-500 self-center" x-show="compDetail.armed.length>12">+<span x-text="compDetail.armed.length-12"></span> more watching</div>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+
+                      <!-- TRADES -->
+                      <div x-show="compTab==='trades'" class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                          <thead><tr class="text-slate-500 text-left"><th class="py-1">Ticker</th><th class="hidden sm:table-cell">Setup</th><th class="text-right">Entry</th><th class="text-right">Exit</th><th class="text-right">R</th><th class="text-right hidden sm:table-cell">%</th><th class="text-right">Reason</th></tr></thead>
+                          <tbody>
+                            <template x-for="(t,ti) in compDetail.closed" :key="ti">
+                              <tr class="border-t border-line">
+                                <td class="py-1 font-bold" x-text="t.ticker"></td>
+                                <td class="hidden sm:table-cell text-slate-400" x-text="t.setup"></td>
+                                <td class="text-right" x-text="t.entry"></td>
+                                <td class="text-right" x-text="t.exit"></td>
+                                <td class="text-right font-bold" :class="t.result_r>=0?'text-up':'text-down'" x-text="(t.result_r>=0?'+':'')+t.result_r"></td>
+                                <td class="text-right hidden sm:table-cell" :class="t.pct>=0?'text-up':'text-down'" x-text="(t.pct>=0?'+':'')+t.pct+'%'"></td>
+                                <td class="text-right text-slate-500 truncate" x-text="t.exit_reason"></td>
+                              </tr>
+                            </template>
+                            <template x-if="!compDetail.closed.length"><tr><td colspan="7" class="py-3 text-slate-500">No closed trades yet.</td></tr></template>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- CALENDAR -->
+                      <div x-show="compTab==='calendar'" class="space-y-3">
+                        <div class="text-xs text-slate-500">Tap a day for its full report (charts with entry/stop/take-profit).</div>
+                        <div class="flex flex-wrap gap-1.5">
+                          <template x-for="d in compDetail.by_day.slice().reverse()" :key="d.date">
+                            <button class="px-2 py-1 rounded-md text-[11px] font-semibold border" @click="openBotDay(d.date)"
+                              :class="compDayDate===d.date?'ring-1 ring-white/40':''"
+                              :style="'border-color:#232b40;background:'+(d.net_r>0?'rgba(34,224,161,.14)':(d.net_r<0?'rgba(255,93,115,.14)':'rgba(255,255,255,.03)'))+';color:'+(d.net_r>0?'#22e0a1':(d.net_r<0?'#ff8d9b':'#94a3b8'))">
+                              <span x-text="d.date.slice(5)"></span> <span x-show="d.n_entered" class="opacity-70">·<span x-text="d.n_entered"></span>↑</span>
+                            </button>
+                          </template>
+                        </div>
+                        <!-- DAILY REPORT -->
+                        <template x-if="compDay && compDay.trades">
+                          <div class="rounded-xl border border-line p-3 space-y-3" style="background:var(--panel2)">
+                            <div class="flex items-center justify-between flex-wrap gap-2">
+                              <div class="text-sm font-bold"><span x-text="compDay.emoji"></span> <span x-text="compDay.name"></span> · <span x-text="compDay.date"></span></div>
+                              <span class="cmp-regime" :style="'--rc:'+compRegimeColor(compDay.regime)" x-text="compDay.regime+' · '+compDay.posture"></span>
+                            </div>
+                            <div class="text-[13px] text-slate-300" x-text="compDay.note"></div>
+                            <div class="grid grid-cols-3 gap-2 text-center">
+                              <div class="lvl"><div class="lvl-l">Entered</div><div class="font-bold" x-text="compDay.summary.n_entered"></div></div>
+                              <div class="lvl"><div class="lvl-l">Closed</div><div class="font-bold" x-text="compDay.summary.n_closed"></div></div>
+                              <div class="lvl"><div class="lvl-l">Net R</div><div class="font-bold" :class="compDay.summary.net_r>=0?'text-up':'text-down'" x-text="(compDay.summary.net_r>=0?'+':'')+compDay.summary.net_r"></div></div>
+                            </div>
+                            <template x-if="!compDay.trades.length"><div class="text-xs text-slate-500">No trades opened or closed this day.</div></template>
+                            <template x-for="(t,ti) in compDay.trades" :key="ti">
+                              <div class="rounded-lg border border-line p-2 space-y-1" style="background:rgba(7,10,18,.4)">
+                                <div class="flex items-center justify-between text-sm">
+                                  <span class="font-bold"><span x-text="t.ticker"></span> <span class="text-[11px] text-slate-500" x-text="t.setup"></span></span>
+                                  <span class="font-bold" x-show="t.result_r!=null" :class="t.result_r>=0?'text-up':'text-down'" x-text="(t.result_r>=0?'+':'')+t.result_r+'R '+(t.result_r>=0?'✓':'✗')"></span>
+                                  <span class="text-[11px] text-cyan-300/70" x-show="t.result_r==null">open</span>
+                                </div>
+                                <div :id="'compDayChart'+ti" class="cmp-chart" style="height:160px"></div>
+                                <div class="flex flex-wrap gap-3 text-[11px]">
+                                  <span class="text-up">entry <b x-text="t.entry"></b></span>
+                                  <span class="text-down">stop <b x-text="t.stop"></b></span>
+                                  <span style="color:#fbbf24" x-show="t.tp">tp <b x-text="t.tp"></b></span>
+                                  <span x-show="t.exit" class="text-slate-300">exit <b x-text="t.exit"></b></span>
+                                </div>
+                                <div class="text-[11px] text-slate-500" x-text="t.why"></div>
+                              </div>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+
+                      <!-- MEMORY -->
+                      <div x-show="compTab==='memory'" class="space-y-1.5">
+                        <template x-for="(l,li) in compDetail.lessons" :key="li">
+                          <div class="text-[13px] text-slate-300 flex gap-2"><span style="color:var(--c)">•</span><span x-text="l"></span></div>
+                        </template>
+                        <div class="text-[11px] italic text-slate-500 pt-1" x-text="compDetail.persona"></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
         <!-- ===== DASHBOARD ===== -->
         <section x-show="view==='dashboard'" x-transition.opacity.duration.250ms class="flex flex-col gap-6">
           <!-- ⚠️ MAJOR MARKET NEWS — only regime-changing macro events (war / Fed chair / crash / election). Empty on a normal day. -->
@@ -376,7 +637,7 @@
             </div>
             <template x-if="topSuggestions.length===0"><div class="p-5 text-sm text-slate-500">No scan yet — go to Suggestions and run one.</div></template>
             <template x-for="s in topSuggestions" :key="s.ticker">
-              <div class="flex items-center gap-3 px-5 py-2.5 border-t border-line text-sm">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-2.5 border-t border-line text-sm">
                 <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
                 <div class="w-20 font-bold flex items-center gap-1">
                   <span x-show="confStatus(s)==='confirmed' && inZone(s)" title="confirmed — buyable now">🟢</span><span x-show="inZone(s) && !(confStatus(s)==='confirmed')" title="in the zone — waiting for confirmation">⏳</span><span x-text="s.ticker"></span>
@@ -386,7 +647,12 @@
                 <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)" x-text="trendIcon(s.theme_trend)+' '+s.theme_trend"></span>
                 <span class="badge" x-show="s.news_flag" x-text="s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰'"></span>
                 <div class="flex-1 text-slate-500 truncate hidden lg:block" x-text="(s.entry_note||'').replaceAll('$',cur)"></div>
-                <div class="text-slate-300 text-right whitespace-nowrap" x-text="(s.entry_type==='limit'?'limit ':'stop ')+s.entry"></div>
+                <div class="text-slate-300 text-right whitespace-nowrap ml-auto" x-text="(s.entry_type==='limit'?'limit ':'stop ')+s.entry"></div>
+                <!-- mobile line 2: the levels you need before tapping a broker (hidden on lg where the note shows) -->
+                <div class="w-full flex items-center gap-4 lg:hidden text-xs pl-9" x-show="s.zone_bottom!=null || s.stop!=null">
+                  <span x-show="s.zone_bottom!=null"><span class="text-slate-500" x-text="(s.entry_type==='limit'?'zone ':'buy ')"></span><span class="text-up font-bold" x-text="s.zone_top!=null?(s.zone_bottom+'–'+s.zone_top):s.entry"></span></span>
+                  <span x-show="s.stop!=null"><span class="text-slate-500">stop </span><span class="text-down font-bold" x-text="s.stop"></span></span>
+                </div>
               </div>
             </template>
           </div>
@@ -419,6 +685,31 @@
                   <div class="mt-1.5 relative h-1.5 rounded-full" style="background:linear-gradient(90deg,#3b82f6 0%,#22e0a1 35%,#ffb53d 70%,#ff7a8c 100%)">
                     <div class="absolute top-1/2 -translate-y-1/2 w-1 h-3 rounded bg-white" :style="'left:calc('+marketRegime.fear_greed.score+'% - 2px)'"></div>
                   </div>
+                  <!-- VIX velocity strip — the 'panic building vs fading' read; alert-only (does NOT affect grades) -->
+                  <template x-if="marketRegime.vix_trend">
+                    <div class="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap" style="border-color:rgba(120,140,180,.14)">
+                      <span class="text-[11px] font-bold shrink-0"
+                            :style="'color:'+vixStateColor(marketRegime.vix_trend.state)"
+                            :title="'VIX velocity matters: a fast spike compresses risk premiums instantly — stops can gap through. A slow decline means fear is unwinding gradually. Source: CBOE daily VIX close.'">
+                        <span x-text="vixStateIcon(marketRegime.vix_trend.state)"></span>
+                        <span x-text="vixStateLabel(marketRegime.vix_trend.state)"></span>
+                      </span>
+                      <span class="text-[11px] font-extrabold shrink-0"
+                            :style="'color:'+vixStateColor(marketRegime.vix_trend.state)"
+                            x-text="marketRegime.vix_trend.level"></span>
+                      <span class="text-[11px] shrink-0"
+                            :class="Math.abs(marketRegime.vix_trend.change_1d_pct)>=30 ? 'text-down font-extrabold' : (marketRegime.vix_trend.change_1d_pct>0 ? 'text-warn' : 'text-up')"
+                            x-text="(marketRegime.vix_trend.change_1d_pct>=0?'+':'')+Math.round(marketRegime.vix_trend.change_1d_pct)+'% 1d'"></span>
+                      <span class="text-[10px] shrink-0"
+                            :class="marketRegime.vix_trend.change_7d_pct>=30 ? 'text-warn font-bold' : marketRegime.vix_trend.change_7d_pct<=-20 ? 'text-up' : 'text-slate-500'"
+                            x-text="(marketRegime.vix_trend.change_7d_pct>=0?'+':'')+Math.round(marketRegime.vix_trend.change_7d_pct)+'% 7d'"></span>
+                      <span class="flex-1 min-w-0"></span>
+                      <svg viewBox="0 0 80 28" class="vix-spark" preserveAspectRatio="none">
+                        <polyline :points="sparkPath(marketRegime.vix_trend.spark)" fill="none"
+                                  :stroke="vixStateColor(marketRegime.vix_trend.state)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+                      </svg>
+                    </div>
+                  </template>
                 </div>
                 </template>
                 <div class="space-y-2">
@@ -487,6 +778,9 @@
 
         <!-- ===== SUGGESTIONS ===== -->
         <section x-show="view==='suggestions'" x-transition.opacity.duration.250ms class="space-y-5">
+          <div x-show="suggestions.stale" class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2" style="background:rgba(255,181,61,.14);color:#ffd591;border:1px solid rgba(255,181,61,.45)">
+            ⚠️ These grades are from a prior session<span x-show="suggestions.scanned_at" class="font-normal text-amber-200/70">&nbsp;(scanned <span x-text="suggestions.scanned_at"></span>)</span> — the market has traded since. Run a fresh scan before acting on them.
+          </div>
           <div class="flex flex-wrap items-center gap-3">
             <select x-model="scanScreener" class="input w-full sm:w-52">
               <template x-for="s in screeners" :key="s.id"><option :value="s.id" x-text="s.name"></option></template>
@@ -627,6 +921,7 @@
                           <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
                           <span x-show="e.breakoutCatch" class="badge shrink-0" title="Market's open and this strong leader already BROKE OUT above its deep dip zone — a pullback all the way to the 50 EMA is unlikely now. The realistic dip is a shallow pullback to the nearest rising EMA; catch it there. Updates live." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">🎯 breakout catch</span>
                           <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
+                          <span x-show="e.adr_violation && !(e.rotation && e.wide)" class="badge shrink-0" title="This stop sits more than 1× ADR below the entry — by your ground rules a stop wider than 1× ADR means the setup is too extended. Treat it as a chase: wait for a tighter entry or skip it." style="background:rgba(255,93,115,.18);color:#ffb3bf;border-color:rgba(255,93,115,.55)">⚠ stop &gt; 1× ADR</span>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                           <span class="font-extrabold text-base leading-none" x-show="e.grade && !e.stale" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100) — each setup is graded on its own entry'" x-text="e.grade"></span>
@@ -1247,6 +1542,357 @@
           </div>
         </section>
 
+        <!-- ===== 🧠 LEARNING HUB ===== -->
+        <section x-show="view==='learninghub'" x-transition.opacity.duration.250ms class="space-y-5 max-w-4xl">
+
+          <!-- PINNED VITAL-SIGNS STRIP -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" x-show="learning">
+            <div class="stat">
+              <div class="stat-label">Win Rate</div>
+              <div class="stat-val" x-text="learning && learning.vitals ? learning.vitals.win_rate+'%' : '—'"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Avg R</div>
+              <div class="stat-val" :class="(learning && learning.vitals && learning.vitals.avg_r||0)>=0?'text-up':'text-down'"
+                   x-text="learning && learning.vitals ? (learning.vitals.avg_r>=0?'+':'')+learning.vitals.avg_r+'R' : '—'"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Closed</div>
+              <div class="stat-val" x-text="learning && learning.vitals ? learning.vitals.closed : '—'"></div>
+            </div>
+            <div class="stat" :title="learning && learning.vitals && learning.vitals.system_edge==null ? 'Gathering data — needs '+learning.vitals.system_edge_n+' engine picks to mature' : 'Forward-test engine edge: avg R across all picks tracked to close'">
+              <div class="stat-label">System Edge</div>
+              <div class="stat-val"
+                :class="(learning && learning.vitals && learning.vitals.system_edge!=null) ? (learning.vitals.system_edge>=0?'text-up':'text-down') : 'text-slate-500'"
+                x-text="(learning && learning.vitals && learning.vitals.system_edge!=null) ? (learning.vitals.system_edge>=0?'+':'')+learning.vitals.system_edge+'R' : '— / gathering'"></div>
+              <div class="text-[10px] text-slate-500 mt-0.5"
+                   x-show="learning && learning.vitals && learning.vitals.system_edge==null"
+                   x-text="'n='+((learning&&learning.vitals&&learning.vitals.system_edge_n)||0)"></div>
+            </div>
+          </div>
+          <div class="card p-6 text-sm text-slate-500" x-show="!learning">Loading learning data…</div>
+
+          <template x-if="learning">
+            <div class="space-y-5">
+
+              <!-- TAB TOGGLE -->
+              <div class="flex gap-2">
+                <button class="flex-1 py-2 rounded-xl text-sm font-bold transition"
+                  :class="lhTab==='brief' ? 'btn' : 'btn-sm'"
+                  @click="lhTab='brief'">Today's Brief</button>
+                <button class="flex-1 py-2 rounded-xl text-sm font-bold transition"
+                  :class="lhTab==='edge' ? 'btn' : 'btn-sm'"
+                  @click="lhTab='edge'">Edge History</button>
+              </div>
+
+              <!-- ========== TODAY'S BRIEF ========== -->
+              <div x-show="lhTab==='brief'" class="space-y-4">
+
+                <!-- (a) DAILY LESSON HERO -->
+                <div class="card p-5" x-show="learning.daily_lesson">
+                  <template x-if="learning.daily_lesson">
+                    <div>
+                      <div class="flex items-center gap-2 mb-3 flex-wrap">
+                        <span class="text-2xl leading-none" x-text="lhLessonTag(learning.daily_lesson.tag).icon"></span>
+                        <span class="text-sm font-extrabold uppercase tracking-wide"
+                              :style="'color:'+lhLessonTag(learning.daily_lesson.tag).color"
+                              x-text="lhLessonTag(learning.daily_lesson.tag).label"></span>
+                        <template x-for="tk in (learning.daily_lesson.tickers||[])" :key="tk">
+                          <span class="badge" x-text="tk"></span>
+                        </template>
+                        <span x-show="learning.daily_lesson.tag" class="text-[11px] text-slate-500 ml-auto">see lessons.md</span>
+                      </div>
+                      <p class="text-sm text-slate-200 leading-relaxed" x-text="learning.daily_lesson.text"></p>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- (b) EXECUTION GAP -->
+                <div class="card p-5" x-show="learning.execution_gap">
+                  <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2">
+                    <span>Execution Gap <span class="text-xs font-normal text-slate-500">— chased vs clean entries</span></span>
+                    <span class="text-xs text-slate-500" x-show="learning.execution_gap" x-text="(learning.execution_gap&&learning.execution_gap.n_total_closed||0)+' closed trades'"></span>
+                  </div>
+                  <template x-if="learning.execution_gap">
+                    <div class="space-y-4">
+                      <!-- compare bars -->
+                      <div class="grid grid-cols-2 gap-3">
+                        <!-- chased -->
+                        <div class="rounded-xl p-3 border" style="background:rgba(255,93,115,.10);border-color:rgba(255,93,115,.4)">
+                          <div class="text-[11px] uppercase tracking-wide font-bold mb-1" style="color:#ff5d73">Chased &gt;5% above plan</div>
+                          <div class="text-2xl font-extrabold text-down" x-text="'n='+learning.execution_gap.n_chased"></div>
+                          <div class="text-sm font-bold mt-1"
+                               :class="(learning.execution_gap.chased_avg_r||0)>=0?'text-up':'text-down'"
+                               x-text="learning.execution_gap.chased_avg_r!=null ? (learning.execution_gap.chased_avg_r>=0?'+':'')+learning.execution_gap.chased_avg_r+'R avg' : '—'"></div>
+                        </div>
+                        <!-- clean -->
+                        <div class="rounded-xl p-3 border" style="background:rgba(34,224,161,.08);border-color:rgba(34,224,161,.35)">
+                          <div class="text-[11px] uppercase tracking-wide font-bold mb-1" style="color:#22e0a1">Clean ≤5% above plan</div>
+                          <div class="text-2xl font-extrabold text-up" x-text="'n='+learning.execution_gap.n_clean"></div>
+                          <div class="text-sm font-bold mt-1"
+                               :class="(learning.execution_gap.clean_avg_r||0)>=0?'text-up':'text-down'"
+                               x-text="learning.execution_gap.clean_avg_r!=null ? (learning.execution_gap.clean_avg_r>=0?'+':'')+learning.execution_gap.clean_avg_r+'R avg' : '—'"></div>
+                        </div>
+                      </div>
+                      <div class="text-xs text-slate-500" x-show="learning.execution_gap.avg_chase_pct">
+                        Avg chase: <b class="text-warn" x-text="learning.execution_gap.avg_chase_pct+'%'"></b> above plan
+                      </div>
+                      <!-- rows table -->
+                      <div class="overflow-x-auto" x-show="learning.execution_gap.rows && learning.execution_gap.rows.length">
+                        <table class="w-full text-xs">
+                          <thead>
+                            <tr class="text-slate-500 text-left border-b border-line">
+                              <th class="py-1 pr-2">Ticker</th>
+                              <th class="pr-2">Setup</th>
+                              <th class="pr-2 text-right">Entry</th>
+                              <th class="pr-2 text-right">Plan</th>
+                              <th class="pr-2 text-right">Chase%</th>
+                              <th class="text-right">R</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <template x-for="(row,ri) in (learning.execution_gap.rows||[])" :key="ri">
+                              <tr class="border-b border-line/40">
+                                <td class="py-1 pr-2 font-bold" x-text="row.ticker"></td>
+                                <td class="pr-2 text-slate-400 truncate max-w-[8rem]" x-text="row.setup"></td>
+                                <td class="pr-2 text-right tabular-nums" x-text="row.entry!=null?('$'+row.entry):'—'"></td>
+                                <td class="pr-2 text-right tabular-nums text-slate-400" x-text="row.planned_entry!=null?('$'+row.planned_entry):'—'"></td>
+                                <td class="pr-2 text-right tabular-nums font-bold"
+                                    :class="(row.chase_pct||0)>=10?'text-down':'text-warn'"
+                                    x-text="row.chase_pct!=null?(row.chase_pct+'%'):'—'"></td>
+                                <td class="text-right tabular-nums font-bold"
+                                    :class="(row.result_r||0)>=0?'text-up':'text-down'"
+                                    x-text="row.result_r!=null?((row.result_r>=0?'+':'')+row.result_r+'R'):'—'"></td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- (c) TODAY'S ARMED -->
+                <div class="card p-5">
+                  <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center gap-2 flex-wrap">
+                    <span>Today's Armed</span>
+                    <template x-if="learning.today">
+                      <div class="flex items-center gap-2 ml-auto">
+                        <span class="text-xs px-2 py-0.5 rounded text-slate-400" style="background:rgba(255,255,255,.06)" x-text="(learning.today.armed||[]).length+' armed'"></span>
+                        <span class="text-xs px-2 py-0.5 rounded text-up" style="background:rgba(34,224,161,.12)" x-text="(learning.today.confirmed||[]).length+' confirmed'"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <template x-if="!learning.today || ((!learning.today.armed||!learning.today.armed.length) && (!learning.today.confirmed||!learning.today.confirmed.length))">
+                    <div class="text-sm text-slate-500">Nothing armed yet — fills live during market hours Monday.</div>
+                  </template>
+                  <template x-if="learning.today && ((learning.today.armed&&learning.today.armed.length) || (learning.today.confirmed&&learning.today.confirmed.length))">
+                    <div class="space-y-1">
+                      <template x-for="ev in (learning.today.confirmed||[])" :key="ev.arm_id||ev.ticker">
+                        <div class="rounded-lg px-2.5 py-1.5 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(34,224,161,.10);border:1px solid rgba(34,224,161,.35)">
+                          <span class="text-up font-bold shrink-0">✓</span>
+                          <span class="font-extrabold shrink-0 w-6 text-center" :style="'color:'+gradeColor(ev.grade)" x-text="ev.grade||'—'"></span>
+                          <span class="font-bold" x-text="ev.ticker"></span>
+                          <span class="badge" :class="setupClass(ev.setup_type)" x-text="ev.setup_type"></span>
+                          <span class="text-[11px] text-slate-400 ml-auto" x-text="ev.confirmed_at||''"></span>
+                        </div>
+                      </template>
+                      <template x-for="ev in (learning.today.armed||[])" :key="ev.arm_id||ev.ticker">
+                        <div class="rounded-lg px-2.5 py-1.5 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(255,181,61,.08);border:1px solid rgba(255,181,61,.25)">
+                          <span class="text-warn shrink-0">⏳</span>
+                          <span class="font-extrabold shrink-0 w-6 text-center" :style="'color:'+gradeColor(ev.grade)" x-text="ev.grade||'—'"></span>
+                          <span class="font-bold" x-text="ev.ticker"></span>
+                          <span class="badge" :class="setupClass(ev.setup_type)" x-text="ev.setup_type"></span>
+                          <span class="text-[11px] text-slate-400 ml-auto" x-text="ev.first_armed||''"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+
+              </div><!-- /brief -->
+
+              <!-- ========== EDGE HISTORY ========== -->
+              <div x-show="lhTab==='edge'" class="space-y-4">
+
+                <!-- (a) BY SETUP -->
+                <div class="card p-5">
+                  <div class="card-head -m-5 mb-4 px-5 py-3">By Setup</div>
+                  <template x-if="!learning.by_setup || !Object.keys(learning.by_setup).length">
+                    <div class="text-sm text-slate-500">Close some trades to see setup breakdown.</div>
+                  </template>
+                  <template x-if="learning.by_setup && Object.keys(learning.by_setup).length">
+                    <div class="space-y-2">
+                      <table class="w-full text-sm mb-3">
+                        <thead><tr class="text-slate-500 text-xs text-left border-b border-line">
+                          <th class="py-1 pr-2">Setup</th>
+                          <th class="pr-2 text-right">n</th>
+                          <th class="pr-2 text-right">Win%</th>
+                          <th class="text-right">Avg R</th>
+                        </tr></thead>
+                        <tbody>
+                          <template x-for="(v,k) in learning.by_setup" :key="k">
+                            <tr class="border-b border-line/40">
+                              <td class="py-1.5 pr-2" x-text="k"></td>
+                              <td class="pr-2 text-right text-slate-400" x-text="v.n"></td>
+                              <td class="pr-2 text-right" x-text="v.win_rate+'%'"></td>
+                              <td class="text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'"
+                                  x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                      <!-- activation counters -->
+                      <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">
+                        Learning loop — ±8 nudge activates at <span x-text="(learning.activation_threshold||5)"></span> closed/setup
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <template x-for="(v,st) in (learning.activation||{})" :key="st">
+                          <span class="text-xs px-2.5 py-1 rounded-lg border"
+                            :style="v.active?'color:#22e0a1;border-color:rgba(34,224,161,.5);background:rgba(34,224,161,.08)':'color:#93a1b8;border-color:#222c3c'">
+                            <span x-text="st"></span>: <b x-text="v.closed+'/'+(learning.activation_threshold||5)"></b>
+                            <span x-show="v.active"> ✓</span>
+                            <span x-show="!v.active" class="text-slate-500" x-text="' · '+v.to_go+' to go'"></span>
+                          </span>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- (b) FORWARD / SYSTEM EDGE -->
+                <div class="card p-5" x-show="forward">
+                  <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2">
+                    <span>System Edge <span class="text-xs font-normal text-slate-500">— forward-test results (engine only, no personal sizing)</span></span>
+                    <button class="btn-sm" @click="loadForward()">↻</button>
+                  </div>
+                  <template x-if="forward && forward.aggregate">
+                    <div class="space-y-3">
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div class="lvl">
+                          <div class="lvl-l">Avg R (winsor)</div>
+                          <div class="text-xl font-extrabold" :class="(forward.aggregate.avg_r_w||forward.aggregate.avg_r||0)>=0?'text-up':'text-down'"
+                               x-text="(forward.aggregate.avg_r_w!=null ? forward.aggregate.avg_r_w : forward.aggregate.avg_r)+'R'"></div>
+                        </div>
+                        <div class="lvl">
+                          <div class="lvl-l">Win Rate</div>
+                          <div class="text-xl font-extrabold" x-text="forward.aggregate.win_rate+'%'"></div>
+                        </div>
+                        <div class="lvl">
+                          <div class="lvl-l">&gt;1R</div>
+                          <div class="text-xl font-extrabold" x-text="forward.aggregate.pct_gt1R+'%'"></div>
+                        </div>
+                        <div class="lvl">
+                          <div class="lvl-l">n matured</div>
+                          <div class="text-xl font-extrabold" x-text="forward.matured||0"></div>
+                        </div>
+                      </div>
+                      <div class="text-[11px] text-slate-500">Winsorized avg R caps each pick at +10R — measures the durable edge, same methodology as the backtest. Grows every day the app runs (currently <span x-text="forward.days_logged||0"></span> days, <span x-text="forward.total_picks||0"></span> picks total).</div>
+                    </div>
+                  </template>
+                  <template x-if="!forward || !forward.aggregate">
+                    <div class="text-sm text-slate-500">No forward-test data yet — picks are logged automatically on each scan. Check back as days accumulate.</div>
+                  </template>
+                </div>
+
+                <!-- (c) P&L CALENDAR — reuse existing component bindings -->
+                <div class="card p-5">
+                  <div class="card-head -m-5 mb-4 px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
+                    <span>P&amp;L Calendar <span class="text-xs font-normal text-slate-500">— daily account change</span></span>
+                    <div class="flex items-center gap-2 text-sm">
+                      <button class="btn-sm" @click="pnlMonthOffset--">‹</button>
+                      <span class="font-bold w-32 text-center" x-text="pnlMonthLabel"></span>
+                      <button class="btn-sm" @click="pnlMonthOffset++" :disabled="pnlMonthOffset>=0">›</button>
+                      <span class="ml-2 text-xs" x-show="pnlMonthTotal!=null">
+                        <b :class="pnlMonthTotal>=0?'text-up':'text-down'" x-text="(pnlMonthTotal>=0?'+':'-')+cur+Math.abs(pnlMonthTotal||0).toLocaleString()"></b>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-7 gap-1.5 text-center">
+                    <template x-for="w in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="w">
+                      <div class="text-[10px] uppercase tracking-wide text-slate-500 font-bold pb-1" x-text="w"></div>
+                    </template>
+                    <template x-for="(c,ci) in pnlCalGrid" :key="ci">
+                      <div class="rounded-lg p-1.5 min-h-[3.2rem] flex flex-col border border-line"
+                        :class="!c.inMonth ? 'opacity-30' : (c.weekend ? 'bg-panel2/40' : '')"
+                        :style="c.pnl!=null ? ('background:'+(c.pnl>=0?'rgba(34,224,161,':'rgba(255,93,115,')+(Math.min(0.28, 0.06+Math.abs(c.pnl)/3000))+');border-color:'+(c.pnl>=0?'rgba(34,224,161,.5)':'rgba(255,93,115,.5)')) : ''">
+                        <div class="text-[10px] text-slate-400 text-left" x-text="c.day"></div>
+                        <div class="flex-1 flex items-center justify-center">
+                          <span x-show="c.pnl!=null" class="text-xs font-bold" :class="c.pnl>=0?'text-up':'text-down'"
+                                x-text="(c.pnl>=0?'+':'')+cur+Math.round(c.pnl).toLocaleString()"></span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="text-[11px] text-slate-500 mt-3">Each weekday's total account change (equity = base + realized + open), saved automatically after the US close.</div>
+                </div>
+
+                <!-- (d) FULL ARMED LOG -->
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div class="text-sm font-extrabold">Full Armed Log <span class="text-xs font-normal text-slate-500">— every setup the engine armed live (incl. near-misses)</span></div>
+                    <button class="btn-sm" @click="loadArmedHistory(); learning && (learning.armed_days = learning.armed_days)">🔄 Refresh</button>
+                  </div>
+                  <template x-if="learning && learning.armed_days && learning.armed_days.length">
+                    <div class="space-y-3">
+                      <template x-for="d in learning.armed_days" :key="d.date">
+                        <div class="card p-4">
+                          <div class="flex items-center gap-2 mb-3 flex-wrap cursor-pointer" @click="d._open=!d._open">
+                            <span class="text-[10px] text-slate-400 mr-1" x-text="d._open?'▲':'▶'"></span>
+                            <span class="font-bold" x-text="d.date"></span>
+                            <span class="text-xs px-2 py-0.5 rounded text-slate-400" style="background:rgba(255,255,255,.06)" x-text="(d.n||d.rows&&d.rows.length||0)+' armed'"></span>
+                            <span class="text-xs px-2 py-0.5 rounded text-up" style="background:rgba(34,224,161,.12)" x-text="(d.confirmed||0)+' confirmed'"></span>
+                            <span class="text-xs px-2 py-0.5 rounded text-slate-400" style="background:rgba(255,255,255,.04)"
+                                  x-text="((d.n||d.rows&&d.rows.length||0)-(d.confirmed||0))+' near-miss'"></span>
+                          </div>
+                          <div x-show="d._open" class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                              <thead>
+                                <tr class="text-slate-500 text-left border-b border-line/60">
+                                  <th class="py-1 pr-2">Gr</th><th class="pr-2">Ticker</th>
+                                  <th class="pr-2 hidden sm:table-cell">Setup</th>
+                                  <th class="pr-2">Armed</th>
+                                  <th class="pr-2">Outcome</th>
+                                  <th class="text-right pr-2">Entry</th>
+                                  <th class="text-right">Stop</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <template x-for="r in (d.rows||[])" :key="(r.arm_id||r.ticker)+r.setup_type">
+                                  <tr class="border-b border-line/30 hover:bg-white/5 cursor-pointer" @click="showChart(r.ticker)">
+                                    <td class="py-1 pr-2">
+                                      <span class="font-extrabold" :style="r.grade?('color:'+gradeColor(r.grade)):''" x-text="r.grade||'—'"></span>
+                                    </td>
+                                    <td class="pr-2 font-bold" x-text="r.ticker"></td>
+                                    <td class="pr-2 text-slate-400 truncate max-w-[10rem] hidden sm:table-cell" x-text="r.setup_type"></td>
+                                    <td class="pr-2 text-slate-300" x-text="r.first_armed"></td>
+                                    <td class="pr-2">
+                                      <span x-show="r.confirmed" class="text-up font-semibold" x-text="'✓ confirmed '+(r.confirmed_at||'')"></span>
+                                      <span x-show="!r.confirmed" class="text-slate-500">armed only</span>
+                                    </td>
+                                    <td class="pr-2 text-right tabular-nums" x-text="r.plan_entry!=null?('$'+r.plan_entry):(r.trigger!=null?('$'+r.trigger):'—')"></td>
+                                    <td class="text-right tabular-nums" x-text="r.plan_stop!=null?('$'+r.plan_stop):'—'"></td>
+                                  </tr>
+                                </template>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <template x-if="!learning || !learning.armed_days || !learning.armed_days.length">
+                    <div class="card p-5 text-sm text-slate-500">No armed history yet. This fills in live during market hours — every setup the confirmation engine arms (and whether it later confirmed) gets recorded here.</div>
+                  </template>
+                </div>
+
+              </div><!-- /edge -->
+
+            </div>
+          </template>
+
+        </section>
+
         <!-- ===== STATS ===== -->
         <section x-show="view==='stats'" class="space-y-5 max-w-3xl">
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1317,7 +1963,7 @@
                 <template x-if="forward.aggregate">
                   <div class="grid grid-cols-3 gap-3 text-center">
                     <div class="lvl"><div class="lvl-l">Win rate</div><div class="text-xl font-extrabold" x-text="forward.aggregate.win_rate+'%'"></div></div>
-                    <div class="lvl"><div class="lvl-l">Avg R</div><div class="text-xl font-extrabold" :class="forward.aggregate.avg_r>=0?'text-up':'text-down'" x-text="(forward.aggregate.avg_r>=0?'+':'')+forward.aggregate.avg_r+'R'"></div></div>
+                    <div class="lvl"><div class="lvl-l">Avg R</div><div class="text-xl font-extrabold" :class="forward.aggregate.avg_r>=0?'text-up':'text-down'" x-text="(forward.aggregate.avg_r>=0?'+':'')+forward.aggregate.avg_r+'R'"></div><div class="text-[10px] text-slate-500" x-show="forward.aggregate.avg_r_w!=null" x-text="'winsor '+(forward.aggregate.avg_r_w>=0?'+':'')+forward.aggregate.avg_r_w+'R'" title="Average R with each trade capped at +10R — the durable-edge number, measured the same way as the backtest so one survivorship monster doesn't flatter the slate."></div></div>
                     <div class="lvl"><div class="lvl-l">&gt;1R</div><div class="text-xl font-extrabold" x-text="forward.aggregate.pct_gt1R+'%'"></div></div>
                   </div>
                 </template>
@@ -1585,8 +2231,8 @@
               <button class="btn" @click="saveSettings()">Save</button>
               <span class="text-xs text-emerald-400" x-show="savedMsg" x-text="savedMsg"></span>
             </div>
-            <!-- Phone alerts via your own Telegram bot (local only — never leaves your machine) -->
-            <div class="mt-4 pt-3 border-t border-line">
+            <!-- Phone alerts via your own Telegram bot (LOCAL-ONLY — never shown on the hosted/friends site) -->
+            <div x-show="!hosted" class="mt-4 pt-3 border-t border-line">
               <div class="text-sm font-semibold mb-1">📱 Phone alerts (Telegram)</div>
               <div class="text-xs text-slate-500 mb-2 leading-relaxed">
                 Get the actual BUY / EXIT / TRIM / RAISE-STOP calls on your phone. One-time setup:
@@ -1603,6 +2249,13 @@
                 <button class="btn" @click="saveSettings()">Save</button>
                 <button class="btn-sm" @click="testTelegram()">Send test</button>
                 <span class="text-xs" :class="tgMsg.includes('✅')?'text-emerald-400':'text-down'" x-show="tgMsg" x-text="tgMsg"></span>
+              </div>
+              <label class="flex items-center gap-2 mt-3 text-sm cursor-pointer select-none">
+                <input type="checkbox" class="accent-accent w-4 h-4" x-model="settings.briefing_enabled" @change="saveSettings()">
+                <span>🌅 Daily digests — morning gameplan (~9:00 ET) & EOD recap (~16:10 ET)</span>
+              </label>
+              <div class="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                Pushed to your phone on weekdays. Uncheck to mute the digests — your live BUY / EXIT alerts keep firing.
               </div>
             </div>
           </div>
@@ -1756,7 +2409,8 @@
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.logScale?'bg-accent text-white':'bg-panel2 text-slate-400'"
             @click="chartModal.logScale=!chartModal.logScale; renderChart()" title="Logarithmic price scale">Log</button>
           <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showChannel?'bg-accent text-white':'bg-panel2 text-slate-400'"
-            @click="chartModal.showChannel=!chartModal.showChannel; renderChart()" title="Linear-regression trend channel (the 'tunnel')">📐 Channel</button>
+            @click="chartModal.showChannel=!chartModal.showChannel; renderChart()" title="Pattern overlay — the relevant flag / pennant / wedge (falls back to the regression channel)"
+            x-text="chartModal.showChannel && chartModal._patternLabel ? ('🚩 '+chartModal._patternLabel) : '📐 Pattern'"></button>
           <button class="btn-ghost" @click="closeChart()">✕</button>
         </div>
       </div>

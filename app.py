@@ -13,6 +13,7 @@ import os
 import shutil
 import threading
 import time
+import gzip
 import base64
 import re
 import sys
@@ -29,6 +30,8 @@ from urllib.parse import urlparse, unquote, quote, parse_qs
 import scanner
 import universe
 import rubric
+import bots
+import learning
 
 BASE = Path(__file__).resolve().parent
 SEED = BASE / "data"                       # shared files baked into the image / repo
@@ -345,11 +348,36 @@ def _detect_macro(items, days=3):
     return out[:3]
 
 
+# Routine insider equity comp (director/officer stock grants, 10b5-1 plans, Form 4) is NOISE, not a
+# catalyst — never let it color sentiment (the AXTI case: "director awarded 754-share stock grant").
+_INSIDER_NOISE = re.compile(
+    r"(stock|share|shares)\s+grant|grant\w*.{0,20}(stock|shares?)|"
+    r"(director|officer|ceo|cfo|chief|president|insider|exec\w*).{0,45}(awarded|grant)|"
+    r"\b10b5-1\b|\bform 4\b", re.I)
+
+
+def _kw_hit(t, kws):
+    """Keyword match anchored at the WORD START + only real inflection suffixes (s/es/ed/ing). So 'war'
+    matches 'war'/'wars' but NOT 'award'/'warehouse', 'ban' not 'urban'/'banner', 'deal' not 'dealer',
+    'bet' not 'better' — while STILL catching plurals/past tense ('plunges', 'lawsuits', 'downgrades',
+    'tariffs'). (Burry caught the double-boundary version silently dropping ~38% of inflected headlines.)
+    Multi-word phrases fall back to plain substring."""
+    for k in kws:
+        if " " in k:
+            if k in t:
+                return True
+        elif re.search(r"\b" + re.escape(k) + r"(?:s|es|ed|ing)?\b", t):
+            return True
+    return False
+
+
 def _classify(title):
     t = (title or "").lower()
-    good = any(k in t for k in GOOD_KW)
-    bad = any(k in t for k in BAD_KW)
-    important = good or bad or any(k in t for k in EXTRA_KW)
+    if _INSIDER_NOISE.search(t):                      # routine insider grant → not important, neutral
+        return False, "neutral"
+    good = _kw_hit(t, GOOD_KW)
+    bad = _kw_hit(t, BAD_KW)
+    important = good or bad or _kw_hit(t, EXTRA_KW)
     sentiment = "bad" if bad else ("good" if good else "neutral")
     return important, sentiment
 
@@ -711,6 +739,9 @@ def run_build_universe():
     US: the full NASDAQ/NYSE/AMEX directory. IL: the curated TASE seed list (data/il_symbols.json),
     re-quoted + liquidity-filtered the same way (no auto-directory exists for Tel Aviv)."""
     mkt = market()
+    if SCAN.get("running"):   # backstop: never let a heavy universe rebuild run concurrently with a scan
+        UNIVERSE.update(running=False, stage="deferred — scan running")
+        return
     settings = read_json(settings_owner_f(), {})
     uni = scanner.mcfg(mkt)["uni"]
     il_syms = None
@@ -854,12 +885,35 @@ def apply_sizing(item, settings):
     return item
 
 
+def _adr_violation(entry, stop, adr_pct):
+    """Ground rule 4: a stop wider than 1× ADR means the setup is too extended. Returns True when the
+    per-share risk exceeds 1× the stock's ADR (in price), so the UI can warn instead of silently showing
+    a rule-breaking stop (e.g. a breakout leg whose structural stop sits 1.5× ADR below the trigger)."""
+    if not (entry and stop and adr_pct and entry > stop):
+        return False
+    adr_px = entry * adr_pct / 100
+    return adr_px > 0 and (entry - stop) > 1.0 * adr_px
+
+
 def compute_equity():
     """Live account equity = base (the size you input) + realized (closed P&L) + open (unrealized
     P&L). The base is never auto-mutated — equity is always derived, so the account 'updates itself'."""
     st = read_json(settings_f(), {})
     base = st.get("account_size") or 0
     trades = read_json(trades_f(), [])
+    # During the active US window, value open positions at the LIVE price (30s-cached quotes) instead
+    # of the 12h-cached daily close — so intraday equity, and every position size derived from it, tracks
+    # real unrealized P&L. Outside hours we fall back to the daily close (consistent with _equity_at/P&L
+    # calendar). One batched quote call; small position count; degrades to the daily bar on any failure.
+    live = {}
+    if _us_session_active():
+        opens = [t["ticker"] for t in trades
+                 if t.get("status") == "open" and t.get("ticker") and t.get("entry") and t.get("shares")]
+        if opens:
+            try:
+                live = scanner.fetch_quotes(opens) or {}
+            except Exception:
+                live = {}
     realized = open_pnl = 0.0
     for t in trades:
         e, sh = t.get("entry"), t.get("shares")
@@ -868,12 +922,19 @@ def compute_equity():
         if t.get("status") == "closed" and t.get("exit"):
             realized += (t["exit"] - e) * sh
         elif t.get("status") == "open" and t.get("ticker"):
-            try:
-                bars = scanner.get_bars(t["ticker"])
-                if bars:
-                    open_pnl += (bars[-1]["close"] - e) * sh
-            except Exception:
-                pass
+            px = None
+            q = live.get(t["ticker"])
+            if q and q.get("price"):
+                px = q["price"]
+            else:
+                try:
+                    bars = scanner.get_bars(t["ticker"])
+                    if bars:
+                        px = bars[-1]["close"]
+                except Exception:
+                    px = None
+            if px:
+                open_pnl += (px - e) * sh
     return {"base": round(base, 2), "realized": round(realized, 2),
             "open": round(open_pnl, 2), "equity": round(base + realized + open_pnl, 2)}
 
@@ -1340,6 +1401,7 @@ def grade_suggestions(items, settings, posture=None, heat=None):
     sd = _session_date()                                  # the live/most-recent session date (SPY-derived)
     for it in items:
         apply_sizing(it, settings)
+        it["adr_violation"] = _adr_violation(it.get("entry"), it.get("stop"), it.get("adr"))
         it["worth_waiting"] = it.get("setup_type") in ("Deep Pullback", "Consolidation")
         # date-correct "prior-day high" the live rotation entry reclaims: if the scan's last daily
         # bar IS the current session (today's forming bar), the prior day is prev_high; otherwise
@@ -1382,6 +1444,7 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         # size every entry option (each plan carries its own entry/risk_ps), not just the primary
         for e in it.get("entries", []):
             apply_sizing(e, settings)
+            e["adr_violation"] = _adr_violation(e.get("entry"), e.get("stop"), it.get("adr"))
     # ---- leader-in-group: within each theme, rank names by relative strength so the
     # strongest stock of a hot group gets a 🥇 mark (like the Sector Heat awards) ----
     groups = {}
@@ -1402,8 +1465,13 @@ def grade_suggestions(items, settings, posture=None, heat=None):
     # ---- composite grade: rate every name best->worst using ALL the data ----
     bysetup = compute_stats().get("by_setup", {})
     posture = posture if posture is not None else read_json(market_f(), {}).get("posture", 55)  # 0-100 regime (or as-of)
+    # Patient AT-SUPPORT setups — exempt from the regime-factor discount (the user's backtest validated
+    # these as the workhorse in BOTH corrections; they belong with the limit pullbacks, not with breakouts).
+    # Bug fix 2026-06-06: Deep Pullback + Consolidation were missing → AXTI/TSEM-class names got their
+    # regime factor cut 40% in any sub-soft tape (posture<55), dropping them from A to C in pullback regimes.
     pullback_setups = ("Pullback", "Pullback @ AVWAP",
-                       "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+                       "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)",
+                       "Deep Pullback", "Consolidation")
 
     def _rating(it, unit=None):
         # `unit` = a single entry option's per-entry inputs (setup_type / ext50_adr / entry_quality /
@@ -1469,7 +1537,14 @@ def grade_suggestions(items, settings, posture=None, heat=None):
                 r = min(r, rubric.CAP_BREAKOUT_WEAK)
             elif posture < rubric.REGIME_MIXED:
                 r = min(r, rubric.CAP_BREAKOUT_MIXED)       # breakouts fail in weak tape -> max B
-        elif patient_quality and ext < rubric.CHASE_SOFT_ADR and tr != "Falling":
+        elif patient_quality and ext < rubric.CHASE_SOFT_ADR and (
+                tr != "Falling"
+                or (st in ("Deep Pullback", "Consolidation") and (it.get("rs_pct", 0) or 0) >= 90)):
+            # A top-decile leader (RS≥90) buying a Deep Pullback/Consolidation TO support BYPASSES the
+            # "cooling group" exclusion: the deep pull already priced the group selloff in. Sector=12
+            # (Falling) still costs ~10 composite points — that's enough penalty; capping at C on top of
+            # it is double-counting fear and was killing exactly the workhorse setup (the AXTI case,
+            # bug fix 2026-06-06). Plain pullbacks in a Falling group still fall to the else branch.
             if posture < rubric.REGIME_WEAK:
                 r = min(r, rubric.CAP_PATIENT_WEAK)         # deep correction: even the best -> max B, not A
             # posture >= 50: no cap -> A/A+ reachable for the best patient setups (near their base)
@@ -1487,7 +1562,7 @@ def grade_suggestions(items, settings, posture=None, heat=None):
             r = min(r, rubric.CAP_NONLEADER)
         return round(max(0, min(99, r)))
 
-    patient_or_pullback = pullback_setups + ("Deep Pullback", "Consolidation")
+    patient_or_pullback = pullback_setups   # Deep Pullback + Consolidation now live in pullback_setups
     for it in items:
         entries = it.get("entries") or []
         for e in entries:
@@ -1504,6 +1579,14 @@ def grade_suggestions(items, settings, posture=None, heat=None):
                                        "entry_quality": e.get("entry_quality"),
                                        "buyable_now": e.get("buyable_now"),
                                        "chase_exempt": e.get("chase_exempt")})
+            # STRENGTH BONUS (user 2026-06-05): a deep pullback / consolidation in a VERY strong leader is a
+            # prime setup — its strength shouldn't leave it stuck at B. Top-decile RS (≥90) adds graded bonus
+            # points (up to +7) so the strongest leaders bought AT the 50 reach A and get armed. (AXTI: RS 96
+            # sitting on the 50 should be an A, not a B held down by a cold sector.)
+            if unit_setup in ("Deep Pullback", "Consolidation"):
+                _rsp = it.get("rs_pct", 0) or 0
+                if _rsp >= 90:
+                    e["rating"] = min(99, e["rating"] + round(min(7, (_rsp - 88) * 0.8)))
             e["grade"] = _grade_letter(e["rating"])
         # the ticker's headline grade = the AVERAGE of its actionable options, so one great-but-unlikely
         # entry can't carry the whole card (the FLNC case: a chase breakout + a 19%-below pullback that
@@ -1591,12 +1674,22 @@ def log_forward_picks(date_key=None):
     write_json(forward_f(), log)
 
 
+def _local_now(mk=None):
+    """Local exchange time. DST-correct for US (via _et_now/zoneinfo) so the once-a-day EOD gates
+    don't run an hour late in EST season; other markets fall back to their fixed config offset."""
+    mk = mk or market()
+    if mk == "us":
+        return _et_now()
+    cfg = scanner.mcfg(mk)
+    return datetime.now(timezone.utc) + timedelta(hours=cfg["tz_offset"])
+
+
 def _market_closed(mk=None):
     """Rough market-closed check in local exchange time: a non-trading day, or outside the session
     window. Good enough to gate a once-a-day end-of-day snapshot. Market-aware: US is Mon-Fri
     9:30-16:00 ET; IL (TASE) is Sun-Thu ~9:54-17:15 IST (see scanner.MARKETS)."""
     cfg = scanner.mcfg(mk or market())
-    loc = datetime.now(timezone.utc) + timedelta(hours=cfg["tz_offset"])
+    loc = _local_now(mk or market())
     if loc.weekday() not in cfg["trading_days"]:
         return True
     hm = loc.hour + loc.minute / 60.0
@@ -1611,7 +1704,7 @@ def _after_close_today(mk=None):
     finalize today's P&L and freeze the NEXT session's snapshot before the session even traded
     (the mid-session/premature-capture bug)."""
     cfg = scanner.mcfg(mk or market())
-    loc = datetime.now(timezone.utc) + timedelta(hours=cfg["tz_offset"])
+    loc = _local_now(mk or market())
     return loc.weekday() in cfg["trading_days"] and (loc.hour + loc.minute / 60.0) >= cfg["close"]
 
 
@@ -1841,7 +1934,7 @@ def _maybe_weekly_rebuild():
                                 ).days >= 7
     except Exception:
         stale = True
-    if stale and not UNIVERSE.get("running"):
+    if stale and not UNIVERSE.get("running") and not SCAN.get("running"):
         try:
             run_build_universe()
         except Exception:
@@ -1881,6 +1974,13 @@ def _forward_eod_loop():
         threading.Thread(target=_launch_catchup, daemon=True).start()
     while True:
         _run_forward_eod_all()
+        # Advance the Competition bots ONE day off the just-finished scan (local-only; never while a
+        # scan/rebuild is running, so it can't add to the freeze hazard). ~20ms, no new Yahoo calls.
+        if not HOSTED and not SCAN.get("running") and not UNIVERSE.get("running"):
+            try:
+                bots.run_bots_eod()
+            except Exception:
+                pass
         time.sleep(1800)
 
 
@@ -2106,16 +2206,26 @@ def _day_lesson(picks):
     return head + (" " + " ".join(notes[:2]) if notes else "")
 
 
+FWD_WINSOR_CAP = 10.0   # cap each R at +10R when averaging — matches the BACKTEST convention. This is a
+                        # tails-driven TREND system, so one +40R monster fill dominates the raw mean; the
+                        # winsorized average is the durable-edge number the backtest validated config E on.
+
+
 def _agg_rs(rows, rkey="R"):
-    """Aggregate a set of evaluated picks on an R key (R / r9 / r20 / r50)."""
+    """Aggregate a set of evaluated picks on an R key (R / r9 / r20 / r50). Reports BOTH the raw average
+    (real dollars) and the winsorized-at-+10R average (durable edge) so the live forward test is measured
+    on the same basis as the backtest — otherwise one survivorship monster makes a mediocre slate look great."""
     rs = [t[rkey] for t in rows if t.get(rkey) is not None]
     if not rs:
         return None
     wins = [x for x in rs if x > 0]
+    rw = [min(x, FWD_WINSOR_CAP) for x in rs]
     return {"n": len(rs), "avg_r": round(sum(rs) / len(rs), 2),
+            "avg_r_w": round(sum(rw) / len(rw), 2),          # winsorized — compare THIS to the backtest
             "win_rate": round(100 * len(wins) / len(rs)),
             "pct_gt1R": round(100 * sum(1 for x in rs if x >= 1) / len(rs)),
-            "total_r": round(sum(rs), 1)}
+            "total_r": round(sum(rs), 1),
+            "total_r_w": round(sum(rw), 1)}
 
 
 def _dedupe_forward(rows):
@@ -2432,7 +2542,15 @@ def run_intraday_partial(n=220, max_age=0.05):
 # --------------------------------------------------------------------------- #
 # Stats
 # --------------------------------------------------------------------------- #
+_STATS_CACHE = {"t": 0.0, "v": None}   # short TTL: compute_stats reads+parses trades.json on every call,
+                                       # and grade_suggestions calls it once per grade pass (every /api/now,
+                                       # /api/suggestions, forward backfill...). Cleared on any trade mutation.
+
+
 def compute_stats():
+    c = _STATS_CACHE
+    if c["v"] is not None and (time.time() - c["t"]) < 15:
+        return c["v"]
     trades = read_json(trades_f(), [])
     closed = [t for t in trades if t.get("status") == "closed" and isinstance(t.get("result_r"), (int, float))]
     out = {"closed": len(closed), "open": len([t for t in trades if t.get("status") == "open"]),
@@ -2454,6 +2572,7 @@ def compute_stats():
     out["activation"] = {stp: {"closed": v["n"], "active": v["n"] >= 5, "to_go": max(0, 5 - v["n"])}
                          for stp, v in out["by_setup"].items()}
     out["activation_threshold"] = 5
+    _STATS_CACHE["t"], _STATS_CACHE["v"] = time.time(), out
     return out
 
 
@@ -2469,6 +2588,124 @@ def _top_lessons(n=3):
         if line.startswith("- ") and "empty for now" not in line.lower():
             out.append(re.sub(r"\*\*", "", line[2:]).strip())
     return out[:n]
+
+
+def _compute_daily_lesson(closed):
+    """Learning Hub — the 'today's lesson' surface. Scans the most recent closed trades for the single
+    highest-priority behavioral pattern and returns {text, tag, tickers}. Behavior-focused (not vanity);
+    `tag` matches a lessons.md type so the UI can show 'you already knew this'. Priority: repeat-name
+    (revenge) → chase tax → tight stop → win streak → nothing notable. Read-only."""
+    recent = sorted(closed, key=lambda t: (t.get("exit_at") or t.get("taken_at") or ""), reverse=True)[:10]
+    if not recent:
+        return {"text": "No closed trades yet — your first lessons appear here once trades close.",
+                "tag": None, "tickers": []}
+    # 1) repeat-name / revenge — same ticker closed more than once in the recent window
+    from collections import Counter
+    names = Counter(t.get("ticker") for t in recent if t.get("ticker"))
+    rep = [tk for tk, c in names.items() if c >= 2]
+    if rep:
+        tk = rep[0]
+        rs = [t.get("result_r") for t in recent if t.get("ticker") == tk and isinstance(t.get("result_r"), (int, float))]
+        tot = round(sum(rs), 2) if rs else 0
+        return {"text": f"You traded {tk} {names[tk]}× recently (total {tot:+}R). Re-entering a name that just "
+                        f"stopped you out is the revenge/over-concentration tell — the setup didn't fail, the entry did.",
+                "tag": "revenge", "tickers": [tk]}
+    # 2) chase tax — a recent loser entered well above its plan
+    chased = [t for t in recent if (t.get("entry_vs_plan_pct") or 0) > 5
+              and isinstance(t.get("result_r"), (int, float)) and t["result_r"] < 0]
+    if chased:
+        t = max(chased, key=lambda x: x.get("entry_vs_plan_pct") or 0)
+        return {"text": f"{t.get('ticker')} was entered {t['entry_vs_plan_pct']:+.0f}% above plan and lost "
+                        f"{t['result_r']:+.2f}R. Chasing above the zone forces a tight stop and a worse R — "
+                        f"wait for the pullback into the plan.",
+                "tag": "chase", "tickers": [t.get("ticker")]}
+    # 3) tight stop — a recent loser with a sub-3% stop (noise-width)
+    tight = []
+    for t in recent:
+        en, ist = t.get("entry"), t.get("initial_stop")
+        if en and ist and en > 0 and isinstance(t.get("result_r"), (int, float)) and t["result_r"] <= -0.8:
+            if (en - ist) / en * 100 < 3:
+                tight.append(t)
+    if tight:
+        t = tight[0]
+        w = round((t["entry"] - t["initial_stop"]) / t["entry"] * 100, 1)
+        return {"text": f"{t.get('ticker')} stopped at a {w}%-wide stop — that's noise-width, not structure. "
+                        f"A stop that tight gets wicked out before the thesis plays. Stop at the real level or cut size.",
+                "tag": "tight-stop", "tickers": [t.get("ticker")]}
+    # 4) win streak — last 3 all green
+    last3 = [t.get("result_r") for t in recent[:3] if isinstance(t.get("result_r"), (int, float))]
+    if len(last3) == 3 and all(x > 0 for x in last3):
+        return {"text": f"Last 3 closed trades all green ({', '.join(f'{x:+.1f}R' for x in last3)}). "
+                        f"Whatever you did — patient entries at support — keep doing it.",
+                "tag": "streak", "tickers": []}
+    return {"text": "No standout pattern in your recent trades. Keep entries at the plan and let winners run.",
+            "tag": None, "tickers": []}
+
+
+def compute_learning():
+    """Learning Hub payload (LOCAL): assembles the collect→compare→learn→improve view from PROVEN sources —
+    compute_stats (closed-trade performance), the execution gap (chased vs clean, from trades.json), today's
+    armed setups (learning_events), the forward aggregate (System Edge), and a computed daily lesson.
+    Read-only; reuses existing functions so it can't drift from the Stats/forward math."""
+    stats = compute_stats()
+    trades = read_json(trades_f(), [])
+    closed = [t for t in trades if t.get("status") == "closed" and isinstance(t.get("result_r"), (int, float))]
+
+    # --- EXECUTION GAP: does chasing above the plan cost R? (the user's #1 documented leak) ---
+    def _avg_r(xs):
+        v = [t["result_r"] for t in xs if isinstance(t.get("result_r"), (int, float))]
+        return round(sum(v) / len(v), 2) if v else None
+    with_plan = [t for t in closed if t.get("planned_entry") and t.get("entry_vs_plan_pct") is not None]
+    chased = [t for t in with_plan if t["entry_vs_plan_pct"] > 5]
+    clean = [t for t in with_plan if t["entry_vs_plan_pct"] <= 5]
+    chase_vals = [t["entry_vs_plan_pct"] for t in with_plan]
+    gap_rows = sorted(
+        [{"ticker": t.get("ticker"), "setup": t.get("setup_type"), "taken_at": t.get("taken_at"),
+          "entry": t.get("entry"), "planned_entry": t.get("planned_entry"),
+          "chase_pct": t.get("entry_vs_plan_pct"), "result_r": t.get("result_r")}
+         for t in with_plan], key=lambda r: (r["chase_pct"] or 0), reverse=True)
+    execution_gap = {
+        "n_total_closed": len(closed), "n_with_plan": len(with_plan),
+        "n_chased": len(chased), "chased_avg_r": _avg_r(chased),
+        "n_clean": len(clean), "clean_avg_r": _avg_r(clean),
+        "avg_chase_pct": round(sum(chase_vals) / len(chase_vals), 1) if chase_vals else None,
+        "rows": gap_rows[:25],
+    }
+
+    # --- TODAY's armed setups + the day-by-day log (from the unified event store) ---
+    store = read_json(learning_events_f(), {})
+    events = (store or {}).get("events", {}) if isinstance(store, dict) else {}
+    today = now_date()
+    by_day = {}
+    for e in events.values():
+        by_day.setdefault(e.get("arm_date"), []).append(e)
+    today_evs = by_day.get(today, [])
+    armed_days = [{"date": d, "n": len(v), "confirmed": sum(1 for x in v if x.get("confirmed")),
+                   "rows": sorted(v, key=lambda x: x.get("first_armed") or "")}
+                  for d, v in sorted(by_day.items(), reverse=True)]
+
+    # --- System Edge (forward winsorized R) — empty until the forward log re-accrues post-wipe ---
+    try:
+        fwd = score_forward()
+    except Exception:
+        fwd = {}
+    fwd = fwd if isinstance(fwd, dict) else {}
+    system_edge = (fwd.get("aggregate") or {}).get("avg_r_w") if fwd.get("aggregate") else None
+
+    return {
+        "vitals": {"win_rate": stats.get("win_rate"), "avg_r": stats.get("avg_r"),
+                   "closed": stats.get("closed"), "system_edge": system_edge,
+                   "system_edge_n": (fwd.get("aggregate") or {}).get("n") if fwd.get("aggregate") else 0},
+        "by_setup": stats.get("by_setup", {}),
+        "activation": stats.get("activation", {}), "activation_threshold": stats.get("activation_threshold", 5),
+        "execution_gap": execution_gap,
+        "today": {"date": today,
+                  "armed": [e for e in today_evs if not e.get("confirmed")],
+                  "confirmed": [e for e in today_evs if e.get("confirmed")]},
+        "armed_days": armed_days,
+        "daily_lesson": _compute_daily_lesson(closed),
+        "forward": fwd,
+    }
 
 
 def _sug_compact(s):
@@ -2500,7 +2737,12 @@ def compute_gameplan():
     indexes = market.get("indexes", [])
     stretched = [i["name"] for i in indexes if i.get("stretched_50")]
     regime_live = bool(market.get("live"))
-    defend = (defend_state(market)              # LOCAL-ONLY — never the friends/hosted site
+    try:                                        # frothy must match the Now tab so defend can't read ON
+        _pred = compute_prediction()            # in one tab and OFF in the other (they share defend_state)
+        _frothy = _pred.get("overall", {}).get("state", "") == "Extended / frothy — late-stage"
+    except Exception:
+        _frothy = False
+    defend = (defend_state(market, _frothy)     # LOCAL-ONLY — never the friends/hosted site
               if (not HOSTED and settings.get("defend_mode_enabled", True))
               else {"on": False, "flatten_now": False})
 
@@ -2530,15 +2772,21 @@ def compute_gameplan():
                 "open_risk": round(open_risk, 2),
                 "open_risk_pct": round(open_risk / acct * 100, 2) if acct else None}
 
-    # stance from the tape
-    if posture >= 70:
+    # stance from the tape — canonical band (shared with the Now tab + defend, so they can't disagree)
+    _gs = regime_signal(market, _frothy)
+    _band = _gs["band"]
+    if _band == _RB_GREEN:
         stance = "Press — healthy uptrend, full size on A+ setups"
-    elif posture >= 55:
+    elif _band == _RB_OK:
         stance = "Selective — constructive tape, pick your spots"
-    elif posture >= 45:
+    elif _band == _RB_SELECTIVE:
         stance = "Cautious — mixed tape; half size or wait for clean buys"
-    else:
+    elif _band == _RB_CAUTION:
         stance = "Defense — weak tape, protect capital, mostly cash"
+    else:  # deep
+        stance = "Stand aside — deep correction, cash is a position"
+    if _gs["risk_off"]:
+        stance += f" · 🛡️ risk-off ({'; '.join(_gs['risk_off_reasons'])}) — don't carry momentum overnight"
     if stretched:
         stance += f" · {', '.join(stretched)} extended above the 50-MA — don't chase, let setups pull in"
     if regime_live:                       # pre/after-hours — call out the indexes that are moving now
@@ -2596,7 +2844,7 @@ def compute_gameplan():
 # stance light, the position actions that NEED doing, and the single best CONFIRMED buy (or an
 # honest "sit tight"). The whole point is to remove decision fatigue — fewer choices, one call.
 # --------------------------------------------------------------------------- #
-def _plan_for(setup_type, zone, orh, stop, sized, triggered, too_extended):
+def _plan_for(setup_type, zone, orh, stop, sized, triggered, too_extended, deep_below_50=None):
     """The per-SETUP plan (the 📋). The intraday TIMING trigger is the same across Qulla's setups (the
     opening-range-high break — that's his actual method, verified), but the LEVEL you're breaking, the
     stop, the volume gate and the trail DIFFER by setup — so each plan reads specifically, not generically."""
@@ -2636,12 +2884,20 @@ def _plan_for(setup_type, zone, orh, stop, sized, triggered, too_extended):
                 "size": size_txt, "target": "Trail the 9-EMA (exit on a daily close under the 9) — a consolidation bought near the 9/21 is NOT a 50-EMA long hold; that's only a deep-at-the-50 leader.",
                 "invalidate": "Falls back under the cluster you cleared — the break failed — out."}
     if st == "Deep Pullback":
-        return {"watch": f"Strong ~6-month leader pulled back to the 50 EMA. Wait for it to HOLD/RECLAIM the 50, then break today's high on a green candle.",
-                "trigger": buy("CONFIRMED — reclaimed the 50 and broke today's high (green candle).",
-                               "BUY the break of today's high while holding the 50 EMA (green candle taking out the day high) — tight stop JUST UNDER the 50. The 9/21 sitting above are the upside room, not a wall to clear."),
-                "stop": (f"{stopd} — just under the 50 EMA." if triggered else "Just under the 50 EMA (the deep-pullback invalidation)."),
+        _stopline = (f"{stopd} — just under the 50 EMA." if triggered else "Just under the 50 EMA (the deep-pullback invalidation).")
+        if deep_below_50:                                  # price is UNDER the 50 → it's a RECLAIM (recover from below)
+            return {"watch": "Strong ~6-month leader that has pulled back UNDER the 50 EMA. Wait for it to RECLAIM the 50 (close back above) and turn up with buyers (a spin: 2 green 5-min closes over a turning-up 5-min 9 EMA).",
+                    "trigger": buy("CONFIRMED — reclaimed the 50 EMA with buyers stepping in.",
+                                   "BUY the RECLAIM of the 50 EMA — when it gets back ABOVE the 50 and turns up with buyers (a spin: 2 green 5-min closes over a turning-up 5-min 9 EMA). Buy near the 50, tight stop JUST UNDER it. The 9/21 above are upside room, NOT a level to wait for."),
+                    "stop": _stopline,
+                    "size": size_txt, "target": "Patient hold — trail the 50-EMA (exit only on a close under the 50).",
+                    "invalidate": "Closes back under the 50 EMA — the reclaim failed — out."}
+        return {"watch": "Strong ~6-month leader pulling back toward the 50 EMA (still above it). Wait for it to REACH the 50 and BOUNCE — the 50 holds and it turns up with buyers (a spin: 2 green 5-min closes over a turning-up 5-min 9 EMA). (If it instead closes UNDER the 50 and reclaims a day or two later, that's the same buy.)",
+                "trigger": buy("CONFIRMED — bounced off the 50 with buyers stepping in.",
+                               "BUY the BOUNCE off the 50 EMA — when it settles ON the 50 and turns up with buyers (a spin: 2 green 5-min closes over a turning-up 5-min 9 EMA). Buy near the 50, tight stop JUST UNDER it. The 9/21 above are upside room, NOT a level to wait for. Don't buy up here in no-man's-land between the 50 and the 9/21."),
+                "stop": _stopline,
                 "size": size_txt, "target": "Patient hold — trail the 50-EMA (exit only on a close under the 50).",
-                "invalidate": "Closes back under the 50 EMA — the reclaim failed — out."}
+                "invalidate": "Closes back under the 50 EMA — the bounce failed — out."}
     if "AVWAP" in st:
         anchor = "ATH" if "ATH" in st else ("earnings gap" if "earn" in st.lower() else "anchor")
         return {"watch": f"Pullback to the AVWAP — the institutional cost basis from the {anchor} (~{z}). Let it hold the line.",
@@ -2747,7 +3003,9 @@ def compute_now(shared=False):
     _c = _NOW_CACHE.get(_ck)
     if _c and time.time() - _c["t"] < 12:
         return _c["v"]
-    settings = read_json(settings_f(), {})
+    # size confirmation-engine BUYs off LIVE equity (base + realized + open P&L), not the static typed-in
+    # account — so the 1% risk is measured against the real balance (matches the scan/grade sizing path).
+    settings = _equity_settings()
     trades = [] if shared else enrich_trades(read_json(trades_f(), []))
     open_pos = [t for t in trades if t.get("status") == "open"]
     held = {t.get("ticker") for t in open_pos}
@@ -2854,15 +3112,22 @@ def compute_now(shared=False):
               else {"on": False, "flatten_now": False})
 
     # ---- stance light: should you be adding NEW risk at all? ----
-    if posture < 45:
-        light = "red"
-        stance = f"Stand aside — weak tape ({label}). Protect capital; wait for a confirmed turn before new risk."
-    elif frothy or posture < 55:
-        light = "yellow"
+    # Sourced from the canonical regime_signal (ONE band table, shared with defend + gameplan) so the
+    # cutoffs can't drift between tabs. The cuts are identical to the old inline ones, so the armed-
+    # candidate gating that reads `light` is unchanged. DEEP correction (posture <30) = full stand-aside;
+    # the CAUTION band (30–45) keeps watching PATIENT A-grade setups bought AT support (no knife-catching).
+    _rs = regime_signal(market, frothy)
+    light = _rs["light"]
+    deep_correction = _rs["band"] == _RB_DEEP
+    if deep_correction:
+        stance = f"Stand aside — deep correction ({label}, posture {posture}). Cash is a position; arm nothing until it turns."
+    elif _rs["band"] == _RB_CAUTION:
+        stance = (f"Caution — correction ({label}). Watching only PATIENT A-grade setups bought AT support "
+                  f"(leaders pulled back to the 50) — no chasing; a buy fires only on a real reclaim + spin.")
+    elif light == "yellow":
         stance = ("Selective — extended / greedy tape. Only A-grade setups bought AT support; "
                   "do NOT chase breakouts — that's what's been costing you.")
     else:
-        light = "green"
         stance = f"Green light — healthy tape ({label}). Take your A setups on confirmation."
     # DEFEND MODE leads the stance when armed — new setups are still fine to day-trade, but momentum
     # comes OFF into the close (the light stays as-is so buy alerts keep flowing per the user's ask).
@@ -2912,10 +3177,17 @@ def compute_now(shared=False):
     graded = grade_suggestions(sug, settings) if sug else []
     active = _us_regular_open()                            # live BUY only in the regular cash session
     cands = []                                             # (suggestion, best A/A+ leg)
-    if light != "red":
+    # GATE: full stand-aside ONLY in a deep correction (<30). In the caution band (30–45, light still red)
+    # keep watching the PATIENT support-buys (leaders at the 50) — no aggressive breakouts/EPs. ≥45 = all A/A+.
+    _caution = (light == "red") and not deep_correction
+    _PATIENT_OK = ("Deep Pullback", "Consolidation", "Pullback", "Pullback @ AVWAP",
+                   "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+    if not deep_correction:
         for s in graded:
             if s["ticker"] in skip_buy or s.get("earnings_soon"):
                 continue
+            if _caution and (s.get("setup_type") not in _PATIENT_OK):
+                continue                                   # correction tape → only leaders bought AT support
             legs = [e for e in (s.get("entries") or [])
                     if e.get("entry") and e.get("stop") and not e.get("stale")
                     and e.get("grade") in ("A+", "A")]
@@ -2971,7 +3243,9 @@ def compute_now(shared=False):
                 _adrpx = price * adr_pct / 100 if (price and adr_pct) else None
                 _near = lambda lv: bool(day_high and lv and day_high > lv
                                         and (_adrpx is None or day_high - lv <= 0.6 * _adrpx))
-                if b5 and res_entry:
+                if is_deep:
+                    pass                                          # deep pullback: NO day-high/ORH trigger — handled below (50-reclaim + spin)
+                elif b5 and res_entry:
                     if _near(res_entry):
                         res_entry = round(day_high * (1 + (ebuf or 0) / 100), 2)
                         cleared = "today's high"
@@ -2985,10 +3259,99 @@ def compute_now(shared=False):
                               "holding": _bc["holding"], "extended": _bc["extended"]}
             except Exception:
                 oc, b5 = None, None
-        triggered, too_extended, vol_wait, overhead, deep_wait = False, False, False, None, False
+        triggered, too_extended, vol_wait, overhead, deep_wait, buyers_wait = False, False, False, None, False, False
         entry, stop = (res_entry or leg_entry), (res_stop or leg_stop)
         orh = oc.get("orh") if oc else None
         lod = oc.get("lod") if oc else None
+        # ── DEEP PULLBACK = the 50-RECLAIM + SPIN entry (user 2026-06-05, the AXTI fix) ──────────────────
+        # The deep-pullback thesis: a strong leader pulled DEEP into the 50 EMA is bought on the RECLAIM of
+        # the 50 with buyers stepping in (a spin) — NOT a break of today's far-above high. For AXTI the day
+        # high $104.55 sat in no-man's-land (above the 50 ~$92, just under the 9/21 wall ~$107); firing there
+        # is wrong AND the 1× ADR stop guard misses it (15% ADR makes a 13% stop "fit"). So the trigger here
+        # is: price RECLAIMS/HOLDS the 50 (cur ≥ e50) AND buyers_confirm (2 green 5-min closes over a turning
+        # 5-min 9 EMA). Entry = the current price as it reclaims (near the 50); stop = JUST UNDER the 50
+        # (tight, ~1× ADR-or-less). Below the 50 → armed, waiting for the reclaim. The 9/21 above = upside room.
+        if is_deep:
+            cur_px = b5[-1]["close"] if b5 else (s.get("close") or leg_entry)
+            if not e50 or cur_px is None:                          # missing data → fall back to the planned leg, armed
+                deep_wait = True
+                cmsg = f"Deep pullback — armed at the 50 EMA. Waiting for it to bounce off the 50 + a spin (buyers stepping in)."
+            elif cur_px < e50 * (1 - (ebuf or 0) / 100):          # still BELOW the 50 → no reclaim yet
+                deep_wait = True
+                cmsg = (f"Pulled back to the 50 EMA (${_f(e50)}) — waiting to RECLAIM the 50. Fires on the reclaim "
+                        f"(cur ${_f(cur_px)}) + a spin (buyers stepping in); stop just under the 50. (9/21 above = upside room.)")
+            else:                                                 # cur ≥ 50 — but is it a GENUINE reclaim, or just floating above while still FALLING?
+                _dlo = min(b["low"] for b in b5) if b5 else None
+                _dhi = max(b["high"] for b in b5) if b5 else None
+                # A real reclaim CAME DOWN to the 50 and TURNED UP. NXT/VICR/TER were above the 50 and CRASHING
+                # toward it (big red candles) — they never tested the 50 or turned, so nothing was reclaimed.
+                # Require: today actually tested the 50 (low reached it) AND price is now off the day's lows
+                # (turning up, not a red crash). THEN the spin (buyers_confirm) confirms it. (user 2026-06-05)
+                reached_50 = bool(_dlo is not None and _dlo <= e50 * 1.005)
+                turning_up = bool(_dlo is not None and _dhi is not None and _dhi > _dlo
+                                  and (cur_px - _dlo) >= 0.45 * (_dhi - _dlo))
+                # The reclaim/bounce needs a CLOSED 5-min candle that CLEARS the 50 by ~0.3% — a wick that just
+                # tags the 50 can get rejected (false confirm). Use the last COMPLETED candle, not the forming tick.
+                e50_buf = e50 * 1.003
+                _closed = b5[-2]["close"] if (b5 and len(b5) >= 2) else cur_px
+                held_above = bool(_closed >= e50_buf)
+                if not reached_50:
+                    deep_wait = True
+                    cmsg = (f"Pulling back toward the 50 EMA (${_f(e50)}; cur ${_f(cur_px)}) — not there yet. Waiting for it to "
+                            f"REACH the 50 and BOUNCE (settle + turn up with buyers — a spin). Don't buy up here in no-man's-land.")
+                elif not held_above:
+                    deep_wait = True
+                    cmsg = (f"Tagging the 50 EMA (${_f(e50)}) but no 5-min CLOSE ~0.3% above it yet (needs ${_f(e50_buf)}) — "
+                            f"a wick at the 50 can get rejected. Waiting for a HELD close above the 50 + a spin.")
+                elif not turning_up:
+                    deep_wait = True
+                    cmsg = (f"Tested the 50 EMA (${_f(e50)}) but it's still red/falling — no turn yet. "
+                            f"Waiting for a green bounce off the 50 (a spin: buyers stepping in).")
+                else:
+                    cand_entry = cur_px                           # buy at the reclaim, near the 50 (NOT the day high)
+                    frozen = _frz_day.get(fkey)
+                    if frozen:
+                        cand_entry, cand_stop, stop_lab = frozen["entry"], frozen["stop"], frozen.get("stop_lab")
+                    else:
+                        cand_stop = round(e50 * (1 - (sbuf or 0) / 100), 2)   # stop JUST UNDER the 50 (its invalidation)
+                        stop_lab = "50 EMA"
+                    buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
+                    adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
+                    raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
+                    if adr_px and raw_risk and raw_risk > 1.0 * adr_px:
+                        too_extended = True                      # already too far above the 50 → stop > 1× ADR
+                        cmsg = (f"Bounced off the 50 EMA (${_f(e50)}) but the stop ${_f(cand_stop)} is already wider than "
+                                f"1× ADR from here — too extended off the 50. No call (don't widen the stop).")
+                    elif not buyers_ok:
+                        buyers_wait = True
+                        cmsg = (f"Tested the 50 EMA (${_f(e50)}) and turning up, but {buyers_why} — no call yet "
+                                f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
+                    else:
+                        triggered = True
+                        entry, stop = cand_entry, cand_stop
+                        _confirmed_fkeys.add(fkey)
+                        if not frozen:                           # first confirm → LOCK the buy price + stop for the day
+                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
+                        cmsg = (f"CONFIRMED — tested the 50 EMA (${_f(e50)}) and turned up with buyers stepping in. "
+                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the 50). 9/21 above = upside room.")
+            sized = _size_leg(entry, stop)
+            plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
+                                sized, triggered, too_extended,
+                                deep_below_50=bool(cur_px is not None and e50 and cur_px < e50)),
+                    "why": s.get("why")}
+            rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                   "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
+                   "kind": e.get("kind"), "trigger": e50 or (s.get("prior_high") or leg_entry),
+                   "break_level": None, "orh": None, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
+                   "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
+                   "buyable_now": bool(e.get("buyable_now")),
+                   "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
+                   "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
+                   "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
+                   "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+                   "overhead": overhead}
+            (buys if triggered else armed).append(rec)
+            continue
         if oc and oc.get("confirmed"):
             cur_px = b5[-1]["close"] if b5 else None          # the live price — where you'd actually buy NOW
             if res_entry:                                    # break ABOVE the EMA cluster (clear resistance)
@@ -3014,18 +3377,31 @@ def compute_now(shared=False):
                 # day low — minimize risk. Falls back to the trigger-based stop if nothing tighter is valid.
                 _bs, stop_lab, _ = _best_stop(cand_entry, s, b5, adr_pct, sbuf)
                 cand_stop = _bs if _bs is not None else fb_stop
-                if is_deep and e50:                          # deep pullback: stop is JUST UNDER the 50 (its invalidation)
-                    cand_stop = round(e50 * (1 - (sbuf or 0) / 100), 2)
-                    stop_lab = "50 EMA"
             adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
             raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
             ep_ok = True                                     # EP must ALSO show massive open volume (#1 thing)
             if setup_type == "Episodic Pivot":
                 ep_ok, _vr = scanner.ep_volume_ok(b5, s.get("avg_vol"))
-            if is_deep and e50 and cand_entry < e50 * (1 - (ebuf or 0) / 100):
-                deep_wait = True                             # still BELOW the 50 → no reclaim yet; wait for it to hold the 50
-                cmsg = (f"Pulled back to the 50 EMA (${_f(e50)}) — waiting to RECLAIM it. Fires on a green break of "
-                        f"today's high while holding the 50; stop just under the 50. (9/21 above = upside room.)")
+            # BUYERS-STEPPING-IN gate (user 2026-06-05, the AAOI case): a level cleared by ONE candle while
+            # the name is being sold hard all day is a falling knife — require the 5-min tape to show buyers
+            # actually in control (2 green closes back above a turning-up 5-min 9 EMA), like the Spinning
+            # screener. EP is exempt (its massive open volume already proves participation).
+            buyers_ok, buyers_why = (True, "")
+            if setup_type != "Episodic Pivot":
+                buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
+            # ZONE-DRIFT GATE (the app-given CRDO/AAOI chase, -8.73R leak): a buy-AT-support setup is meant to
+            # fire INSIDE its zone. If the live entry has already run more than ½× ADR above the planned buy
+            # zone, the dip is gone — stay ARMED, never freeze a chase. Breakout/EP fire ON the break so they
+            # are exempt; a frozen call is a standing in-zone confirm and isn't re-gated.
+            _zref = s.get("zone_top") or leg_entry
+            zone_drift = bool(setup_type in ("Pullback", "Pullback @ AVWAP", "AVWAP reclaim (ATH)",
+                                             "AVWAP reclaim (earnings)", "Consolidation")
+                              and not frozen and _zref and adr_px and cand_entry > _zref + 0.5 * adr_px)
+            if zone_drift:
+                too_extended = True                          # keep it armed (reuses the extended → armed path)
+                _drift_pct = round((cand_entry / _zref - 1) * 100, 1)
+                cmsg = (f"{trig_desc.capitalize()}, but it's already +{_drift_pct}% above the buy zone "
+                        f"(${_f(_zref)}) — more than ½× ADR past it, the dip is gone. Staying armed, not chasing.")
             elif adr_px and raw_risk and raw_risk > 1.0 * adr_px:
                 too_extended = True                          # stop > 1× ADR → too extended, DON'T call
                 cmsg = (f"{trig_desc.capitalize()}, but the stop ${_f(cand_stop)} is wider than 1× ADR — "
@@ -3034,10 +3410,12 @@ def compute_now(shared=False):
                 vol_wait = True
                 cmsg = (f"Broke the opening-range high ${_f(orh)} but EP volume is light (needs ≈ a day's "
                         f"volume in the first 15–20 min) — no call until the volume confirms.")
+            elif not buyers_ok:
+                buyers_wait = True
+                cmsg = f"{trig_desc.capitalize()}, but {buyers_why} — no call yet (waiting for buyers to step in)."
             else:
                 # is there STILL a wall RIGHT above the entry (the next EMA / a swing high)? — no clean room.
-                # Deep pullback is EXEMPT: its 9/21 overhead are the upside target, not a wall to clear (user CIEN).
-                overhead, res_tight = (None, False) if is_deep else _overhead_res(cand_entry, s, adr_pct)
+                overhead, res_tight = _overhead_res(cand_entry, s, adr_pct)
                 if res_tight:
                     cmsg = (f"{trig_desc.capitalize()}, but {overhead['label']} ${overhead['level']} is right "
                             f"overhead (+{overhead['dist_pct']}%) — no clean room. No call until it clears.")
@@ -3060,13 +3438,9 @@ def compute_now(shared=False):
                         f"Fires again only on a clean break that HOLDS above the cluster.")
             else:
                 cmsg = f"Armed — fires on a break above ${_f(res_entry)} (clears {cleared}, with room above)."
-        else:                                                # armed, ORH/day-high path (deep pullback, or price above EMAs)
+        else:                                                # armed, ORH/day-high path (price above all EMAs)
             _lbl = "today's high" if (oc and oc.get("_dh_lift")) else "the 5-min opening-range high"
-            if is_deep and e50:                              # deep pullback at the 50 — the CIEN case
-                lvl = f" (${_f(orh)})" if orh else ""
-                cmsg = (f"Deep pullback at the 50 EMA (${_f(e50)}) — armed. Fires on a green break of today's "
-                        f"high{lvl} while holding the 50; stop just under the 50. The 9/21 above are upside room.")
-            elif oc and oc.get("extended"):
+            if oc and oc.get("extended"):
                 cmsg = (f"Already ran past {_lbl} ${_f(orh)} — chasing it here means a stop "
                         f"wider than 1× ADR. No call; re-arms on a pullback or a fresh base.")
             elif oc and oc.get("broke") and not oc.get("holding"):
@@ -3085,7 +3459,7 @@ def compute_now(shared=False):
                "kind": e.get("kind"), "trigger": res_entry or orh or (s.get("prior_high") or leg_entry),
                "break_level": res_entry,    # the EMA-cluster break level (the armed/buy entry), if any
                "orh": orh, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
-               "deep_wait": deep_wait, "zone": leg_entry,
+               "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
                "buyable_now": bool(e.get("buyable_now")),
                "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
                "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
@@ -3173,6 +3547,74 @@ def compute_autopilot():
 
 
 # --------------------------------------------------------------------------- #
+# HQ — the agent-crew command board (LOCAL-ONLY). Reads the agent definitions in
+# .claude/agents/*.md (name + description = "what it can do") and merges live status
+# from data/agent_status.json ("what it's doing"). The Chief (brain) leads.
+# --------------------------------------------------------------------------- #
+HQ_ROSTER = [
+    # role-name, persona (great investor), avatar seed, emoji, squad, leader, model, color, persona tagline
+    ("chief", "Buffett", "WarrenBuffett", "🧠", "Brain", True, "opus", "#6a8dff",
+     "The chairman — picks who works on what, weighs the trade-offs, and makes the final call. Answers to you."),
+    ("quant", "Simons", "JimSimons", "📊", "Build", False, "opus", "#22d3ee",
+     "Lets the data decide. Builds the setups and proves every change with a blind, no-curve-fit backtest."),
+    ("ux", "Lynch", "PeterLynch", "🎨", "Build", False, "sonnet", "#ff5fa2",
+     "Keeps the cockpit dead-simple to read at a glance — and mobile-friendly. Invest in what you understand."),
+    ("optimizer", "Bogle", "JohnBogle", "⚡", "Build", False, "sonnet", "#22e0a1",
+     "Strips waste — faster scans, leaner fetches, no wasted cycles. Guards against the freeze-risk."),
+    ("qa", "Burry", "MichaelBurry", "🐛", "Protect", False, "sonnet", "#ef4444",
+     "Hunts the crack everyone else missed — reproduces the bug, fixes it, and proves the fix."),
+    ("risk-auditor", "Tudor Jones", "PaulTudorJones", "🛡️", "Protect", False, "sonnet", "#ffb53d",
+     "Defense first — guards the 1% risk, the stops, and every ground rule. Capital protection above all."),
+    ("data-steward", "Graham", "BenjaminGraham", "🩺", "Protect", False, "sonnet", "#a855f7",
+     "Trusts only verified numbers — catches stale or wrong data before it costs you a trade."),
+    ("planner", "Munger", "CharlieMunger", "🧭", "Steer", False, "sonnet", "#fb923c",
+     "Inverts and prioritizes — decides what's actually worth doing and kills the busywork. Owns the roadmap."),
+    ("analyst", "Soros", "GeorgeSoros", "📓", "Steer", False, "sonnet", "#38bdf8",
+     "Knows when you're wrong, fast — reads your real trades, finds the leaks, and feeds the lessons back."),
+    ("shipper", "Marks", "HowardMarks", "🚀", "Ship", False, "haiku", "#818cf8",
+     "Ships the build carefully — leaks nothing, oversteps nothing, and never touches your git."),
+]
+
+
+def compute_hq():
+    """Build the HQ board: each agent's role + investor persona + a character avatar, what it can do (from
+    its .md description) and what it's doing (data/agent_status.json). Local-only — never served HOSTED."""
+    import re
+    import urllib.parse
+    agents_dir = DATA.parent / ".claude" / "agents"
+    status = read_json(DATA / "agent_status.json", {})
+    briefs = read_json(DATA / "agent_briefs.json", {})
+    bagents = briefs.get("agents", {}) if isinstance(briefs, dict) else {}
+    agents = []
+    for name, persona, seed, emoji, squad, leader, model, color, tagline in HQ_ROSTER:
+        desc = ""
+        f = agents_dir / f"{name}.md"
+        try:
+            if f.exists():
+                txt = f.read_text(encoding="utf-8")
+                m = re.search(r"^description:\s*(.+)$", txt, re.M)
+                if m:
+                    desc = m.group(1).strip()
+        except Exception:
+            desc = ""
+        s = status.get(name, {}) if isinstance(status, dict) else {}
+        b = bagents.get(name, {}) if isinstance(bagents, dict) else {}
+        # small PIXEL-ART character per agent (deterministic by seed) — Lynch's cast.
+        avatar = ("https://api.dicebear.com/9.x/pixel-art/svg?radius=10&seed=" + urllib.parse.quote(seed))
+        agents.append({
+            "name": name, "persona": persona, "emoji": emoji, "squad": squad, "leader": leader,
+            "model": model, "color": color, "avatar": avatar, "tagline": tagline, "desc": desc,
+            "status": s.get("status", "idle"),
+            "task": s.get("task") or s.get("last_task") or "",
+            "summary": b.get("summary", ""), "proposals": b.get("proposals", []),
+            "updated": s.get("updated", ""),
+        })
+    return {"agents": agents, "squads": ["Brain", "Build", "Protect", "Steer", "Ship"],
+            "consensus": (briefs.get("consensus", "") if isinstance(briefs, dict) else ""),
+            "updated": (status.get("_updated", "") if isinstance(status, dict) else "")}
+
+
+# --------------------------------------------------------------------------- #
 # Prediction — a probabilistic forward read from all the data we have (NOT advice)
 # --------------------------------------------------------------------------- #
 def _lean_from_score(score):
@@ -3221,6 +3663,7 @@ def compute_prediction():
 
     # shared near-term signals
     fg = market.get("fear_greed")                         # the Fear & Greed gauge (live-aware)
+    vt = market.get("vix_trend")                          # VIX velocity (panic building vs fading) — narrative-only here
     bottoming = [i["name"] for i in indexes if i.get("state") == "Bottoming / turning up"]
     em = [i for i in indexes if i.get("ext_pct") is not None] if regime_live else []
     avg_ext = _mean([i["ext_pct"] for i in em]) if em else 0.0
@@ -3243,6 +3686,15 @@ def compute_prediction():
         od.append({"text": f"Fear & Greed {s}/100 — {fg['label']}"
                    + (" (froth = correction risk)" if s >= 65 else " (washed out)" if s <= 30 else ""),
                    "dir": "neg" if s >= 65 else "pos" if 35 <= s <= 60 else "neutral"})
+    if vt:
+        _vlbl = {"spiking": "🚨 spiking", "rising": "rising",
+                 "elevated-falling": "elevated but cooling",
+                 "falling": "falling", "calm": "calm"}.get(vt["state"], vt["state"])
+        od.append({"text": f"VIX {vt['level']} ({_vlbl}, 5-day {vt['change_5d_pct']:+.0f}%)",
+                   "dir": "neg" if vt["state"] in ("spiking", "rising")
+                          else "pos" if vt["state"] == "elevated-falling" else "neutral"})
+        o += {"spiking": -1.5, "rising": -0.75, "elevated-falling": +0.5,
+              "falling": +0.25, "calm": 0}[vt["state"]]   # narrative lean only; no grade impact
     if breadth is not None:
         o += (breadth - 50) / 15.0
         od.append({"text": f"Breadth: {breadth}% of names above their 20-day MA", "dir": _dir(breadth - 50, 5, -10)})
@@ -3278,6 +3730,16 @@ def compute_prediction():
         op.append("Trend and breadth are healthy — dips are buyable while leaders hold their lines.")
     elif posture < 45:
         op.append("Below the line — capital-preservation mode; let the tape prove a turn (reclaim the 50) before adding risk.")
+    if vt and vt["state"] == "spiking":
+        op.append(f"Volatility is spiking (VIX {vt['level']}, {vt['change_1d_pct']:+.0f}% today, "
+                  f"{vt['change_7d_pct']:+.0f}% over 7 days) — fear is accelerating; stand down on chasing "
+                  f"breakouts, only patient at-support entries, and expect gap risk overnight.")
+    elif vt and vt["state"] == "rising":
+        op.append(f"Volatility is building (VIX {vt['level']}, 5-day {vt['change_5d_pct']:+.0f}%) — "
+                  f"the tape is getting nervous; tighten up and demand a clean trigger before adding risk.")
+    elif vt and vt["state"] == "elevated-falling":
+        op.append(f"Volatility is high but rolling over (VIX {vt['level']}, 5-day {vt['change_5d_pct']:+.0f}%) — "
+                  f"panic is fading; this is where leaders bottom first, so warm the watchlist and wait for 50-reclaims.")
     if rising:
         op.append(f"Leadership is rotating into {', '.join(rising[:4])}; that's where fresh setups should cluster.")
     if falling or slowing:
@@ -3288,11 +3750,14 @@ def compute_prediction():
 
     # ===================== DAILY — what's likely to happen THIS session =====================
     d, dd = (posture - 55) / 18.0, []                     # regime as a lighter backdrop for today
+    session_live = _us_session_active()                   # is there a real trading-session context RIGHT NOW?
+    # (4am–8pm ET weekdays). Off-hours/weekends the stored pre-market + catalyst files are STALE — they must
+    # NOT masquerade as a live "today" read (the Saturday "16 up vs 44 down pre-market" bug).
     if regime_live and em and abs(avg_ext) >= 0.2:
         d += max(-1.5, min(1.5, avg_ext / 0.6))
         dd.append({"text": f"🌙 {when} index move: " + ", ".join(f"{i['name']} {i['ext_pct']:+.1f}%" for i in em),
                    "dir": "pos" if avg_ext > 0 else "neg"})
-    if pm:
+    if session_live and pm:
         d += max(-0.8, min(0.8, (pm_up - pm_dn) * 0.05))
         dd.append({"text": f"Pre-market movers: {pm_up} gapping up vs {pm_dn} down", "dir": _dir(pm_up - pm_dn)})
     if up or dn:
@@ -3304,17 +3769,25 @@ def compute_prediction():
             seg.append("lagging " + ", ".join(f"{x['sector']} {x['pct']:+.1f}%" for x in dn))
         dd.append({"text": f"🌙 {pm_sectors['when']} sector moves: " + "; ".join(seg),
                    "dir": "pos" if len(up) >= len(dn) else "neg"})
-    d += (a_good - a_bad) * 0.5 + (t_good - t_bad) * 0.1
-    if alerts:
-        cat = "; ".join((("🚀 " if a["dir"] == "buy" else "🛑 " if a["dir"] == "avoid" else "👀 ") + a["title"])
-                        for a in alerts[:3])
-        dd.append({"text": f"Today's catalysts: {cat}", "dir": "pos" if a_good >= a_bad else "neg"})
+    # catalysts/news only TILT the day (they say WHICH names move, not the market's direction) — CAPPED so a
+    # few 🚀 headlines can't overrule actual breadth/movers (the "Likely up on 16-up/44-down" bug). Off-hours
+    # they're stale, so they only count during a live session.
+    if session_live:
+        d += max(-0.6, min(0.6, (a_good - a_bad) * 0.25 + (t_good - t_bad) * 0.04))
+        if alerts:
+            cat = "; ".join((("🚀 " if a["dir"] == "buy" else "🛑 " if a["dir"] == "avoid" else "👀 ") + a["title"])
+                            for a in alerts[:3])
+            dd.append({"text": f"Today's catalysts: {cat}", "dir": "pos" if a_good >= a_bad else "neg"})
     if buys or sells:
         d += (buys - sells) * 0.04
         dd.append({"text": f"Latest EOD footprint: {buys} unusual-buying vs {sells} unusual-selling names", "dir": _dir(buys - sells)})
+    # ANCHOR to the overall tape: in a RISK-OFF regime don't call an UP session off catalyst/footprint noise
+    # (the "Today: Likely up" vs "Overall: Risk-off" contradiction). Only a genuine LIVE green index move lifts it.
+    if regime_signal(market).get("risk_off") and not (regime_live and avg_ext > 0):
+        d = min(d, 0.0)
     d_lean = ("Likely up" if d >= 1.5 else "Lean up" if d >= 0.5 else "Mixed / chop" if d > -0.5
               else "Lean down" if d > -1.5 else "Likely down")
-    has_today = bool((regime_live and em) or pm or alerts)
+    has_today = bool((regime_live and em) or (session_live and (pm or alerts)))
     dp = []
     if regime_live and em and abs(avg_ext) >= 0.2:
         dp.append(f"{when}, the indexes are {'green' if avg_ext > 0 else 'red'} ({avg_ext:+.1f}% avg) — today likely opens "
@@ -3322,10 +3795,10 @@ def compute_prediction():
     elif not has_today:
         dp.append(f"Off-hours — no live read on today yet. Off yesterday's close the tape is {label or 'unclear'} "
                   f"(posture {posture}/100), so the base case is a {d_lean.lower()} session.")
-    if pm:
+    if session_live and pm:
         dp.append(f"{pm_up} names gapping up vs {pm_dn} down pre-market"
                   + (f"; leaders poking into {', '.join(x['sector'] for x in up[:3])}." if up else "."))
-    if alerts:
+    if session_live and alerts:
         dp.append("Fresh catalysts are live (see drivers) — they'll drive which names actually move today.")
     if overall["state"] == "Extended / frothy — late-stage":
         dp.append("Tape is frothy, so even an up day is chase-prone — don't force breakouts; let the pullbacks come to you.")
@@ -3442,6 +3915,10 @@ def _effective_regime():
             lp = live_posture(idxq)
             if lp:
                 lp.setdefault("computed_at", stored.get("computed_at"))
+                # vix_trend is daily-bar derived (slow-moving) — carry yesterday's value into the live
+                # regime so the VIX-spike arm of defend mode + the prediction VIX narrative still fire
+                # during PRE/POST hours (live_posture omits it). Same rationale as reusing the F&G nudge.
+                lp.setdefault("vix_trend", stored.get("vix_trend"))
                 lp["live"] = True
                 return lp
     except Exception:
@@ -3471,6 +3948,69 @@ def _index_session_moves():
     return out
 
 
+def _vix_spike(regime):
+    """A sharp VIX move (read from the precomputed regime['vix_trend']) counts as market stress → it
+    contributes to the defend-mode 'weak right now' leg. Conservative + bar-derived: VIX must be above the
+    absolute floor AND have spiked 1-day OR run up over ~7 days. Missing/partial data → False so it can
+    never MIS-ARM (or mis-disarm) defend mode. Reads market.json's vix_trend; never fetches inline."""
+    vt = regime.get("vix_trend") if isinstance(regime, dict) else None
+    if not vt:
+        return False
+    level, c1, c7 = vt.get("level"), vt.get("change_1d_pct"), vt.get("change_7d_pct")
+    if level is None or c1 is None or c7 is None or level < rubric.VIX_SPIKE_ABS_MIN:
+        return False
+    return c1 >= rubric.VIX_SPIKE_1D_PCT or c7 >= rubric.VIX_TREND_7D_PCT
+
+
+# Canonical band labels — ONE table, used everywhere (collapses the previously-divergent threshold
+# tables in compute_now / compute_gameplan). Posture-band cuts match compute_now's existing stance light.
+_RB_DEEP, _RB_CAUTION, _RB_SELECTIVE, _RB_OK, _RB_GREEN = (
+    "deep", "caution", "selective", "constructive", "green")
+
+
+def regime_signal(regime, frothy=False):
+    """THE single source of truth for 'cautious vs buy'. Classifies the (unchanged) posture value into one
+    canonical band + stance light, and computes the blind-research-validated `risk_off` flag — the states
+    where carrying momentum LOST money over 14 months (2026-06-06 study: posture<30 bled −225R and
+    'no index above its 50-day' bled −264R on breakouts; a VIX spike cut breakout expectancy too). This
+    NEVER changes the grade-facing posture value — it only reads it. Consumers (defend/stance/gameplan)
+    read this instead of each re-deriving its own thresholds.
+    Returns {posture, light, band, risk_off, risk_off_reasons, n_above_50, vix_spike}."""
+    if not isinstance(regime, dict):
+        regime = {}
+    p = regime.get("posture", 55)
+    if not isinstance(p, (int, float)):   # guard against None/corrupt write in market.json
+        p = 55
+    idx = regime.get("indexes", []) or []
+    n_above_50 = sum(1 for i in idx if (i.get("gain_50") or 0) > 0)   # gain_50>0 ⇒ close above the 50-MA
+    has_idx = len(idx) > 0
+    vix_spike = _vix_spike(regime)
+    # DATA-BACKED risk-off (don't carry momentum overnight): the three states the blind study flagged.
+    risk_off = (p < 30) or (has_idx and n_above_50 == 0) or vix_spike
+    reasons = []
+    if p < 30:
+        reasons.append(f"deep correction (posture {p})")
+    if has_idx and n_above_50 == 0:
+        reasons.append("no index above its 50-day")
+    if vix_spike:
+        vt = regime.get("vix_trend") or {}
+        reasons.append(f"VIX {vt.get('level', '?')} spiking ({vt.get('change_1d_pct', 0):+.0f}% 1d)")
+    # canonical band + stance light (cuts identical to compute_now's pre-existing light, so the
+    # armed-candidate gating that reads `light` is byte-for-byte unchanged).
+    if p < 30:
+        band, light = _RB_DEEP, "red"
+    elif p < 45:
+        band, light = _RB_CAUTION, "red"
+    elif frothy or p < 55:
+        band, light = _RB_SELECTIVE, "yellow"
+    elif p < 65:
+        band, light = _RB_OK, "green"
+    else:
+        band, light = _RB_GREEN, "green"
+    return {"posture": p, "light": light, "band": band, "risk_off": risk_off,
+            "risk_off_reasons": reasons, "n_above_50": n_above_50, "vix_spike": vix_spike}
+
+
 def defend_state(regime, frothy=False):
     """DEFEND MODE — ON only when the tape is BOTH (a) extended/frothy AND (b) weak right now. That's the
     'we had a good day, now it's red premarket and giving the money back' tape the user flagged: an
@@ -3491,8 +4031,17 @@ def defend_state(regime, frothy=False):
     moves = _index_session_moves()
     red = [m for m in moves if m["pct"] <= rubric.DEFEND_RED_PCT]
     avg = round(sum(m["pct"] for m in moves) / len(moves), 2) if moves else 0.0
-    weak = len(red) >= rubric.DEFEND_WEAK_RED_N and avg <= rubric.DEFEND_WEAK_AVG
-    on = bool(extended and weak)
+    vix_spike = _vix_spike(regime)                 # a sharp VIX move IS "weak right now" (market stress)
+    weak = (len(red) >= rubric.DEFEND_WEAK_RED_N and avg <= rubric.DEFEND_WEAK_AVG) or vix_spike
+    # TWO independent arming paths (blind-research-validated 2026-06-06):
+    #  (a) the froth round-trip — extended AND weak now (the original case), OR
+    #  (b) RISK-OFF — the market is just plain in a correction / stressed (posture<30, no index above its
+    #      50-day, or a VIX spike). The OLD code required (a) only, so a REAL correction (no longer
+    #      "extended") turned defend OFF exactly when momentum bled most (−225R/−264R in the study). The
+    #      risk_off path closes that gap. Patient 50-EMA holds stay exempt (handled by the FLATTEN caller).
+    rsig = regime_signal(regime, frothy)
+    risk_off = rsig["risk_off"]
+    on = bool((extended and weak) or risk_off)
     # the FLATTEN action only fires in the closing window (after 15:30 ET, regular session) — before then
     # it's a quiet heads-up so the day still gets a chance to firm up.
     try:
@@ -3502,16 +4051,27 @@ def defend_state(regime, frothy=False):
         hr = 0.0
     flatten_now = bool(on and _rth_now() and hr >= rubric.DEFEND_FLATTEN_ET)
     reason = ""
-    if on:
+    when = "into the close" if flatten_now else "by the close"
+    if on and extended and weak:
         ext_txt = (", ".join(stretched) + " stretched above the 50-MA"
                    if stretched else "frothy / greedy tape")
-        red_txt = ", ".join(f"{m['name']} {m['pct']:+.1f}%" for m in red) or "indexes red"
-        when = "into the close" if flatten_now else "by the close"
+        if vix_spike:
+            vt = regime.get("vix_trend") or {}
+            red_txt = (f"VIX {vt.get('level','?')} spiking "
+                       f"({vt.get('change_1d_pct',0):+.0f}% 1d, "
+                       f"{vt.get('change_7d_pct',0):+.0f}% 7d)")
+        else:
+            red_txt = ", ".join(f"{m['name']} {m['pct']:+.1f}%" for m in red) or "indexes red"
         reason = (f"Extended ({ext_txt}) and weak right now ({red_txt}) — protect the gains, "
                   f"flatten momentum trades {when} and don't hold overnight.")
+    elif on:        # risk-off path: a correction / stress tape (not necessarily extended)
+        reason = ("Risk-off tape — " + "; ".join(rsig["risk_off_reasons"]) + ". History says carrying "
+                  f"momentum here loses; flatten momentum trades {when}, don't hold overnight. "
+                  "Patient 50-EMA holds are exempt — your call, I won't close anything.")
     return {"on": on, "extended": bool(extended), "weak": bool(weak), "flatten_now": flatten_now,
             "reason": reason, "red": [m["name"] for m in red], "avg_move": avg,
-            "stretched": stretched, "fg": fg,
+            "stretched": stretched, "fg": fg, "vix_spike": vix_spike, "risk_off": risk_off,
+            "risk_off_reasons": rsig["risk_off_reasons"], "n_above_50": rsig["n_above_50"],
             "flatten_after": f"{int(rubric.DEFEND_FLATTEN_ET)}:{int((rubric.DEFEND_FLATTEN_ET % 1) * 60):02d} ET"}
 
 
@@ -3563,8 +4123,20 @@ class Handler(BaseHTTPRequestHandler):
     # ---- low-level senders ----
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode("utf-8")
+        # gzip large API responses when the client accepts it (browsers always do). The suggestions
+        # payload is ~2 MB → ~230 KB — a real win on the hosted site; loopback (local) is unaffected.
+        # Internal callers (urllib, the bot) don't send Accept-Encoding, so they get plain bytes.
+        enc = None
+        if len(body) > 1400 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            try:
+                body = gzip.compress(body, 6)
+                enc = "gzip"
+            except Exception:
+                enc = None
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        if enc:
+            self.send_header("Content-Encoding", enc)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -3629,6 +4201,19 @@ class Handler(BaseHTTPRequestHandler):
             # lets the frontend hide write-heavy pages (journal/strategy/watchlist) on the hosted
             # free service, where per-user data doesn't persist across the dyno sleeping.
             self._json({"hosted": HOSTED})
+        elif route == "hq":
+            # 🧠 HQ — the agent-crew board. LOCAL-ONLY (the owner's command center; friends never see it).
+            self._json({"agents": [], "hosted": True} if HOSTED else compute_hq())
+        elif route == "competition" and len(parts) > 3 and parts[2] == "bot" and len(parts) > 4 and parts[4] == "day":
+            # 🏆 one bot's per-day report (chart levels + trades). LOCAL-ONLY.
+            d = parse_qs(urlparse(self.path).query).get("date", [""])[0]
+            self._json({} if HOSTED else bots.get_bot_day(parts[3], d))
+        elif route == "competition" and len(parts) > 3 and parts[2] == "bot":
+            # 🏆 one bot's full detail (strategy, trades, equity curve, lessons). LOCAL-ONLY.
+            self._json({} if HOSTED else bots.get_bot_detail(parts[3]))
+        elif route == "competition":
+            # 🏆 the Competition leaderboard. LOCAL-ONLY (10 strategy bots paper-trading the live universe).
+            self._json({"bots": [], "hosted": True} if HOSTED else bots.get_competition())
         elif route == "autopilot":
             # FRIENDS-FACING confirmation view (website "Auto Pilot" tab) — armed + confirmed setups +
             # tape stance, with NO personal data (positions/journal/account/sizing stripped). Shared data
@@ -3659,6 +4244,10 @@ class Handler(BaseHTTPRequestHandler):
                     if o.get("catalyst") is not None:
                         it["catalyst"] = o["catalyst"]
             s["items"] = grade_suggestions(s.get("items", []), _equity_settings())
+            # STALENESS: flag when the scan is from a session BEFORE the latest completed one, so the UI can
+            # warn "these grades are from a prior session — rescan before acting" instead of looking live.
+            _sd = (s.get("scanned_at") or "")[:10]
+            s["stale"] = bool(_sd and _sd < _session_date())
             self._json(s)
         elif route == "market":
             self._json(read_json(market_f(), {}))
@@ -3734,12 +4323,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(enrich_trades(read_json(trades_f(), [])))
         elif route == "stats":
             self._json(compute_stats())
+        elif route == "learning":
+            self._json(compute_learning())
         elif route == "scan" and len(parts) > 2 and parts[2] == "status":
             self._json(SCAN)
         elif route == "chart" and len(parts) > 2:
             t = parts[2].upper()
             bars = scanner.get_bars(t, max_age_hours=0.25)   # fresh-ish so today's forming candle shows
             channel = scanner.regression_channel(bars) if bars else None
+            try:
+                pattern = scanner.detect_pattern(bars) if bars else None    # flag/pennant/wedge (relevant one)
+            except Exception:
+                pattern = None
             earn = None
             try:
                 e = scanner.get_earnings(t)
@@ -3747,7 +4342,8 @@ class Handler(BaseHTTPRequestHandler):
                     earn = {**e, "days": days_until(e["date"])}
             except Exception:
                 earn = None
-            self._json({"ticker": t, "bars": bars or [], "channel": channel, "earnings": earn})
+            self._json({"ticker": t, "bars": bars or [], "channel": channel,
+                        "pattern": pattern, "earnings": earn})
         elif route == "gameplan":
             self._json(compute_gameplan())
         elif route == "now":
@@ -3853,6 +4449,8 @@ class Handler(BaseHTTPRequestHandler):
             with _scan_lock:
                 if SCAN["running"]:
                     self._json({"ok": False, "error": "scan already running"}, 409); return
+                if UNIVERSE["running"]:   # never run a full scan + universe rebuild at once (freeze risk)
+                    self._json({"ok": False, "error": "universe build running — try again shortly"}, 409); return
                 _spawn(run_scan, sid, max_age=0 if fresh else 12)
             self._json({"ok": True})
 
@@ -3920,8 +4518,17 @@ class Handler(BaseHTTPRequestHandler):
             with _universe_lock:
                 if UNIVERSE["running"]:
                     self._json({"ok": False, "error": "already running"}, 409); return
+                if SCAN["running"]:   # never run a universe rebuild + full scan at once (freeze risk)
+                    self._json({"ok": False, "error": "scan running — try again shortly"}, 409); return
                 _spawn(run_build_universe)
             self._json({"ok": True})
+
+        elif route == "competition" and len(parts) > 2 and parts[2] == "reset":
+            # 🏆 RESET the Competition to flat $10k each + re-arm (wipes all trades). LOCAL-only.
+            if HOSTED:
+                self._json({"ok": False, "error": "local only"}, 403); return
+            _spawn(lambda: bots.seed_competition())
+            self._json({"ok": True, "reseeding": True})
 
         elif route == "suspicious" and len(parts) > 2 and parts[2] == "scan":
             with _suspect_lock:
@@ -4014,6 +4621,8 @@ class Handler(BaseHTTPRequestHandler):
             for k in ("telegram_token", "telegram_chat_id"):    # the user's own bot creds (local only)
                 if k in body:
                     s[k] = (body[k] or "").strip()
+            if "briefing_enabled" in body:                      # mute/unmute the AM/PM digest pushes
+                s["briefing_enabled"] = bool(body["briefing_enabled"])
             write_json(settings_f(), s)
             self._json({"ok": True, "settings": s})
         elif route == "watchlist":
@@ -4202,12 +4811,95 @@ def tg_send_text(text):
     return False
 
 
-def notify_telegram(title, body):
+def notify_telegram(title, body, buttons=None):
     """Push an alert to the user's phone via their own Telegram bot (token + chat_id in settings). Local
     only, best-effort (never raises). The token is the USER's — they create the bot via @BotFather and paste
-    it into Settings themselves; we never generate or store it anywhere but their local settings.json."""
+    it into Settings themselves; we never generate or store it anywhere but their local settings.json.
+    `buttons` (optional) attaches a one-tap inline keyboard (see tg_send_buttons)."""
     try:
+        if buttons:
+            return tg_send_buttons(f"*{title}*\n{body}", buttons)
         return tg_send_text(f"*{title}*\n{body}")
+    except Exception:
+        return False
+
+
+def tg_send_buttons(text, buttons):
+    """Send a message with an inline keyboard. `buttons` is a list of ROWS, each row a list of
+    (label, callback_data) tuples — callback_data must be ≤64 bytes (we use short 'prefix:TICKER' codes).
+    Same Markdown→plain fallback as tg_send_text so a reply is never silently dropped."""
+    s = read_json(settings_owner_f(), {})
+    chat = (s.get("telegram_chat_id") or "").strip()
+    if not chat:
+        return False
+    kb = {"inline_keyboard": [[{"text": lbl, "callback_data": cb} for (lbl, cb) in row] for row in buttons]}
+    text = (text or "")[:3900]
+    for attempt in range(4):
+        params = {"chat_id": chat, "text": text, "disable_web_page_preview": "true",
+                  "reply_markup": json.dumps(kb)}
+        if attempt < 2:
+            params["parse_mode"] = "Markdown"
+        try:
+            res = _tg_api("sendMessage", params)
+            if res and res.get("ok"):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.8 * (attempt + 1))
+    return False
+
+
+def tg_answer_callback(cq_id, text=""):
+    """Acknowledge an inline-button tap (Telegram shows a spinner / error toast if not answered within
+    ~10s). `text` (≤200 chars) pops a small toast on the user's phone. Best-effort."""
+    try:
+        _tg_api("answerCallbackQuery", {"callback_query_id": cq_id, "text": (text or "")[:200]})
+    except Exception:
+        pass
+
+
+def tg_edit_markup(message_id, status_line):
+    """After a button is tapped, strip the keyboard off the original alert and append a one-line
+    receipt (so the buttons can't be tapped twice). Best-effort; edits the owner's chat only."""
+    s = read_json(settings_owner_f(), {})
+    chat = (s.get("telegram_chat_id") or "").strip()
+    if not chat or not message_id:
+        return
+    try:
+        _tg_api("editMessageReplyMarkup", {"chat_id": chat, "message_id": message_id,
+                                           "reply_markup": json.dumps({"inline_keyboard": []})})
+    except Exception:
+        pass
+    if status_line:
+        try:
+            tg_send_text(status_line)
+        except Exception:
+            pass
+
+
+_TG_COMMANDS = [
+    ("setups", "Today's confirmed + armed ideas"),
+    ("positions", "Your open trades with current R"),
+    ("pnl", "P&L, win rate, R by setup"),
+    ("brief", "Pre-open gameplan: armed + regime"),
+    ("recap", "Today's results + tomorrow's stops"),
+    ("regime", "Market regime: SPX/QQQ/IWM + VIX"),
+    ("defend", "Defend-mode status"),
+    ("size", "Size a trade: /size NVDA entry 120 stop 115"),
+    ("help", "Full command list + quick-trade syntax"),
+]
+
+
+_TG_CMDS_SET = {"token": None}      # which token we've registered the command menu for (re-run on change)
+
+
+def _tg_set_commands():
+    """Register the '/' command menu so the commands surface in Telegram's UI chip. One call, free,
+    persists on Telegram's side until changed. Best-effort."""
+    cmds = [{"command": c, "description": d} for c, d in _TG_COMMANDS]
+    try:
+        res = _tg_api("setMyCommands", {"commands": json.dumps(cmds)})
+        return bool(res and res.get("ok"))
     except Exception:
         return False
 
@@ -4271,6 +4963,80 @@ def _log_armed_history(n):
     write_json(armed_history_f(), data)
 
 
+def learning_events_f():
+    # Learning Hub (2026-06-06): the UNIFIED setup-lifecycle event store — current-state projection, keyed by
+    # arm_id (arm_date:ticker:setup). Source of truth for the collect->compare->learn->improve loop. LOCAL only.
+    return DATA / "learning_events.json"
+
+
+def learning_log_f():
+    # Append-only audit trail (one JSON line per write event). NEVER trimmed — the integrity record behind the
+    # mutable projection above, so an outcome/grade can be proven to have been written post-close (no-lookahead).
+    return DATA / "learning_events_log.jsonl"
+
+
+def _append_learning_audit(lines):
+    """Append audit dicts to learning_events_log.jsonl (append-only). Best-effort; never throws into the loop."""
+    if not lines:
+        return
+    try:
+        with open(learning_log_f(), "a", encoding="utf-8") as f:
+            for ln in lines:
+                f.write(json.dumps(ln) + "\n")
+    except Exception:
+        pass
+
+
+def _log_learning(n):
+    """Phase 1 of the Learning Hub: project every armed/confirmed setup THIS poll into the unified event store
+    (LOCAL, market hours only). Additive — runs ALONGSIDE _log_armed_history during the transition. Freezes the
+    arm-time plan on first arm, marks confirmations idempotently, and appends an audit line per change. Outcome
+    + user-trade linkage are filled in by later-phase writers; this just guarantees the lifecycle is captured."""
+    if HOSTED:
+        return
+    if not n.get("armed") and not n.get("buys"):
+        return                                               # nothing to log this poll — skip the read+write entirely
+    arm_date = now_date()
+    try:
+        nowt = _et_now().strftime("%H:%M") + " ET"
+    except Exception:
+        nowt = time.strftime("%H:%M")
+    store = read_json(learning_events_f(), {})
+    if not isinstance(store, dict) or "events" not in store:
+        store = {"schema_version": learning.SCHEMA_VERSION, "events": {}}
+    events = store["events"]
+    # regime context at arm time (cheap: market.json is already on disk; never recompute in the hot loop)
+    mk = read_json(market_f(), {})
+    posture, regime_label = mk.get("posture"), mk.get("label")
+    # enrich the arm record with the richer fields from the current graded slate (by ticker)
+    sugg = {s.get("ticker"): s for s in read_json(suggest_f(), {}).get("items", []) if s.get("ticker")}
+    audit, ts = [], datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for state, recs in (("armed", n.get("armed", [])), ("confirmed", n.get("buys", []))):
+        for r in recs:
+            tk = r.get("ticker")
+            if not tk:
+                continue
+            aid = learning.arm_id(arm_date, tk, r.get("setup_type"))
+            ev = events.get(aid)
+            if not ev:
+                ev = learning.build_arm_event(r, arm_date, nowt, posture=posture,
+                                              regime_label=regime_label, extra=sugg.get(tk))
+                events[aid] = ev
+                audit.append(learning.audit_line(ts, aid, "arm", {"grade": ev.get("grade"),
+                                                                   "plan_entry": ev.get("plan_entry"),
+                                                                   "plan_stop": ev.get("plan_stop")}))
+            else:
+                d = learning.touch_last_seen(ev, nowt, grade=r.get("grade"))
+                if "grade" in d:
+                    audit.append(learning.audit_line(ts, aid, "seen", d))
+            if state == "confirmed":
+                d = learning.apply_confirm(ev, r, nowt)
+                if d:
+                    audit.append(learning.audit_line(ts, aid, "confirm", d))
+    write_json(learning_events_f(), store)
+    _append_learning_audit(audit)
+
+
 def compute_health():
     """VITAL SIGNS for the app + website indicator (user 2026-06-05: 'I want to SEE it's connected, watching,
     healthy'). Per subsystem → ok + seconds since last alive: the scan/watch loop (`_now_watcher` heartbeat),
@@ -4332,15 +5098,28 @@ def add_notification(title, body, light="", actionable=False):
         pass
 
 
+def _us_eastern_offset(u):
+    """US Eastern UTC offset (hours) for a UTC datetime, DST-aware WITHOUT needing tzdata/zoneinfo.
+    EDT (-4) from the 2nd Sunday of March to the 1st Sunday of November, else EST (-5). Transitions
+    happen at 2:00 AM local; we gate on ~07:00 UTC, plenty precise for a day/hour EOD check."""
+    y = u.year
+    mar = datetime(y, 3, 8, tzinfo=timezone.utc)                 # 2nd Sun of March = 1st Sun on/after the 8th
+    dst_start = (mar + timedelta(days=(6 - mar.weekday()) % 7)).replace(hour=7)
+    nov = datetime(y, 11, 1, tzinfo=timezone.utc)                # 1st Sun of November
+    dst_end = (nov + timedelta(days=(6 - nov.weekday()) % 7)).replace(hour=7)
+    return -4 if dst_start <= u < dst_end else -5
+
+
 def _et_now():
-    """Current Eastern time, DST-correct when tz data is available (zoneinfo), else a fixed-offset
-    approximation from the market config. Used to gate notifications to market hours."""
+    """Current Eastern time, DST-correct. Prefers zoneinfo; falls back to a self-contained US-DST
+    calculation (this Windows box has no IANA tz database, so the fallback is the live path here).
+    Used to gate notifications + the once-a-day EOD jobs to the real session clock."""
     try:
         from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("America/New_York"))
     except Exception:
-        cfg = scanner.mcfg("us")
-        return datetime.now(timezone.utc) + timedelta(hours=cfg.get("tz_offset", -4))
+        u = datetime.now(timezone.utc)
+        return u + timedelta(hours=_us_eastern_offset(u))
 
 
 def _us_session_active():
@@ -4420,9 +5199,41 @@ def _now_watcher():
                     _log_armed_history(n)                    # data-gathering: log every armed/confirmed setup live
                 except Exception:
                     pass
+                try:
+                    _log_learning(n)                         # Learning Hub: unified lifecycle event store (Phase 1)
+                except Exception:
+                    pass
+            # 🏆 Competition bots TRADE LIVE during the regular session — fill armed setups on real 5-min/quote
+            # data, stop out at the live price. Local-only; off during a scan/rebuild (no freeze); quotes 30s-cached.
+            if not HOSTED and _us_regular_open() and not SCAN.get("running") and not UNIVERSE.get("running"):
+                try:
+                    bots.run_bots_live(date=_et_now().strftime("%Y-%m-%d"))   # the CURRENT session (today's 5-min)
+                except Exception:
+                    pass
             if settings.get("notify_enabled", True) and settings.get("notify_mode", "critical") != "off":
                 light = n.get("light")
                 now_t = time.time()
+                # ---- scheduled phone digests: pre-open gameplan + post-close recap, once/day, weekdays ----
+                # Keyed off the ET DATE (not the local date) so the once-a-day guard is timezone-safe. Stored
+                # in the same `fired` ledger (kept 24h) so a restart never double-sends the same day's digest.
+                try:
+                    et = _et_now()
+                    etd = et.strftime("%Y-%m-%d")
+                    hm = et.hour * 60 + et.minute
+                    if et.weekday() < 5 and settings.get("briefing_enabled", True):
+                        if 535 <= hm <= 565 and f"brief:{etd}" not in fired:      # ~08:55–09:25 ET (pre-open)
+                            if tg_send_text(_tg_morning_brief()):
+                                fired[f"brief:{etd}"] = now_t
+                        if 965 <= hm <= 1005 and f"recap:{etd}" not in fired:     # ~16:05–16:45 ET (post-close)
+                            if tg_send_text(_tg_eod_recap()):
+                                fired[f"recap:{etd}"] = now_t
+                    d = n.get("defend") or {}                                     # defend-mode FLIP heads-up (1×/day)
+                    if d.get("on") and f"defend:{etd}" not in fired:
+                        notify_telegram("🛡️ DEFEND MODE on", d.get("reason", ""))
+                        add_notification("🛡️ DEFEND MODE on", d.get("reason", ""), light="yellow", actionable=True)
+                        fired[f"defend:{etd}"] = now_t
+                except Exception:
+                    pass
                 # ---- the ONLY things that may beep: discrete, actionable alerts ----
                 alerts = []                  # each: (key, action, urgent, title, body, feed_light)
                 for m in n.get("todo", []):
@@ -4490,7 +5301,19 @@ def _now_watcher():
                     if act == "BUY" and not active:
                         continue             # never ping a new buy outside market hours
                     notify_desktop(title, body, urgent=urgent)
-                    notify_telegram(title, body)             # phone push (no-op unless token+chat set)
+                    # phone push (no-op unless token+chat set) — with one-tap action buttons keyed off the
+                    # alert's ticker. Took-it reuses the guarded take (asks for your fill); close/raise only prompt.
+                    _atkr = key.split(":", 1)[1] if ":" in key else ""
+                    _btns = None
+                    if _atkr:
+                        if act == "BUY":
+                            _btns = [[("✅ Took it", f"tk:{_atkr}"), ("👀 Watch", f"wt:{_atkr}"),
+                                      ("❌ Pass", f"ps:{_atkr}")]]
+                        elif act in ("EXIT", "FLATTEN", "STOPPED OUT"):
+                            _btns = [[("🔴 Closed it", f"cl:{_atkr}"), ("🛡️ Hold — noted", f"hn:{_atkr}")]]
+                        elif act in ("TRIM", "RAISE STOP", "GUARD STOP"):
+                            _btns = [[("🟡 Raise stop", f"rs:{_atkr}"), ("👍 Noted", f"hn:{_atkr}")]]
+                    notify_telegram(title, body, buttons=_btns)
                     add_notification(title, body, light=flight, actionable=True)
                     fired[key] = now_t
                 prev_buy_keys = {a[0] for a in alerts if a[1] == "BUY"}   # for next poll's fresh-break check
@@ -4574,8 +5397,12 @@ def close_trade(tid, body):
     istop = t.get("initial_stop") if t.get("initial_stop") is not None else t.get("stop")
     if e and x and istop is not None and e > istop:
         t["result_r"] = round((x - e) / (e - istop), 2)
-    else:
+    elif isinstance(body.get("result_r"), (int, float)):
         t["result_r"] = body.get("result_r")
+    else:
+        # degenerate risk basis (initial_stop missing or >= entry) and no client-supplied R:
+        # default to 0.0 so the trade still counts in stats/learning instead of silently dropping (None)
+        t["result_r"] = 0.0
     if e and sh and x:
         t["realized_pnl"] = round((x - e) * sh, 2)
     if body.get("notes"):
@@ -4586,6 +5413,7 @@ def close_trade(tid, body):
     write_json(trades_f(), trades)
     regen_trades_md()
     _NOW_CACHE.clear()    # closed position leaves /api/now (and its skip_buy) immediately
+    _STATS_CACHE["v"] = None   # a close changes win-rate/avg-R — drop the stats cache now
 
 
 def append_lesson(ticker, lesson):
@@ -4730,6 +5558,28 @@ def _size_position(entry, stop, settings):
     return tmp
 
 
+def _ticker_adr(tkr):
+    """ADR% for a name not in the current scan (so the 1×ADR stop check still works from chat). Mirrors
+    the scanner: mean of (high/low − 1)×100 over the last ~20 daily bars. Cached bars; None on any failure."""
+    try:
+        bars = scanner.get_bars(tkr)
+        rng = [(b["high"] / b["low"] - 1) * 100 for b in bars[-20:] if b.get("low")]
+        return round(sum(rng) / len(rng), 2) if rng else None
+    except Exception:
+        return None
+
+
+def _scan_age_min():
+    """Minutes since the last scan (suggestions.json `scanned_at`, stored as 'YYYY-MM-DD HH:MM UTC').
+    Used to disclose when a logged entry is the planned scan price rather than a confirmed fill."""
+    ts = (read_json(suggest_f(), {}).get("scanned_at") or "").replace(" UTC", "").strip()
+    try:
+        dt = datetime.strptime(ts, "%Y-%m-%d %H:%M")
+        return max(0, int((datetime.utcnow() - dt).total_seconds() // 60))
+    except Exception:
+        return None
+
+
 def _graded_sug(tkr):
     settings = read_json(settings_f(), {})
     sug = read_json(suggest_f(), {}).get("items", [])
@@ -4781,6 +5631,9 @@ def _tg_help(greeting=False):
             "• *setups* / *what's good* — today's confirmed + armed ideas\n"
             "• *how am I doing* — P&L, win rate, R by setup\n"
             "• *NVDA?* — grade & plan for a ticker\n"
+            "• *size NVDA entry 120 stop 115* — 1%-risk share count\n"
+            "• */brief* /*recap* /*regime* /*defend* — gameplan, recap, tape, defend status\n"
+            "_Tip: tap the buttons on my alerts to log a take/pass/watch in one touch._\n"
             "_Local only — I act while your Data Center is running._")
 
 
@@ -4795,29 +5648,48 @@ def _chat_take(raw, low, tkr):
         return (f"You already hold *{tkr}* (entry ${_f(existing.get('entry'))}, stop ${_f(existing.get('stop'))}). "
                 f"Say *add {tkr} ...* to log a second tranche, or *close {tkr} at <price>* to close it.")
     sug = _graded_sug(tkr)
-    entry = _num_after(low, [r"@", r"\bat\b", r"\bentry\b", r"\bfilled\b\s*(?:at|@)?", r"\bfor\b"])
-    stop = _num_after(low, [r"\bstop\b", r"\bsl\b", r"\bstopped?\b\s*at"])
+    typed_entry = _num_after(low, [r"@", r"\bat\b", r"\bentry\b", r"\bfilled\b\s*(?:at|@)?", r"\bfor\b"])
+    typed_stop = _num_after(low, [r"\bstop\b", r"\bsl\b", r"\bstopped?\b\s*at"])
+    entry, stop = typed_entry, typed_stop
     target = _num_after(low, [r"\btarget\b", r"\btp\b", r"\bpt\b"])
     shares = _shares_in(low)
     setup = _setup_in(low) or (sug.get("setup_type") if sug else None) or "Breakout"
     if entry is None:
-        entry = _bare_price(raw, tkr)             # "took AEHR 105.74" — your real fill beats the planned entry
-    if entry is None and sug:
-        entry = sug.get("entry")
-    if entry is None:
-        try:
-            bars = scanner.get_bars(tkr)
-            entry = bars[-1]["close"] if bars else None
-        except Exception:
-            entry = None
+        loose = _bare_price(raw, tkr)             # "took AEHR 105.74" — your real fill beats the planned entry
+        if loose is not None:
+            entry, typed_entry = loose, loose     # a loose number the user typed still counts as their fill
+    from_sug_entry = False
+    if entry is None and sug and sug.get("entry"):
+        entry, from_sug_entry = sug.get("entry"), True
+    # G2: NEVER fall back to a stale daily-bar close as a 'fill' — a wrong entry fakes R for the life of
+    # the trade (ground rule 2: real data only, never invent prices). If we still have no price, ask.
     if entry is None:
         return f"What price did you get filled on {tkr}? e.g. *took {tkr} @ 120 stop 115*."
-    if stop is None and sug:
+    if stop is None and sug and sug.get("stop"):
         stop = sug.get("stop")
-    if shares is None and stop:
+    # G3: a trade with no stop has no measurable risk basis (R reads 0.00 forever, corrupting stats). Require it.
+    if stop is None:
+        return (f"What's your stop on {tkr}? I need it to size the trade and keep R measurable — "
+                f"reply *took {tkr} @ {_f(entry)} stop <price>*.")
+    if not entry > stop:
+        return f"For a long, your stop (${_f(stop)}) must be *below* your entry (${_f(entry)}). Re-check those."
+    # G1: stop is never wider than 1× ADR (ground rule 4). A wider stop means the setup is too extended.
+    adr_pct = (sug.get("adr") if sug else None) or _ticker_adr(tkr)
+    risk_ps = entry - stop
+    adr_warn = None
+    if adr_pct and _adr_violation(entry, stop, adr_pct):
+        adr_px = entry * adr_pct / 100
+        adr_warn = (f"⚠️ *{tkr} stop is too wide* — ${_f(round(risk_ps, 2))}/sh is "
+                    f"{risk_ps / adr_px:.1f}× ADR (rule: ≤1×). The setup's too extended for that stop.")
+        if from_sug_entry or typed_entry is None or typed_stop is None:
+            # not an explicitly user-confirmed entry+stop → refuse to silently log a rule-breaker
+            return adr_warn + (f"\nIf you really took it, confirm your real fill + stop: "
+                               f"*took {tkr} @ <price> stop <price>*.")
+        # the user explicitly typed BOTH entry and stop → it's their call; log it but flag loudly
+    if shares is None:
         shares = _size_position(entry, stop, settings).get("shares")
     body = {"ticker": tkr, "setup_type": setup, "status": "open", "entry": entry,
-            "stop": stop, "initial_stop": stop,
+            "stop": stop, "initial_stop": stop,                # G3: risk basis frozen at entry, always set
             "target": target or (sug.get("target") if sug else None),
             "shares": shares, "taken_at": now_date(),
             "planned_entry": (sug.get("entry") if sug else None), "notes": raw}
@@ -4827,19 +5699,24 @@ def _chat_take(raw, low, tkr):
     cur["status"] = "taken"
     ov[tkr] = cur
     write_json(status_f(), ov)
-    lines = [f"✅ Logged *{tkr}* long — {setup}.",
-             f"Entry ${_f(entry)}" + (f", stop ${_f(stop)}" if stop else ", *no stop set*")]
+    lines = [f"✅ Logged *{tkr}* long — {setup}.",          # G4: setup_type drives the 9-vs-50 trail
+             f"Entry ${_f(entry)}, stop ${_f(stop)}"]
+    if adr_warn:
+        lines.insert(1, adr_warn)
     if shares:
         extra = ""
-        risk_ps = (entry - stop) if (entry and stop and entry > stop) else None
-        if risk_ps:                                    # risk math off the ACTUAL share count
-            dr = shares * risk_ps
-            acct = settings.get("account_size")
-            pct = f" ({dr / acct * 100:.2f}%)" if acct else ""
-            extra = f" · risk ${_f(round(dr, 2))}{pct}"
+        dr = shares * risk_ps                          # risk math off the ACTUAL share count
+        acct = settings.get("account_size")
+        pct = f" ({dr / acct * 100:.2f}%)" if acct else ""
+        extra = f" · risk ${_f(round(dr, 2))}{pct}"
         lines.append(f"{shares} sh{extra}")
-    if not stop:
-        lines.append(f"⚠️ No stop set — reply *raise {tkr} stop to <price>* so R stays measurable.")
+    if from_sug_entry:                                 # G8: disclose a planned (scan) price vs a real fill
+        age = _scan_age_min()
+        agetxt = f", {age}m old" if age is not None else ""
+        lines.append(f"_Using the planned entry from the last scan{agetxt} — reply "
+                     f"*took {tkr} @ <your fill>* to correct._")
+    if _is_long_hold(setup):
+        lines.append("_Trails the 50 EMA (deep-pullback hold) — exit only on a daily close under it._")
     if existing and adding:
         lines.append("_(Logged as a second tranche.)_")
     return "\n".join(lines)
@@ -4932,6 +5809,12 @@ def _chat_move_stop(raw, low, tkr):
             newstop = float(nums[-1])
     if newstop is None:
         return f"Move {t['ticker']}'s stop to what price? e.g. *raise {t['ticker']} stop to 125*."
+    # G5: a stop trails UP, never down — refuse a move that widens risk (a fat-finger, or a "close" mistyped
+    # as a stop). To exit, the user sells; to widen risk, they don't. (ground rule: don't widen a stop.)
+    cur_stop = t.get("stop")
+    if cur_stop is not None and newstop < cur_stop:
+        return (f"⚠️ That would *lower* {t['ticker']}'s stop from ${_f(cur_stop)} to ${_f(newstop)} — "
+                f"a stop only trails up, never down. If you meant to exit, reply *sold {t['ticker']} at {_f(newstop)}*.")
     t["stop"] = newstop      # live stop only — initial_stop (risk basis) stays frozen so R is unchanged
     write_json(trades_f(), trades)
     regen_trades_md()
@@ -5044,6 +5927,191 @@ def _chat_ticker(tkr):
     return "\n".join(out)
 
 
+def _earnings_days(tkr):
+    """Days until earnings for a held name (from the scan's earnings_date), or None. One cheap pass — no
+    re-grading. Lets the recap warn before you carry a position into a print."""
+    for it in read_json(suggest_f(), {}).get("items", []):
+        if it.get("ticker") == tkr and it.get("earnings_date"):
+            try:
+                d = datetime.strptime(str(it["earnings_date"])[:10], "%Y-%m-%d").date()
+                return (d - datetime.utcnow().date()).days
+            except Exception:
+                return None
+    return None
+
+
+def _held_lines(recap=False):
+    """One line per open position: coach action + R + (in recap) the trail rule and any earnings warning.
+    Shared by the morning brief and the EOD recap."""
+    trades = enrich_trades(read_json(trades_f(), []))
+    open_t = [t for t in trades if t.get("status") == "open"]
+    icons = {"EXIT": "🔴", "TRIM": "🟠", "RAISE STOP": "🟡", "GUARD STOP": "🛡️",
+             "FLATTEN": "🛡️", "WATCH": "🔵", "HOLD": "🟢"}
+    lines = []
+    for t in open_t:
+        co = t.get("coach") or {}
+        act = co.get("action", "HOLD")
+        seg = []
+        if t.get("entry"):
+            seg.append(f"entry ${_f(t['entry'])}")
+        if t.get("stop"):
+            seg.append(f"stop ${_f(t['stop'])}")
+        if t.get("r_open") is not None:
+            seg.append(f"{t['r_open']:+.2f}R")
+        line = f"{icons.get(act, '⚪')} *{t['ticker']}* {act} — " + " · ".join(seg)
+        if recap:
+            trail = "50 EMA" if (co.get("patient") or _is_long_hold(t.get("setup_type", ""))) else "9 EMA"
+            line += f"\n   ↳ trails the {trail} — exit only on a daily close under it."
+            ed = _earnings_days(t["ticker"])
+            if isinstance(ed, int) and 0 <= ed <= 5:
+                line += f" ⚠️ earnings in {ed}d."
+        lines.append(line)
+    return lines
+
+
+def _tg_regime_line():
+    """One-line market-regime summary: posture + Fear&Greed + VIX state. Reads the live-blended regime."""
+    r = _effective_regime()
+    parts = [f"Regime: {r.get('label', '')} · posture {r.get('posture', '?')}"]
+    fg = r.get("fear_greed") or {}
+    if isinstance(fg, dict) and fg.get("score") is not None:
+        parts.append(f"F&G {fg['score']} ({fg.get('label', '')})")
+    vt = r.get("vix_trend") or {}
+    if vt.get("level") is not None:
+        c1 = vt.get("change_1d_pct")
+        parts.append(f"VIX {vt['level']:.1f}" + (f" {vt.get('state')}" if vt.get("state") else "")
+                     + (f" ({c1:+.0f}% 1d)" if c1 is not None else ""))
+    return " · ".join(parts)
+
+
+def _chat_regime():
+    try:
+        n = compute_now()
+    except Exception:
+        n = {}
+    dot = {"green": "🟢", "yellow": "🟡", "red": "🔴"}.get(n.get("light"), "⚪")
+    out = [f"{dot} *Market regime*", _tg_regime_line()]
+    if n.get("stance"):
+        out.append(n["stance"])
+    return "\n".join(out)
+
+
+def _chat_defend():
+    try:
+        n = compute_now()
+    except Exception:
+        n = {}
+    d = n.get("defend") or {}
+    if d.get("on"):
+        msg = "🛡️ *DEFEND MODE — ON*\n" + (d.get("reason") or "")
+        if d.get("flatten_now"):
+            msg += ("\nClosing window — bring momentum names off into the close (patient 50-EMA holds "
+                    "exempt). Your call; I won't close anything for you.")
+        return msg
+    return "✅ Defend mode OFF — normal posture. Carry momentum names per the 9/50-EMA trail rule."
+
+
+def _chat_size(raw, low, tkr):
+    if not tkr:
+        return "Size what? e.g. *size NVDA entry 120 stop 115*."
+    entry = _num_after(low, [r"\bentry\b", r"@", r"\bat\b", r"\bbuy\b"])
+    stop = _num_after(low, [r"\bstop\b", r"\bsl\b"])
+    sug = _graded_sug(tkr)
+    if entry is None and sug:
+        entry = sug.get("entry")
+    if stop is None and sug:
+        stop = sug.get("stop")
+    if entry is None or stop is None:
+        return f"Give me an entry and a stop: *size {tkr} entry 120 stop 115*."
+    if not entry > stop:                                   # longs only — never size a short
+        return f"Longs only — your stop (${_f(stop)}) must be *below* your entry (${_f(entry)})."
+    settings = _equity_settings()                          # size off LIVE equity, like the engine
+    sized = _size_position(entry, stop, settings)
+    risk_ps = entry - stop
+    out = [f"*Size {tkr}* — entry ${_f(entry)}, stop ${_f(stop)} (risk ${_f(round(risk_ps, 2))}/sh)"]
+    adr_pct = (sug.get("adr") if sug else None) or _ticker_adr(tkr)
+    if adr_pct and _adr_violation(entry, stop, adr_pct):   # ground rule 4
+        adr_px = entry * adr_pct / 100
+        out.append(f"⚠️ stop is {risk_ps / adr_px:.1f}× ADR (rule: ≤1×) — too wide; the setup's too extended.")
+    if sized.get("shares"):
+        out.append(f"→ *{sized['shares']} sh* · risk ${_f(sized.get('dollar_risk'))} "
+                   f"({sized.get('risk_pct_actual')}% of equity) · ${_f(sized.get('cost'))} position")
+        tgt = sug.get("target") if sug else None
+        if tgt and tgt > entry:
+            out.append(f"At target ${_f(tgt)} = {(tgt - entry) / risk_ps:.1f}R")
+    else:
+        out.append("Set your account size in Settings so I can give a share count.")
+    return "\n".join(out)
+
+
+def _tg_morning_brief():
+    """Pre-open gameplan: stance + regime, then confirmed/armed setups and your holds' plan."""
+    try:
+        n = compute_now()
+    except Exception:
+        n = {}
+    out = [f"🌅 *Morning gameplan — {now_date()}*"]
+    if n.get("stance"):
+        out.append(n["stance"])
+    out.append(_tg_regime_line())
+    d = n.get("defend") or {}
+    if d.get("on"):
+        out.append("🛡️ " + (d.get("reason") or "Defend mode on."))
+    buys, armed = n.get("buys") or [], n.get("armed") or []
+    if buys:
+        out.append("\n🟢 *Confirmed:*")
+        for b in buys[:5]:
+            out.append(f"• *{b['ticker']}* {b.get('grade')} — {b.get('shares')} sh @ ${_f(b.get('entry'))}, "
+                       f"stop ${_f(b.get('stop'))}")
+    if armed:
+        out.append("\n⏳ *Armed:*")
+        for a in armed[:6]:
+            out.append(f"• *{a['ticker']}* {a.get('grade')} {a.get('setup_type')} — {a.get('confirm', '')}")
+    if not buys and not armed:
+        top = _top_graded(5)
+        if top:
+            out.append("\n*Top setups to watch:*")
+            for x in top:
+                out.append(f"• *{x['ticker']}* {x.get('grade')} {x.get('setup_type')} — "
+                           f"entry ${_f(x.get('entry'))}")
+    held = _held_lines()
+    if held:
+        out.append("\n📌 *You hold:*")
+        out.extend(held)
+    out.append("\n_Plan, not advice — a buy still fires only on a live trigger._")
+    return "\n".join(out)
+
+
+def _tg_eod_recap():
+    """Post-close recap: today's P&L + R, and tomorrow's stop/trail plan on each open position."""
+    try:
+        n = compute_now()
+    except Exception:
+        n = {}
+    acct = n.get("account") or {}
+    eq = compute_equity()
+    today = now_date()
+    closed_today = [t for t in read_json(trades_f(), [])
+                    if t.get("exit_at") == today and t.get("status") == "closed"]
+    out = [f"🌆 *EOD recap — {today}*"]
+    if acct.get("today") is not None:
+        out.append(f"Day P&L ${acct['today']:+,.0f} · equity ${eq['equity']:,.0f}")
+    if closed_today:
+        out.append("\n*Closed today:*")
+        for t in closed_today:
+            r = t.get("result_r")
+            out.append(f"• *{t['ticker']}* @ ${_f(t.get('exit'))}"
+                       + (f" — {r:+.2f}R" if isinstance(r, (int, float)) else ""))
+    held = _held_lines(recap=True)
+    if held:
+        out.append("\n📌 *Open — tomorrow's plan:*")
+        out.extend(held)
+    else:
+        out.append("\nNo open positions — flat into the close.")
+    out.append("\n_Exits confirm on the daily CLOSE, not an after-hours tick._")
+    return "\n".join(out)
+
+
 def handle_chat_message(text):
     """Interpret one inbound Telegram message and perform the action, returning the reply text. Pure
     keyword/structure parsing (no LLM) over the trading vocabulary."""
@@ -5059,6 +6127,25 @@ def handle_chat_message(text):
         return _tg_help()
     if low in ("hi", "hey", "hello", "yo", "sup"):
         return _tg_help(greeting=True)
+
+    # explicit slash-commands (match the bare word too; strip any @botname suffix Telegram appends)
+    cmd = low.split()[0].lstrip("/").split("@")[0] if low.split() else ""
+    if cmd == "setups":
+        return _chat_setups()
+    if cmd == "positions":
+        return _chat_positions()
+    if cmd == "pnl":
+        return _chat_pnl()
+    if cmd == "brief":
+        return _tg_morning_brief()
+    if cmd == "recap":
+        return _tg_eod_recap()
+    if cmd == "regime":
+        return _chat_regime()
+    if cmd == "defend":
+        return _chat_defend()
+    if cmd == "size":
+        return _chat_size(raw, low, _extract_ticker(raw))
 
     tkr = _extract_ticker(raw)
     # order matters: a close ("took profit") must beat the entry verb ("took"); a stop-move and
@@ -5089,6 +6176,44 @@ def handle_chat_message(text):
             "Or *help* for the full list.")
 
 
+def handle_callback_query(cq):
+    """Handle an inline-button tap. callback_data is a short 'prefix:TICKER' code. Reuses the SAME write
+    handlers as the text bot, so every guardrail (ADR check, frozen initial_stop, never-assume-a-price on
+    a close) still applies. Destructive taps (close / raise-stop) only PROMPT for the price — they never
+    book a price the user didn't give."""
+    data = (cq.get("data") or "").strip()
+    cq_id = cq.get("id")
+    mid = (cq.get("message") or {}).get("message_id")
+    prefix, _, tkr = data.partition(":")
+    tkr = tkr.upper().strip()
+    if not prefix or not tkr:
+        tg_answer_callback(cq_id, "Didn't catch that button.")
+        return
+    if prefix == "tk":            # Took it → guarded _chat_take (asks for your fill if stale / refuses >1×ADR)
+        reply = _chat_take(f"took {tkr}", f"took {tkr.lower()}", tkr)
+        # Use the actual outcome as the toast — "Logging…" is wrong when _chat_take returned a refusal/question
+        toast = "Logged!" if (reply or "").startswith("✅") else (reply or "")[:60]
+        tg_answer_callback(cq_id, toast)
+        tg_edit_markup(mid, reply)
+    elif prefix == "wt":          # Watch
+        tg_answer_callback(cq_id, f"👀 Watching {tkr}")
+        tg_edit_markup(mid, _chat_watch(f"watching {tkr}", f"watching {tkr.lower()}", tkr))
+    elif prefix == "ps":          # Pass
+        tg_answer_callback(cq_id, f"Passed {tkr}")
+        tg_edit_markup(mid, _chat_pass(f"passed {tkr}", f"passed {tkr.lower()}", tkr))
+    elif prefix == "cl":          # Close → NEVER assume a price; prompt for the real fill
+        tg_answer_callback(cq_id, "Tell me your fill price")
+        tg_edit_markup(mid, f"What price did you exit *{tkr}* at? Reply *sold {tkr} at <price>*.")
+    elif prefix == "rs":          # Raise stop → prompt for the new stop (trails up only)
+        tg_answer_callback(cq_id, "Tell me the new stop")
+        tg_edit_markup(mid, f"Move *{tkr}*'s stop to what price? Reply *raise {tkr} stop to <price>*.")
+    elif prefix == "hn":          # Hold — noted (acknowledge only, no state change)
+        tg_answer_callback(cq_id, "Noted — holding")
+        tg_edit_markup(mid, f"👍 Noted — holding *{tkr}*.")
+    else:
+        tg_answer_callback(cq_id, "Unknown action")
+
+
 def _tg_offset_f():
     return DATA / "telegram_offset.json"
 
@@ -5108,8 +6233,13 @@ def _telegram_bot_loop():
         if not token or not chat:
             time.sleep(30)               # creds not set yet — recheck (user may add them in Settings)
             continue
+        if _TG_CMDS_SET["token"] != token:       # register the '/' command menu once per token
+            if _tg_set_commands():
+                _TG_CMDS_SET["token"] = token
         try:
-            res = _tg_api("getUpdates", {"offset": off, "timeout": 50}, timeout=60)
+            res = _tg_api("getUpdates", {"offset": off, "timeout": 50,
+                                         "allowed_updates": json.dumps(["message", "edited_message",
+                                                                        "callback_query"])}, timeout=60)
         except Exception:
             time.sleep(5)
             continue
@@ -5119,6 +6249,16 @@ def _telegram_bot_loop():
         _HEARTBEAT["telegram"] = time.time()     # vital-signs: the Telegram bot got a good poll → connected
         for upd in res.get("result", []):
             off = max(off, upd["update_id"] + 1)
+            cq = upd.get("callback_query")
+            if cq:                       # an inline-button tap — obey only the owner's chat
+                if str((cq.get("message") or {}).get("chat", {}).get("id") or "") == chat:
+                    try:
+                        handle_callback_query(cq)
+                    except Exception as e:
+                        tg_answer_callback(cq.get("id"), f"⚠️ {e}"[:200])
+                else:
+                    tg_answer_callback(cq.get("id"))   # ack a stranger's tap so it doesn't spin (no action)
+                continue
             msg = upd.get("message") or upd.get("edited_message") or {}
             text = (msg.get("text") or "").strip()
             frm = str((msg.get("chat") or {}).get("id") or "")
@@ -5201,6 +6341,11 @@ def main():
     # snapshot. The loop's FIRST iteration runs immediately, so it also catches up if we launched after
     # the close — in the BACKGROUND, so the (multi-minute) close scan never blocks startup.
     threading.Thread(target=_forward_eod_loop, daemon=True).start()
+    # 🏆 Competition: if it's never been seeded, set it up FLAT ($10k each) + arm from the current universe
+    # in the background. The bots then trade FORWARD for real — filling on live 5-min data once the market
+    # opens (run_bots_live in the watcher), finalized each close (run_bots_eod). LOCAL-only.
+    if not HOSTED and not (DATA / "competition.json").exists():
+        threading.Thread(target=lambda: bots.seed_competition(), daemon=True).start()
     background = "--background" in sys.argv          # launched as a hidden startup program — no browser pop
     url = f"http://localhost:{PORT}"
     try:

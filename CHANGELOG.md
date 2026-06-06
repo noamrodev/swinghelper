@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-06-06 (VIX velocity · grader fixes · build gate · Learning Hub)
+- **VIX velocity feature** — `scanner.vix_trend()` (a SIBLING of fear_greed, never folded into posture → can't
+  touch grades) reads "panic building vs fading" via a 5-state classifier (calm/falling/rising/spiking/
+  elevated-falling). UI strip under Fear & Greed; prediction narrative; defend-mode arms on a VIX spike
+  (`_vix_spike`, rubric `VIX_SPIKE_*`). Live-verified on Friday's spike (VIX 21.51, +39.7% 1d → "spiking").
+- **2 pre-existing GRADER BUGS fixed** (surfaced when posture dropped 60→45): Deep Pullback/Consolidation were
+  missing from `pullback_setups` (40% regime-factor cut), and top-decile leaders were double-penalized by the
+  "falling group" cap. AXTI restored C→A; 7 armed Deep Pullback leaders back. Firewall proven: VIX never moves grades.
+- **Test harness + BUILD GATE** — `tests/test_grader.py` now 7 tests (golden + grader-behavior guards + VIX
+  firewall + Learning-Hub smoke); `make-build.ps1` runs them before any sync and ABORTS on failure, plus a
+  `strip_sizing` exit-guard so a strip failure can never ship the owner's account size.
+- **🧠 Learning Hub (SHIPPED, local-only)** — merged the Armed Log + Stats tabs into ONE collect→compare→learn→
+  improve page. New leaf module `learning.py` + unified event store (`learning_events.json`) + append-only audit;
+  `compute_learning()` + `GET /api/learning`; one `learninghub` nav tab with a Today's Brief / Edge History toggle,
+  a pinned vital-signs strip (incl. **System Edge** = forward winsorized R), a computed **daily lesson**, and the
+  ⭐ **execution gap** (chased >5%-above-plan avg −0.73R vs clean −0.62R — the #1 leak, quantified). Old
+  armed_history/forward_log WIPED to `.bak` (clean restart); trades.json preserved. Full-team designed; Burry-verified;
+  375px-checked. Outcome-scorer / trade-linkage / grade-vs-outcome / histogram = deferred extras in ROADMAP.
+- ⚠️ Restart the server to load. Learning Hub + Competition are LOCAL-ONLY (hidden in hosted) — no build needed for them.
+
+## 2026-06-05 (late — deep-pullback engine overhaul + the Agent Crew/HQ)
+- **Confirmation engine, deep pullbacks:** the live trigger is now the **50-EMA RECLAIM/BOUNCE + a spin** (price
+  tests the 50, turns up off the lows ≥45%, and `buyers_confirm` fires) — replaces the old day-high break that
+  fired in no-man's-land above the 50 (the AXTI $104.55 bug). Wording is now accurate: **reclaim** from below the
+  50, **bounce** from above. Fixed a regression where any price above the 50 counted as "reclaimed" (false-confirmed
+  crashers NXT/VICR/TER). All Burry-verified.
+- **buyers_confirm gate** (`scanner.buyers_confirm`) — a level cleared by one candle in a sold-hard name is a knife;
+  require 2 green 5-min closes over a turning-up 5-min 9 EMA. **respected-support bounce** (`_respected_bounce`) gates
+  pullback `buyable_now`; backtest-validated (`tools/research_bounce.py`).
+- **Deep-Pullback vs Consolidation** classifier rewritten (EMA-fan + `_respected_level`); `near_50` capped ~9% so a
+  name far above the 50 (AAOI +13%) isn't mislabeled deep. **High-ADR absolute caps** on entry anchor / zone band /
+  stops so 15%-ADR names don't get mid-air zones or 6% stops.
+- **Caution-band regime gate** — full stand-aside only in a deep correction (posture <30); patient support-buys keep
+  arming at 30–45 (matches the validated `proposed_gate`).
+- **News classifier fix** — word-START + inflection matching (kills "award"→war, "urban"→ban, "dealer"→deal while
+  catching plurals) + routine insider grants → neutral.
+- **RS strength bonus** — Deep Pullback/Consolidation legs with RS ≥90 get up to +7 rating so the strongest leaders
+  at the 50 reach A and arm (AXTI RS96 → A).
+- **The Agent Crew** — 10 reusable subagents (`.claude/agents/`) with investor personas + model tiers, and the
+  **🧠 HQ "Agent Office"** tab (animated, plain-English, local-only; `/api/hq`).
+- ⚠️ Restart the server + rescan to load. STANDING RULE: engine changes go through a repro + Burry (qa) before shipping.
+
 ## 2026-06-03 (Real-time intraday backtest + visual report — proves the confirmation engine works)
 - Built `tools/sim_intraday.py`: replays the LIVE coach on **5-minute bars** — watches each A/A+ setup and
   fires the BUY the moment it breaks its trigger (prior-day high; Qulla/Luk's actual entry), stop = day low

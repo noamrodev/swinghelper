@@ -114,6 +114,12 @@ DEFEND_WEAK_AVG    = -0.20  # ...AND the average index session move must be at/b
 DEFEND_FLATTEN_ET  = 15.0   # the FLATTEN reminder fires after this ET hour — 15:00 = ~1 HOUR before the 16:00
                             # close (user wants the heads-up an hour out, BEFORE the bell, while it can still be
                             # acted on in the regular session). Before the window it's a quiet "plan to flatten".
+# A sharp VIX move = market stress → contributes to the "weak right now" leg of defend mode (NOT the
+# "extended" leg). All three guard together so a vol blip off a low base can't arm it: VIX must be ABOVE
+# the absolute floor AND have spiked 1-day OR run up over ~7 days. Fixed market-structure priors.
+VIX_SPIKE_ABS_MIN  = 18.0   # VIX must be at/above this absolute level for any spike gate to count
+VIX_SPIKE_1D_PCT   = 15.0   # ...and a 1-day rise at/above this % = an acute panic spike
+VIX_TREND_7D_PCT   = 30.0   # ...or a 7-day rise at/above this % = sustained, building fear
 
 # ----- Profit guard (lock in real money, don't choke on noise) -------------- #
 # The user's ask (2026-06-04): "I'm tired of giving my money back at breakeven. Let me KEEP some.

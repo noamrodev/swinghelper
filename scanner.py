@@ -17,6 +17,7 @@ import urllib.request
 import urllib.parse
 import http.cookiejar
 import time
+import threading
 import statistics as st
 from pathlib import Path
 from datetime import datetime, timezone
@@ -141,28 +142,51 @@ def _fetch_raw(sym):
     return None
 
 
-_DID_FETCH = False              # set by get_bars: True when the last call hit the network (cache miss)
+# Did the LAST get_bars call hit the network (cache miss)?  Thread-local so a concurrent HTTP
+# request can't flip a global out from under a running scan (which reads it to decide throttling).
+_FETCH_STATE = threading.local()
+
+# In-process bar cache: sym -> (mtime, bars).  A warm disk cache still costs a stat + full JSON
+# parse on every get_bars call; during an 800-name scan that is 800 re-parses.  We keep the parsed
+# bars in memory keyed by the file's mtime, so a hit skips the read+parse entirely.  Naturally
+# bounded by the universe size (~800-3000 syms); hard-capped below as a leak backstop.
+_BARS_MEM = {}
+_BARS_MEM_MAX = 3000
+
+
+def did_fetch():
+    """True if the most recent get_bars() call on THIS thread hit the network."""
+    return getattr(_FETCH_STATE, "did_fetch", False)
 
 
 def get_bars(sym, max_age_hours=12):
-    global _DID_FETCH
-    _DID_FETCH = False
+    _FETCH_STATE.did_fetch = False
     sym = sym.strip().upper()
     CACHE.mkdir(parents=True, exist_ok=True)
     f = CACHE / f"{sym}.json"
     if f.exists():
         try:
-            age = (time.time() - f.stat().st_mtime) / 3600
-            obj = json.loads(f.read_text())
-            if age < max_age_hours and obj.get("bars"):
-                return obj["bars"]
+            mtime = f.stat().st_mtime
+            age = (time.time() - mtime) / 3600
+            if age < max_age_hours:               # fresh enough to use the disk cache
+                hit = _BARS_MEM.get(sym)
+                if hit and hit[0] == mtime:        # in-memory hit — skip the read + JSON parse
+                    return hit[1]
+                obj = json.loads(f.read_text())
+                bars = obj.get("bars")
+                if bars:
+                    _BARS_MEM[sym] = (mtime, bars)
+                    return bars
         except Exception:
             pass
     bars = _fetch_raw(sym)
-    _DID_FETCH = True
+    _FETCH_STATE.did_fetch = True
     if bars:
         try:
             f.write_text(json.dumps({"sym": sym, "bars": bars}))
+            if len(_BARS_MEM) > _BARS_MEM_MAX:     # leak backstop across universe changes
+                _BARS_MEM.clear()
+            _BARS_MEM[sym] = (f.stat().st_mtime, bars)
         except Exception:
             pass
     return bars
@@ -454,6 +478,46 @@ def _pullback_plan(close, adr, supports, recent_low, sh_prices):
     }
 
 
+def _respected_level(h, l, level, tol, min_touches=2, lookback=120):
+    """Has the market RESPECTED this price — is it real S/R, or a mid-air number (the TSEM case)? Counts
+    DISTINCT prior bars (within `lookback`, excluding the most recent ~2 = the current dip) whose high or
+    low came within `tol` of the level. >= min_touches separated touches = a level buyers/sellers have
+    defended before. Used so a pullback 'buy zone' anchors to a level the market respects, not a freefall
+    recent low that price is slicing through right now."""
+    if not level or level <= 0:
+        return False
+    n = len(l)
+    start = max(0, n - lookback)
+    touches, last_i = 0, -10
+    for i in range(start, n - 2):                 # exclude the most recent ~2 bars (the live dip)
+        if abs(l[i] - level) <= tol or abs(h[i] - level) <= tol:
+            if i - last_i >= 2:                   # distinct touches, not one cluster
+                touches += 1
+                last_i = i
+    return touches >= min_touches
+
+
+def _respected_bounce(o, h, l, c, support, adr_px):
+    """EOD daily proxy of the user's pullback rule (2026-06-05, the TSEM case): a pullback is buyable
+    ONLY when price has pulled back TO support, RESPECTED it (didn't close decisively below it), and is
+    JUMPING off it — NOT while it's still falling through the zone in mid-air. True when, in the last ~3
+    bars, a low REACHED the support, the latest close is not >1% below it, AND today is a bounce: a GREEN
+    reclaim candle closing at/above support (the same-day 'spin' proxy) OR a green bar taking out the
+    prior bar's high after support held yesterday (the next-day jump). Backtest-validated (research_bounce):
+    vs the passive limit fill it ~halves trades, lifts win rate, and ~doubles avg winsorized R."""
+    if not support or support <= 0 or len(c) < 3:
+        return False
+    tol = max(0.003 * support, 0.15 * (adr_px or 0))
+    if min(l[-3:]) > support + tol:                       # never reached support in the last ~3 bars
+        return False
+    if c[-1] < support * 0.99:                            # closed >1% under support = it broke = a knife
+        return False
+    green = c[-1] > o[-1]
+    reclaim = green and c[-1] >= support - tol            # same-day green reclaim off support (spin proxy)
+    nextday_jump = green and h[-1] > h[-2] and l[-2] <= support + tol   # held yesterday, breaks its high
+    return bool(reclaim or nextday_jump)
+
+
 def _vcp(bars, lookback=60):
     """Volatility Contraction Pattern (Minervini) — APPROXIMATE detector. A VCP is a series of
     successive pullbacks of DECREASING depth (the price coiling tighter) on DRYING volume, near the
@@ -544,11 +608,113 @@ def regression_channel(bars, max_lookback=120, min_len=30):
     return {"upper": upper, "mid": mid, "lower": lower}
 
 
+def _pivots(vals, kind="high", left=2, right=2):
+    """Local pivot indices: where vals[i] is the max (kind='high') / min ('low') in a ±window."""
+    n = len(vals)
+    out = []
+    for i in range(left, n - right):
+        win = vals[i - left:i + right + 1]
+        if (kind == "high" and vals[i] == max(win)) or (kind == "low" and vals[i] == min(win)):
+            out.append(i)
+    return out
+
+
+def _fit_line(idxs, vals):
+    """Least-squares (slope, intercept) for points (idx, vals[idx])."""
+    m = len(idxs)
+    if m < 2:
+        return 0.0, (vals[idxs[0]] if idxs else 0.0)
+    mx = sum(idxs) / m
+    my = sum(vals[i] for i in idxs) / m
+    den = sum((x - mx) ** 2 for x in idxs) or 1
+    sl = sum((idxs[k] - mx) * (vals[idxs[k]] - my) for k in range(m)) / den
+    return sl, my - sl * mx
+
+
+def detect_pattern(bars, lookback=45, min_cons=6):
+    """Detect the ONE most-relevant consolidation pattern after a recent pole — a flag / pennant / wedge —
+    for the chart overlay (replaces the generic channel when found). A pole = a real up-move (≥12%) into a
+    recent high; the consolidation is the base/pullback after it, bounded by an upper trendline (through the
+    pivot highs) and a lower trendline (through the pivot lows). Classified by the two slopes + convergence:
+    parallel & down = Bull Flag, converging symmetric = Pennant, converging both-down = Falling Wedge, etc.
+    Returns {kind,label,bull,upper:[2pts],lower:[2pts],pole:[2pts],pole_gain} or None."""
+    n = len(bars)
+    if n < min_cons + 6:
+        return None
+    win = bars[-min(lookback, n):]
+    m = len(win)
+    h = [b["high"] for b in win]
+    l = [b["low"] for b in win]
+    c = [b["close"] for b in win]
+    hi_i = max(range(m), key=lambda i: h[i])                 # pole top = highest high in the window
+    if (m - hi_i) < min_cons or hi_i < 2:                    # need a base after the high AND a pole before it
+        return None
+    lo_before = min(range(0, hi_i + 1), key=lambda i: l[i])
+    pole_gain = (h[hi_i] / l[lo_before] - 1) * 100 if l[lo_before] > 0 else 0
+    if pole_gain < 12:                                        # not a real flagpole — fall back to the channel
+        return None
+    # Fit the envelope on the consolidation EXCLUDING the latest bar, so we can test whether the CURRENT
+    # candle has BROKEN the pattern (a broken pattern is no use). Upper = trend of the highs shifted UP to
+    # touch the highest high (a real ceiling); lower = trend of the lows shifted DOWN to the lowest low.
+    cidx = list(range(hi_i, m))
+    fit_idx = cidx[:-1] if len(cidx) > min_cons else cidx
+    if len(fit_idx) < 3:
+        return None
+    su, iu = _fit_line(fit_idx, h)
+    sl, il = _fit_line(fit_idx, l)
+    iu += max(h[i] - (su * i + iu) for i in fit_idx)         # shift ceiling up to the extreme high
+    il += min(l[i] - (sl * i + il) for i in fit_idx)         # shift floor down to the extreme low
+    x0, x1 = hi_i, m - 1
+    up0, up1 = su * x0 + iu, su * x1 + iu
+    lo0, lo1 = sl * x0 + il, sl * x1 + il
+    # VALIDITY — is the pattern still intact? If the latest CLOSE has cleared the ceiling (breakout fired)
+    # or lost the floor (pattern failed), the consolidation is over → no use drawing it (fall back to channel).
+    last = c[-1]
+    if last > up1 * 1.005 or last < lo1 * 0.985:
+        return None
+    rng0, rng1 = max(up0 - lo0, 1e-9), max(up1 - lo1, 1e-9)
+    conv = rng1 / rng0
+    mid = c[hi_i] or 1
+    su_pct, sl_pct = su / mid * 100, sl / mid * 100          # slopes in %/bar
+    converging = conv < 0.66                                  # range narrowed ≥1/3 toward the apex
+    if converging:
+        if su_pct < -0.03 and sl_pct > 0.03:
+            kind, label, bull = "pennant", "Bull Pennant", True
+        elif su_pct <= 0 and sl_pct <= 0:
+            kind, label, bull = "falling_wedge", "Falling Wedge", True
+        elif su_pct >= 0 and sl_pct >= 0:
+            kind, label, bull = "rising_wedge", "Rising Wedge", False
+        else:
+            kind, label, bull = "pennant", "Pennant", True
+    else:
+        if su_pct < -0.05:
+            kind, label, bull = "bull_flag", "Bull Flag", True
+        elif su_pct > 0.05:
+            kind, label, bull = "rising_channel", "Rising Channel", True
+        else:
+            kind, label, bull = "flag", "Tight Flag", True
+
+    def line(v0, v1):
+        return [{"time": win[x0]["time"], "value": round(v0, 2)},
+                {"time": win[x1]["time"], "value": round(v1, 2)}]
+    return {"kind": kind, "label": label, "bull": bull,
+            "upper": line(up0, up1), "lower": line(lo0, lo1),
+            "pole": [{"time": win[lo_before]["time"], "value": round(l[lo_before], 2)},
+                     {"time": win[hi_i]["time"], "value": round(h[hi_i], 2)}],
+            "pole_gain": round(pole_gain, 1)}
+
+
 # --------------------------------------------------------------------------- #
 # Analysis
 # --------------------------------------------------------------------------- #
 def analyze(sym, bars, settings=None):
     settings = settings or {}
+    # Drop corrupt bars (a stray 0.0 OHLC from a Yahoo glitch). One such bar poisons every
+    # min-low / ratio downstream (div-by-zero) and would silently drop the whole ticker from the
+    # scan via the caller's try/except. Filtering keeps the name in the scan instead.
+    bars = [b for b in bars if b.get("low", 0) > 0 and b.get("high", 0) > 0 and b.get("close", 0) > 0]
+    if len(bars) < 60:
+        raise ValueError("insufficient valid bars")
     c = [b["close"] for b in bars]
     h = [b["high"] for b in bars]
     l = [b["low"] for b in bars]
@@ -556,7 +722,8 @@ def analyze(sym, bars, settings=None):
     o = [b["open"] for b in bars]
     close = c[-1]
 
-    adr = st.mean([(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0])
+    _adr_rng = [(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0]
+    adr = st.mean(_adr_rng) if _adr_rng else 0   # guard: all-zero/bad lows -> empty list would crash st.mean
     adr_safe = adr or 1
     s10, s20, s50 = _sma(c, 10), _sma(c, 20), _sma(c, 50)
     s150 = _sma(c, 150) if len(c) >= 150 else None
@@ -624,8 +791,8 @@ def analyze(sym, bars, settings=None):
     # breakout geometry (for fallback)
     base_h = max(h[-10:])
     base_l = min(l[-10:])
-    tight = (base_h / base_l - 1) * 100
-    dist_hi = (base_h / close - 1) * 100
+    tight = (base_h / base_l - 1) * 100 if base_l > 0 else 0   # guard: a 0-low bad bar would divide-by-zero
+    dist_hi = (base_h / close - 1) * 100 if close > 0 else 0
     max_day = max(((c[k] / c[k - 1] - 1) * 100) for k in range(-10, 0)) if len(c) > 11 else 0
     # recent catalyst/news move: biggest gap or 1-day jump in the last 5 sessions
     if len(c) > 6:
@@ -652,16 +819,28 @@ def analyze(sym, bars, settings=None):
     # The stock's own strength is the edge here even if the sector is cooling.
     above_200_now = s200 is not None and close > s200
     strong_leader = above_200_now and (p6m >= 30 or p3m >= 30)
+    # Deep pullback = a strong leader pulled back TO the 50 EMA (price below its short EMAs, AT the 50).
+    # Anchor on PROXIMITY to the 50, not a fixed pull% cap — explosive leaders (AXTI ran +650% in 6mo)
+    # pull back >50% off the high and still just be at the 50 EMA. (user 2026-06-05, the AXTI case.)
+    # "Near the 50" must be genuinely CLOSE to the 50 — capped ABSOLUTELY (~9%) so a high-ADR name (AAOI,
+    # ADR 15%) at +13% (up near the 9/21) isn't mislabeled a deep-at-the-50 pullback (user 2026-06-05).
+    _dp_band = min(max(0.06, 0.8 * adr / 100), 0.09)
+    near_50 = bool(e50) and (e50 * (1 - _dp_band) <= close <= e50 * (1 + _dp_band))
     is_deep_pullback = (strong_leader and close < e10 and close < e20
-                        and 5 <= pull_from_high <= 50)
+                        and pull_from_high >= 5 and near_50)
     # Consolidation: a strong stock going SIDEWAYS in a tight base while riding the 50 EMA
     # (the SNDK base — buy the dips to the 50 while it "waits"). A patient, worth-waiting setup.
     rng15 = (max(h[-15:]) / min(l[-15:]) - 1) * 100 if len(h) >= 15 else 100.0
     net15 = abs(c[-1] / c[-16] - 1) * 100 if len(c) >= 16 else 100.0   # net move = how SIDEWAYS it is
+    # EMAs CONVERGED — a real tight base has the 9/21 BUNCHED near the 50; if they're FANNED far above
+    # it, the stock dropped fast = a DEEP pullback, not a consolidation (the AXTI tell: 9/21 ~17% over
+    # the 50). This is the single discriminator that separates the two patient setups.
+    ema_fan = ((max(e9, e21) / e50 - 1) * 100) if e50 else 99.0
     is_consolidation = (above_200_now and (p3m >= 15 or p6m >= 25) and close > s50
-                        and rng15 <= 4.0 * adr            # tight base
+                        and rng15 <= 4.0 * adr            # tight base (range)
+                        and ema_fan <= max(8.0, 0.6 * adr)   # 9/21 bunched near the 50 (not a deep drop)
                         and net15 <= 0.4 * rng15          # genuinely sideways (not a directional pullback)
-                        and ext10 <= 1.5 * adr)           # not extended above the 10
+                        and -max(8.0, 0.5 * adr) <= ext10 <= 1.5 * adr)   # near the 10, not knifed below it
 
     if is_consolidation:                                  # tight sideways base takes priority
         setup_type = "Consolidation"
@@ -773,35 +952,53 @@ def analyze(sym, bars, settings=None):
         # at the swing low, so we floor the entry there. Buy zone can sit below current price
         # (wait for the dip) or above (a reclaim). Stop tight, just under the swing low.
         swing = min(l[-10:])
-        entry = round(max(e50, swing), 2)
+        # Anchor the buy zone to REAL support (user 2026-06-05, TSEM): floor the entry at the recent swing
+        # ONLY if the market has RESPECTED that level (≥2 prior touches); otherwise the swing is a freefall
+        # low in mid-air and the real support is the 50 EMA (the leader's deep-pullback line) — use that.
+        _tol = 0.008 * close          # respected-level band ~0.8% (tight S/R, not a wide-ADR smear)
+        if swing >= e50 and _respected_level(h[:-1], l[:-1], swing, _tol):
+            entry = round(swing, 2)
+        else:
+            entry = round(e50, 2)
         if close < entry:
             entry_type = "stop"
             entry_note = "buy on a reclaim toward the 50 EMA (strong leader — worth waiting)"
         else:
             entry_type = "limit"
             entry_note = "buy the dip into the 50 EMA / recent support (worth waiting)"
+        # Stop sits JUST UNDER the support being held (user 2026-06-05, AXTI): a deep pullback is bought
+        # because support held, so the stop belongs just below it — capped ~3% so a high-ADR leader (AXTI
+        # ADR 15%+) doesn't get a 6% stop. Floored ~1.2% so a low-ADR name isn't wicked out. (Exit proper
+        # is a daily CLOSE under the 50 — this is the risk basis / invalidation.)
         adr_px = entry * adr / 100
-        raw = min(swing - 0.10 * adr_px, entry - 0.40 * adr_px)   # tight, just under the swing
-        raw = max(raw, entry - 1.5 * adr_px)                       # but never absurdly wide
-        stop = round(raw, 2)
-        inval = round(swing, 2)
-        stop_basis = f"below the pullback swing low ${round(swing, 2)} (close below)"
+        buf = min(max(0.5 * adr_px, 0.012 * entry), 0.03 * entry)
+        stop = round(entry - buf, 2)
+        inval = round(entry, 2)
+        stop_basis = ("just under the 50 EMA (close below)" if entry <= e50 * 1.005
+                      else f"just under the pullback swing ${round(entry, 2)} (close below)")
     elif consol:
         # Buy the dip to the 50 EMA inside the base (floored at the base low). Stop below the base.
         base_low = min(l[-15:])
-        entry = round(max(e50, base_low), 2)
+        # Anchor to REAL support (TSEM rule): floor at the base low only if the market has RESPECTED it
+        # (≥2 touches = a true base edge); otherwise use the 50 EMA, not a mid-air recent low.
+        _tol = 0.008 * close          # respected-level band ~0.8% (tight S/R, not a wide-ADR smear)
+        if base_low >= e50 and _respected_level(h[:-1], l[:-1], base_low, _tol):
+            entry = round(base_low, 2)
+        else:
+            entry = round(e50, 2)
         if close < entry:
             entry_type = "stop"
             entry_note = "buy the reclaim of the 50 EMA in the base (worth waiting)"
         else:
             entry_type = "limit"
             entry_note = "buy the dip to the 50 EMA inside the consolidation (worth waiting)"
+        # Stop just under the support held (same as deep pullback — capped ~3% for high-ADR names).
         adr_px = entry * adr / 100
-        raw = min(base_low - 0.10 * adr_px, entry - 0.40 * adr_px)
-        raw = max(raw, entry - 1.5 * adr_px)
-        stop = round(raw, 2)
-        inval = round(base_low, 2)
-        stop_basis = f"below the consolidation low ${round(base_low, 2)} (close below)"
+        buf = min(max(0.5 * adr_px, 0.012 * entry), 0.03 * entry)
+        stop = round(entry - buf, 2)
+        inval = round(entry, 2)
+        stop_basis = ("just under the 50 EMA (close below)" if entry <= e50 * 1.005
+                      else f"just under the consolidation low ${round(entry, 2)} (close below)")
     elif pullback_like:
         # Entry = the rising support the stock is pulling back INTO. If price is still
         # above a support line, the entry sits BELOW current price (a limit buy on a
@@ -829,8 +1026,10 @@ def analyze(sym, bars, settings=None):
         # Clamp width 0.35-1.2x ADR (never risk > 1.2 ADR, never tighter than noise).
         recent_low = min(l[-5:])
         adr_px = entry * adr / 100
-        wide_floor = entry - 1.2 * adr_px
-        tight_cap = entry - 0.45 * adr_px        # min 0.45x ADR (backtest: 0.35 got wicked out by noise)
+        # Clamp width 0.45–1.2x ADR, but cap ABSOLUTELY (user 2026-06-05) so a high-ADR name (AXTI/TSEM,
+        # ADR 15%+) doesn't get a 7–18% "structure" stop — keep it just under support like the rest.
+        wide_floor = entry - min(1.2 * adr_px, 0.05 * entry)
+        tight_cap = entry - min(0.45 * adr_px, 0.025 * entry)   # ≥0.45 ADR but never wider than ~2.5%
         struct = recent_low - 0.15 * adr_px
         reclaimed = [p for _, p in _swing_highs(h) if p < entry - 0.02 * adr_px]
         sh_stop = (max(reclaimed) - 0.10 * adr_px) if reclaimed else None
@@ -868,16 +1067,26 @@ def analyze(sym, bars, settings=None):
     # buy zone = a band around the entry (you don't need an exact tick). Being inside it = buyable now.
     adr_px = entry * adr / 100
     if entry_type == "limit":
-        zone_top = round(entry + 0.6 * adr_px, 2)        # a bit above the support still buys the pullback
-        zone_bottom = round(entry - 0.25 * adr_px, 2)
+        # a TIGHT band that hugs support — cap the ADR-scaled width (user 2026-06-05): on a high-ADR name
+        # (AXTI/TSEM, ADR 15%+) a 0.6×ADR band is ~9%, smearing the "buy zone" far above the 50 EMA. Cap
+        # it at ~2.5% up / 2% down so the zone actually sits AROUND the support level.
+        zone_top = round(entry + min(0.6 * adr_px, 0.025 * entry), 2)
+        zone_bottom = round(entry - min(0.25 * adr_px, 0.02 * entry), 2)
     else:
-        zone_top = round(entry + 0.5 * adr_px, 2)
+        zone_top = round(entry + min(0.5 * adr_px, 0.02 * entry), 2)
         zone_bottom = round(entry, 2)
     buf = 0.3 * adr_px                                    # a little tolerance — just-above the zone still counts
     buyable_now = (zone_bottom - buf) <= close <= (zone_top + buf)
     # don't call it "buyable now" if today is a distribution/reversal bar or the stock is
     # stretched — wait for it to come back to the line instead of buying into the move.
     if distribution_today or extended:
+        buyable_now = False
+    # RESPECTED-SUPPORT BOUNCE (user 2026-06-05, the TSEM case): a dip-to-support buy is "buyable now"
+    # ONLY once price has pulled back TO the support, RESPECTED it, and JUMPED off it — never while it's
+    # still knifing down through the zone in mid-air. Being inside the band = ARMED (watch), not a buy.
+    # Backtest-validated (tools/research_bounce.py): vs the passive limit this ~halves trades, lifts the
+    # win rate, and ~doubles avg winsorized R — it discards exactly the falling-knife fills.
+    if entry_type == "limit" and not _respected_bounce(o, h, l, c, entry, adr_px):
         buyable_now = False
     # "worth waiting" = patient entries you watch and buy at support: a STRONG leader correcting
     # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
@@ -1178,6 +1387,42 @@ def breakout_confirm(bars5, level, adr_pct=0.0):
     holding = level <= last <= max(band, level * 1.002)
     return {"level": round(level, 2), "lod": lod, "broke": broke, "holding": holding,
             "extended": last > band, "confirmed": broke and holding, "last": round(last, 2), "bars": len(bars5)}
+
+
+def buyers_confirm(bars5, adr_pct=0.0):
+    """Buyers-stepping-in gate for the live confirmation (the user's AAOI rule, 2026-06-05): a single
+    5-min candle poking back above a level in a name that's been SOLD HARD all day is a falling knife,
+    NOT a reclaim — wait to SEE buyers take control, exactly like the Spinning screener does. Given
+    today's regular-session 5-min bars, require the recent tape to show real buying: the 5-min 9 EMA
+    turning up (or higher-lows) AND at least 2 recent GREEN closes back above that 9 EMA, with price
+    holding the line now. Returns (ok: bool, why: str). Lenient EARLY (too few bars) so it never blocks
+    a clean opening-range break — the level-break check still governs there."""
+    if not bars5 or len(bars5) < 6:
+        return True, ""                                  # too early to read the tape — don't block
+    c = [b["close"] for b in bars5]
+    o = [b["open"] for b in bars5]
+    n = len(c)
+    k = 2 / 10                                           # 9-period EMA on the 5-min closes (the chart's 9 EMA)
+    ma = [c[0]]
+    for x in c[1:]:
+        ma.append(x * k + ma[-1] * (1 - k))
+    green = [c[i] > o[i] for i in range(n)]
+    above = [c[i] >= ma[i] for i in range(n)]
+    # 2+ recent GREEN candles that CLOSED above the 5-min 9 EMA = the reclaim is real (the spin rule).
+    # Count COMPLETED candles only (exclude the still-forming last bar).
+    green_above = sum(1 for i in range(max(0, n - 9), n - 1) if green[i] and above[i])
+    ma_up = ma[-1] >= ma[-4] if n >= 4 else True         # the 5-min 9 EMA is curling up (buyers winning)
+    recent = c[-7:]
+    higher_lows = len(recent) >= 6 and min(recent[-3:]) >= min(recent[:-3])   # not making fresh lows
+    holding = above[-1] or above[-2]                     # price is holding the 5-min 9 EMA right now
+    turning = ma_up or higher_lows
+    if green_above >= 2 and turning and holding:
+        return True, ""
+    if green_above < 2:
+        return False, "no buyers yet — only one candle back above the line (need 2 green closes above the 5-min 9 EMA)"
+    if not turning:
+        return False, "still being sold — the 5-min 9 EMA is falling / making lower lows; wait for buyers to turn it up"
+    return False, "not holding the reclaim — wait for it to hold above the 5-min 9 EMA"
 
 
 def ep_volume_ok(bars5, avg_daily_vol):
@@ -1661,6 +1906,43 @@ def fear_greed(market="us", tickers=None):
     return {"score": score, "label": label, "components": {k: round(v) for k, v in comps.items()}}
 
 
+def vix_trend():
+    """VELOCITY/context read of the VIX from daily ^VIX closes — the 'are we starting to panic? is the
+    panic fading?' signal (the rate of change, not the level). Returns a dict (level, 1d/5d/7d % change,
+    20-MA + vs-MA, a 5-state label, a ~24-bar sparkline, and an as-of date) or None if VIX bars are
+    unavailable. US gauge only. The bands/thresholds are FIXED market-structure priors (VIX 15/20/30,
+    ±12% velocity), declared a-priori — NOT fitted to our data. DELIBERATELY SEPARATE from fear_greed()
+    and from the posture nudge: it NEVER enters grading — it feeds only the displayed regime, the
+    prediction narrative, and defend mode (the 'firewall' so VIX velocity can't leak into grades)."""
+    vix = get_bars("^VIX")
+    if not vix or len(vix) < 8:
+        return None
+    vc = [b["close"] for b in vix]
+    level = vc[-1]
+    chg_1d = (level / vc[-2] - 1) * 100 if vc[-2] else 0.0
+    chg_5d = (level / vc[-6] - 1) * 100 if len(vc) >= 6 and vc[-6] else 0.0
+    chg_7d = (level / vc[-8] - 1) * 100 if vc[-8] else 0.0
+    ma20 = _sma(vc, 20) if len(vc) >= 20 else st.mean(vc)
+    vs_ma20 = (level / ma20 - 1) * 100 if ma20 else 0.0
+    # 5-state classifier, priority order: spiking -> rising -> elevated-falling -> falling -> calm.
+    # 'elevated-falling' = panic draining from a high level (the constructive 'fear is unwinding' tell).
+    if chg_1d >= 20 or chg_5d >= 30:
+        state = "spiking"
+    elif chg_5d >= 12 and level >= 20:
+        state = "rising"
+    elif chg_5d <= -12 and level >= 25:
+        state = "elevated-falling"
+    elif chg_5d <= -12:
+        state = "falling"
+    else:
+        state = "calm"
+    return {"level": round(level, 2), "change_1d_pct": round(chg_1d, 1),
+            "change_5d_pct": round(chg_5d, 1), "change_7d_pct": round(chg_7d, 1),
+            "ma20": round(ma20, 2), "vs_ma20_pct": round(vs_ma20, 1),
+            "state": state, "spark": [round(x, 2) for x in vc[-24:]],
+            "as_of": vix[-1].get("time", "")}
+
+
 def _posture_label(p):
     return ("Risk-on - uptrend" if p >= 80 else "Constructive" if p >= 60 else
             "Mixed / pullback" if p >= 45 else "Caution - correction" if p >= 25 else
@@ -1693,6 +1975,10 @@ def market_regime(market="us", tickers=None):
            "label": _posture_label(posture), "indexes": idx}
     if fg:
         out["fear_greed"] = {**fg, "posture_nudge": nudge}
+    if market == "us":                       # VIX velocity read — US only; sibling of fear_greed, NOT
+        vt = vix_trend()                     # folded into posture/nudge → it can never touch grades (firewall)
+        if vt:
+            out["vix_trend"] = vt
     return out
 
 
@@ -1711,11 +1997,14 @@ def _benchmark_returns(market="us"):
     return (st.mean(r1) if r1 else 0.0), (st.mean(r3) if r3 else 0.0)
 
 
-def _attach_rs(results, market="us"):
-    """Relative strength = 0.5 * percentile-in-universe + 0.5 * outperformance-vs-index."""
+def _attach_rs(results, market="us", benchmark=None):
+    """Relative strength = 0.5 * percentile-in-universe + 0.5 * outperformance-vs-index.
+    `benchmark=(b1,b3)` overrides the index 1m/3m returns with AS-OF values — the blind backtest MUST
+    pass this (computed from index bars sliced to date D), else the outperformance leg subtracts today's
+    index return from a past date (a lookahead that mis-scores RS / grade). Live callers pass None."""
     if not results:
         return
-    b1, b3 = _benchmark_returns(market)
+    b1, b3 = benchmark if benchmark is not None else _benchmark_returns(market)
     blended = [0.5 * r.get("p1m", 0) + 0.5 * r.get("p3m", 0) for r in results]
     order = sorted(range(len(results)), key=lambda i: blended[i])
     n = len(results)
@@ -1804,7 +2093,7 @@ def scan(tickers, settings=None, progress=None, max_age=12, market="us"):
         bars = get_bars(t, max_age_hours=max_age)
         if progress:
             progress(i, total, t)
-        fetched = _DID_FETCH
+        fetched = did_fetch()
         if not bars:
             fails.append(t)
             if fetched:

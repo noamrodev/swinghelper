@@ -23,6 +23,8 @@ function currentMarket() {
 function dataCenter() {
   return {
     nav: [
+      { id: 'hq', label: 'HQ', icon: '🧠' },
+      { id: 'competition', label: 'Competition', icon: '🏆' },
       { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
       { id: 'autopilot', label: 'Auto Pilot', icon: '🛩️' },
       { id: 'suggestions', label: 'Suggestions', icon: '🎯' },
@@ -30,8 +32,7 @@ function dataCenter() {
       { id: 'watchlist', label: 'Watchlist', icon: '👁️' },
       { id: 'journal', label: 'Journal', icon: '📓' },
       { id: 'news', label: 'News', icon: '📰' },
-      { id: 'stats', label: 'Stats', icon: '📈' },
-      { id: 'armedlog', label: 'Armed Log', icon: '📡' },
+      { id: 'learninghub', label: 'Learning Hub', icon: '🧠' },
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
     view: 'dashboard',           // the website is for browsing; the tray "live coach" makes the calls
@@ -44,8 +45,17 @@ function dataCenter() {
     hosted: false,
     // pages hidden on the hosted free service for friends: journal/watchlist can't save (no storage), and
     // stats/strategy are the owner's tools — friends only need Auto Pilot + browsing. (Auto Pilot is the headline.)
-    hostedHidden: ['journal', 'watchlist', 'stats', 'strategy', 'armedlog'],
+    hostedHidden: ['hq', 'competition', 'journal', 'watchlist', 'learninghub', 'strategy'],   // HQ + Competition = owner's local command center
+    hq: { agents: [], squads: [], updated: '', loaded: false },
+    competition: { bots: [], loaded: false },   // 🏆 the 10 strategy bots paper-trading the live universe
+    compSelected: null,          // expanded bot id
+    compDetail: null,            // selected bot's full detail
+    compTab: 'overview',         // overview | trades | calendar | memory
+    compDay: null,               // the open daily report
+    compDayDate: null,
     armedHistory: {},            // 📡 per-day log of every setup the engine armed/confirmed live (local learning data)
+    learning: null,              // 🧠 Learning Hub — /api/learning response
+    lhTab: 'brief',              // 'brief' | 'edge'
     health: { ok: false, healthy: false, subs: [] },   // ❤️ vital signs — scan/Yahoo/Telegram heartbeat
     settings: { account_size: null, risk_pct: 1 },
     screeners: [],
@@ -144,7 +154,7 @@ function dataCenter() {
     showAllSug: false,
     showPassed: false,        // reveal passed (✗-rejected) suggestions so a pass can be undone
     calcModal: { open: false, ticker: '' },
-    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null, entryIdx: 0 },
+    chartModal: { open: false, ticker: '', _chart: null, logScale: true, showChannel: true, showEmas: true, showAvwap: true, showVolume: true, _data: null, _obj: null, entryIdx: 0, _patternLabel: null },
     tradeModal: { open: false, mode: 'take', ticker: '' },
     _pollTimer: null,
 
@@ -545,7 +555,7 @@ function dataCenter() {
     },
 
     // ---------- loaders ----------
-    async loadSettings() { this.settings = await this.api('/settings'); },
+    async loadSettings() { this.settings = await this.api('/settings'); if (this.settings.briefing_enabled === undefined) this.settings.briefing_enabled = true; },
     async loadScreeners() { this.screeners = await this.api('/screeners'); },
     async loadSuggestions() { this.suggestions = await this.api('/suggestions'); this.mergeLive(); },
     async loadTrades() { this.trades = await this.api('/trades'); this.mergeLive(); },
@@ -985,8 +995,136 @@ function dataCenter() {
       if (id === 'dashboard' || id === 'suggestions') this.loadNow();   // suggestions show live confirmation status
       if (id === 'stats') { this.loadForward(); this.loadPnlCal(); }
       if (id === 'armedlog') this.loadArmedHistory();
+      if (id === 'learninghub') { this.loadLearning(); this.loadForward(); this.loadPnlCal(); }
+      if (id === 'hq') this.loadHQ();
+      if (id === 'competition') this.loadCompetition();
     },
     async loadArmedHistory() { try { this.armedHistory = await this.api('/armed-history'); } catch (e) {} },
+    async loadLearning() { try { this.learning = await this.api('/learning'); } catch (e) {} },
+    // lesson tag → display config for Learning Hub
+    lhLessonTag(tag) {
+      return {
+        chase:      { icon: '🏃', color: '#ff5d73', label: 'Chasing' },
+        revenge:    { icon: '😤', color: '#ff5d73', label: 'Revenge trading' },
+        'tight-stop': { icon: '✂️', color: '#ffb53d', label: 'Tight stop' },
+        streak:     { icon: '🎲', color: '#ffb53d', label: 'Streak bias' },
+      }[tag] || { icon: '💡', color: '#6a8dff', label: 'Lesson' };
+    },
+    async loadHQ() { try { this.hq = { ...(await this.api('/hq')), loaded: true }; } catch (e) { this.hq.loaded = true; } },
+    // ---------- 🏆 Competition ----------
+    async loadCompetition() { try { this.competition = { ...(await this.api('/competition')), loaded: true }; } catch (e) { this.competition = { bots: [], loaded: true }; } },
+    async openBot(id) {
+      if (this.compSelected === id) { this.compSelected = null; this.compDetail = null; return; }
+      this.compSelected = id; this.compDetail = null; this.compDay = null; this.compTab = 'overview';
+      try { this.compDetail = await this.api('/competition/bot/' + id); } catch (e) {}
+      await this.$nextTick(); this.renderEquityCurve();
+    },
+    async openBotDay(date) {
+      if (!date) return;
+      this.compDayDate = date; this.compDay = null;
+      try { this.compDay = await this.api('/competition/bot/' + this.compSelected + '/day?date=' + date); } catch (e) {}
+      await this.$nextTick(); this.renderCompDayCharts();
+    },
+    setCompTab(t) { this.compTab = t; if (t === 'overview') this.$nextTick(() => this.renderEquityCurve()); },
+    // sparkline path for a bot's equity array (viewBox 0..80 x 0..32)
+    sparkPath(arr) {
+      if (!arr || arr.length < 2) return '';
+      const lo = Math.min(...arr), hi = Math.max(...arr), rng = (hi - lo) || 1;
+      return arr.map((v, i) => `${(i / (arr.length - 1) * 80).toFixed(1)},${(30 - (v - lo) / rng * 28).toFixed(1)}`).join(' ');
+    },
+    compRegimeColor(r) { return r === 'bull' ? '#22e0a1' : (r === 'soft' ? '#ffb53d' : '#ff5d73'); },
+    botIsWarmup(t) { return this.compDetail && this.compDetail.live_start && (t.exit_date || t.fill_date || '') < this.compDetail.live_start; },
+    renderEquityCurve() {
+      const box = document.getElementById('compEquityBox');
+      if (!box || !this.compDetail || !window.LightweightCharts) return;
+      if (this._compChart) { try { this._compChart.remove(); } catch (e) {} this._compChart = null; }
+      box.innerHTML = '';
+      const curve = this.compDetail.equity_curve || [];
+      if (curve.length < 2) { box.innerHTML = '<div class="text-xs text-slate-500 p-4">Equity curve appears once the bot has a few days of history.</div>'; return; }
+      const chart = LightweightCharts.createChart(box, {
+        width: box.clientWidth, height: 190,
+        layout: { background: { color: 'transparent' }, textColor: '#6b7890' },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#1c2230' } },
+        rightPriceScale: { borderColor: '#2a3344' }, timeScale: { borderColor: '#2a3344' },
+        handleScroll: false, handleScale: false,
+      });
+      const ls = chart.addLineSeries({ color: this.compDetail.color || '#22d3ee', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+      ls.setData(curve.map(p => ({ time: p.date, value: p.equity })));
+      const base = (this.competition && this.competition.start_equity) || 10000;
+      ls.createPriceLine({ price: base, color: '#475569', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'start' });
+      chart.timeScale().fitContent();
+      this._compChart = chart;
+    },
+    async renderCompDayCharts() {
+      if (!this.compDay || !this.compDay.trades) return;
+      this._compDayCharts = (this._compDayCharts || []);
+      this._compDayCharts.forEach(c => { try { c.remove(); } catch (e) {} }); this._compDayCharts = [];
+      for (const [i, t] of this.compDay.trades.entries()) {
+        const box = document.getElementById('compDayChart' + i);
+        if (!box || !window.LightweightCharts) continue;
+        let data = null;
+        try { data = await this.api('/chart/' + t.ticker); } catch (e) { continue; }
+        box.innerHTML = '';
+        const chart = LightweightCharts.createChart(box, {
+          width: box.clientWidth, height: box.clientWidth < 400 ? 150 : 180,
+          layout: { background: { color: 'transparent' }, textColor: '#6b7890' },
+          grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+          rightPriceScale: { visible: false }, timeScale: { visible: false },
+          handleScroll: false, handleScale: false,
+        });
+        const s = chart.addCandlestickSeries({ upColor: '#22e0a1', downColor: '#ff5d73', borderVisible: false, wickUpColor: '#22e0a1', wickDownColor: '#ff5d73' });
+        s.setData((data.bars || []).slice(-50).map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+        if (t.entry) s.createPriceLine({ price: t.entry, color: '#22e0a1', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: 'entry' });
+        if (t.stop) s.createPriceLine({ price: t.stop, color: '#ff5d73', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: 'stop' });
+        if (t.tp) s.createPriceLine({ price: t.tp, color: '#fbbf24', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: 'tp' });
+        chart.timeScale().fitContent();
+        this._compDayCharts.push(chart);
+      }
+    },
+    hqOfficeStyle(a, i) {   // wandering ghost in the animated office (pure CSS, varied per character)
+      const lane = [60, 94, 128][i % 3], left = 5 + (i * 11) % 66, wx = 80 + (i % 4) * 45,
+            dur = (13 + (i * 1.6) % 9).toFixed(1), delay = (-(i * 2.1)).toFixed(1);
+      return `--c:${a.color || '#6a8dff'};left:${left}%;bottom:${lane}px;--wx:${wx}px;animation:hqxWander ${dur}s ease-in-out ${delay}s infinite alternate`;
+    },
+    hqSquad(name) { return (this.hq.agents || []).filter(a => a.squad === name && !a.leader); },
+    get hqChief() { return (this.hq.agents || []).find(a => a.leader); },
+    hqDot(status) { return status === 'active' || status === 'working' ? 'bg-emerald-400' : (status === 'blocked' ? 'bg-red-400' : 'bg-slate-600'); },
+    // ---- Agent Office (game-style HQ) ----
+    hqOpen: null,                                   // the room/agent whose modal is open
+    hqLive(status) { return status === 'active' || status === 'working'; },
+    hqStatusColor(status) { return this.hqLive(status) ? '#22e0a1' : (status === 'blocked' ? '#ff5d73' : '#7c8aa6'); },
+    // per-agent room theme: label, accent neon, a prop glyph for the scene
+    hqRoomMeta(a) {
+      const M = {
+        'chief':        { label: 'COMMAND HQ',  color: '#6a8dff', prop: '🛰️' },
+        'quant':        { label: 'RESEARCH LAB', color: '#22d3ee', prop: '🧪' },
+        'data-steward': { label: 'OBSERVATORY',  color: '#a855f7', prop: '🔭' },
+        'risk-auditor': { label: 'THE VAULT',    color: '#ffb53d', prop: '🔐' },
+        'ux':           { label: 'STUDIO',       color: '#ff5fa2', prop: '🎨' },
+        'optimizer':    { label: 'ENGINE ROOM',  color: '#22e0a1', prop: '⚙️' },
+        'qa':           { label: 'TEST BAY',     color: '#ff5d73', prop: '🧫' },
+        'planner':      { label: 'WAR ROOM',     color: '#f5a623', prop: '🗺️' },
+        'analyst':      { label: 'LIBRARY',      color: '#7dd3fc', prop: '📚' },
+        'shipper':      { label: 'LAUNCH BAY',   color: '#c084fc', prop: '🚀' },
+      };
+      return M[a.name] || { label: (a.squad || 'OFFICE').toUpperCase() + ' ROOM', color: '#6a8dff', prop: '🖥️' };
+    },
+    hqRoomClass(a) {
+      let c = a.leader ? 'is-hq ' : '';
+      c += this.hqLive(a.status) ? 'is-busy' : 'is-asleep';
+      return c;
+    },
+    // chief first (largest tile), then a stable order grouped by squad
+    get hqRooms() {
+      const agents = this.hq.agents || [];
+      const order = ['Brain', 'Build', 'Protect', 'Steer', 'Ship'];
+      return [...agents].sort((x, y) => {
+        if (x.leader !== y.leader) return x.leader ? -1 : 1;
+        const sx = order.indexOf(x.squad), sy = order.indexOf(y.squad);
+        if (sx !== sy) return sx - sy;
+        return 0;
+      });
+    },
     async loadHealth() { try { this.health = await this.api('/health'); } catch (e) { this.health = { ok: false, healthy: false, subs: [] }; } },
     get armedHistoryDays() {       // [{date, rows[], confirmed}] newest day first, rows by arm time
       const h = this.armedHistory || {};
@@ -1194,6 +1332,21 @@ function dataCenter() {
       if (s > 45) return '#84cc16';
       if (s > 20) return '#22e0a1';
       return '#3b82f6';
+    },
+    // VIX velocity state → color/icon/label. Mirrors backend scanner.vix_trend(): 5 labels keyed off
+    // 1d/5d % moves and absolute level (spiking/rising = panic building; elevated-falling = panic
+    // draining; falling/calm = OK). Reused tokens — no new design language.
+    vixStateColor(s) {
+      return ({ spiking: '#ff5d73', rising: '#ffb53d', 'elevated-falling': '#ffb53d',
+                falling: '#22e0a1', calm: '#22e0a1' })[s] || '#64748b';
+    },
+    vixStateIcon(s) {
+      return ({ spiking: '🚨', rising: '📈', 'elevated-falling': '📉',
+                falling: '📉', calm: '😌' })[s] || '📊';
+    },
+    vixStateLabel(s) {
+      return ({ spiking: 'Panic spike', rising: 'VIX rising', 'elevated-falling': 'Elevated, cooling',
+                falling: 'VIX falling', calm: 'VIX calm' })[s] || s;
     },
     stateEmoji(s) {
       return ({ 'Healthy uptrend': '🟢', 'Recovery': '🟢', 'Bottoming / turning up': '🟢',
@@ -1486,7 +1639,7 @@ function dataCenter() {
 
     // ---------- settings & docs ----------
     async saveSettings() {
-      await this.api('/settings', 'PUT', { account_size: this.settings.account_size, risk_pct: this.settings.risk_pct, max_position_pct: this.settings.max_position_pct, size_factor: this.settings.size_factor, telegram_token: this.settings.telegram_token, telegram_chat_id: this.settings.telegram_chat_id });
+      await this.api('/settings', 'PUT', { account_size: this.settings.account_size, risk_pct: this.settings.risk_pct, max_position_pct: this.settings.max_position_pct, size_factor: this.settings.size_factor, telegram_token: this.settings.telegram_token, telegram_chat_id: this.settings.telegram_chat_id, briefing_enabled: this.settings.briefing_enabled });
       await Promise.all([this.loadSuggestions(), this.loadTrades()]);
       this.flash('Saved');
     },
@@ -1601,8 +1754,18 @@ function dataCenter() {
           if (eg >= 6 && eI > 0) chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(eI));
         }
       }
-      // regression trend channel (the "tunnel") — toggleable
-      if (this.chartModal.showChannel && data.channel) {
+      // PATTERN overlay — the ONE relevant flag/pennant/wedge for this name (green=bullish, red=bearish),
+      // with a faint pole line. Falls back to the regression channel when there's no clean pattern. Same
+      // toggle button. We deliberately draw only the single most-relevant structure, not every line.
+      this.chartModal._patternLabel = null;
+      if (this.chartModal.showChannel && data.pattern) {
+        const p = data.pattern, col = p.bull ? '#22c55e' : '#ef4444';
+        const pLine = (arr, w, style) => chart.addLineSeries({ color: col, lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(arr);
+        pLine(p.upper, 2, 0);
+        pLine(p.lower, 2, 0);
+        if (p.pole) chart.addLineSeries({ color: col, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(p.pole);
+        this.chartModal._patternLabel = p.label;
+      } else if (this.chartModal.showChannel && data.channel) {
         const chLine = (arr, w, style) => chart.addLineSeries({ color: '#3b82f6', lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(arr);
         chLine(data.channel.upper, 2, 0);
         chLine(data.channel.lower, 2, 0);
