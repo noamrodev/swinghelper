@@ -44,6 +44,10 @@ except ImportError:
     learning = None
 
 BASE = Path(__file__).resolve().parent
+# Per-process boot id: changes on every server (re)start. The frontend polls it (in /api/health) and
+# AUTO-RELOADS when it changes — so a code restart shows up in an already-open window WITHOUT a manual
+# hard refresh (the "window reopen ≠ reload" annoyance). 2026-06-08.
+BOOT_ID = str(int(time.time()))
 SEED = BASE / "data"                       # shared files baked into the image / repo
 # DATA is where live data is read/written. Locally it's just data/. On a host with a
 # persistent disk, set DATA_DIR to the mounted volume so journals survive redeploys;
@@ -1738,6 +1742,23 @@ def _market_closed(mk=None):
     return hm < cfg["open"] or hm >= cfg["close"]
 
 
+def _session_today_if_open(mk=None):
+    """Today's market-local date string while a trading session is IN PROGRESS (trading day, before
+    today's close — covers pre-market + regular hours); None once the session has closed / a non-trading
+    day. Passed to scanner.scan as `forming_date`: a ticker whose freshest daily bar IS this date has a
+    still-FORMING last bar, so analyze() gates 'buyable now' on settled structure and lets the live
+    confirmation engine own the intraday reclaim call (the AXTI-at-the-open fix, 2026-06-08). After the
+    close it returns None ⇒ scans see settled closes ⇒ EOD/frozen-snapshot output is unchanged."""
+    cfg = scanner.mcfg(mk or market())
+    loc = _local_now(mk or market())
+    if loc.weekday() not in cfg["trading_days"]:
+        return None
+    hm = loc.hour + loc.minute / 60.0
+    if hm >= cfg["close"]:
+        return None
+    return loc.strftime("%Y-%m-%d")
+
+
 def _after_close_today(mk=None):
     """True ONLY after today's regular-session close (a trading day, local time >= close) — NOT pre-market.
     The end-of-day jobs (day-P&L finalize + forward snapshot) must run only once the session has
@@ -2496,6 +2517,13 @@ def update_rules_account(acct):
 # --------------------------------------------------------------------------- #
 def run_scan(screener_id, max_age=12):
     global SCAN
+    # SESSION-AWARE FRESHNESS CAP: during the trading day, NEVER serve badly-stale bars. The manual "Scan"
+    # button doesn't pass ?fresh, so it would otherwise fall to the 12h cache and grade on this-morning's
+    # (or yesterday's) bars. Clamp to ≤30 min while a session is in progress — reuses the autoscan's recent
+    # cache (fast, no extra Yahoo load), refetches anything older. After the close the 12h cache stands
+    # (bars are settled). (trader-found 2026-06-08.)
+    if _session_today_if_open():
+        max_age = min(max_age, 0.5)
     screeners = read_json(screeners_f(), [])
     sc = next((s for s in screeners if s["id"] == screener_id), None)
     if not sc:
@@ -2509,7 +2537,8 @@ def run_scan(screener_id, max_age=12):
     def prog(done, total, t):
         SCAN.update(done=done, total=total, current=t)
 
-    out = scanner.scan(tickers, settings, prog, max_age=max_age, market=market())
+    out = scanner.scan(tickers, settings, prog, max_age=max_age, market=market(),
+                       forming_date=_session_today_if_open())
     prev = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
     items = []
     for r in out["results"]:
@@ -2559,7 +2588,8 @@ def run_intraday_partial(n=220, max_age=0.05):
         return
     top = [it["ticker"] for it in sorted(items, key=lambda r: r.get("score", 0), reverse=True)[:n]]
     settings = read_json(settings_owner_f(), {})
-    out = scanner.scan(top, settings, None, max_age=max_age, market=market())
+    out = scanner.scan(top, settings, None, max_age=max_age, market=market(),
+                       forming_date=_session_today_if_open())
     fresh = {r["ticker"]: r for r in out["results"]}
     merged = []
     for it in items:
@@ -2825,8 +2855,11 @@ def compute_gameplan():
         _ne = compute_now()
     except Exception:
         _ne = {"buys": [], "armed": []}
-    buy_now = [_now_compact(r) for r in (_ne.get("buys") or [])][:5]
-    watch = [_now_compact(r) for r in (_ne.get("armed") or [])][:5]
+    # Caps match the Telegram brief (_tg_morning_brief) so all three surfaces — Live-entries panel,
+    # Gameplan tab, Telegram — show the same book (parity rule). The frontend reads the list length for
+    # its own "+N more" affordance; the bottom verdict already states the true count.
+    buy_now = [_now_compact(r) for r in (_ne.get("buys") or [])][:10]
+    watch = [_now_compact(r) for r in (_ne.get("armed") or [])][:15]
     avoid = [{"ticker": s["ticker"], "reason": f"earnings in {s.get('earnings_days')}d — skip new entries"}
              for s in graded[:40] if s.get("earnings_soon")][:5]
 
@@ -3241,7 +3274,8 @@ def compute_now(shared=False):
     holds = [m for m in manage if m["action"] in ("HOLD", "WATCH")]
 
     # ---- the buy: A-grade, tape-appropriate, not held, no earnings — ALERT only once CONFIRMED ----
-    # CONFIRMATION ENGINE (light by design): we shortlist the best ~12 A/A+ config-E setups, then live-quote
+    # CONFIRMATION ENGINE (light by design): we shortlist the best ~18 setups (A/A+ legs, plus strong-B
+    # legs for PATIENT worth_waiting dip-buys so a leader at its 50 isn't dropped on an A↔B flicker), then live-quote
     # ONLY those (cached 30s, market-hours only) to detect the real intraday trigger. We NEVER live-watch the
     # whole universe — that's the daily forward test's job. A setup is CONFIRMED when:
     #   • breakout / EP  → price TAKES OUT the prior-day high (the Qulla/Luk "rotate above the prior-day high")
@@ -3270,9 +3304,19 @@ def compute_now(shared=False):
                 continue
             if _caution and (s.get("setup_type") not in _PATIENT_OK):
                 continue                                   # correction tape → only leaders bought AT support
+            # WATCH is a LOWER bar than BUY. A patient leader sitting AT its 50 (worth_waiting: Deep
+            # Pullback / Consolidation / pullback family) is worth WATCHING even on a B leg — its A/B grade
+            # flickers across the boundary on live intraday prices (RS dips as a high-beta name sells off),
+            # and dropping it off the watch on a one-notch A→B wobble can miss the reclaim beep entirely
+            # (the BE/POET/NXT case, 2026-06-08 — top-ranked deep pullbacks that vanished from the panel).
+            # The reclaim + buyers_confirm + stop-≤1×ADR gates still govern the actual FIRE, so widening the
+            # WATCH to strong-B patient dip-buys does NOT loosen the BUY. Breakouts/EPs keep the strict A/A+
+            # gate (a B breakout in a mixed tape is not a watch candidate). best-leg sort still prefers the
+            # higher-rated (dip-buy) leg, so a deep pullback arms on its 50-reclaim leg, not its breakout alt.
             legs = [e for e in (s.get("entries") or [])
                     if e.get("entry") and e.get("stop") and not e.get("stale")
-                    and e.get("grade") in ("A+", "A")]
+                    and (e.get("grade") in ("A+", "A")
+                         or (s.get("worth_waiting") and e.get("grade") == "B"))]
             if not legs:
                 continue
             best = sorted(legs, key=lambda e: e.get("rating", 0), reverse=True)[0]
@@ -3309,9 +3353,19 @@ def compute_now(shared=False):
         # → use the day-high break, gate it on holding the 50, stop under the 50. The 9/21 above = upside room.
         is_deep = setup_type.strip().lower() == "deep pullback"
         e50 = s.get("ema50")
+        # AVWAP RECLAIM = the SAME pattern as the deep-pullback 50-reclaim, on the AVWAP support line (user
+        # 2026-06-08): a leader pulls back TO its anchored AVWAP and is bought on the RECLAIM + spin, stop just
+        # under the AVWAP — NOT on the generic ORH/EMA-cluster break. Support line = the dip-buy (limit) leg's
+        # entry (the AVWAP/support the setup buys the reclaim of). is_avwap routes these to the reclaim branch
+        # below (parallel to is_deep) and they skip the ORH trigger. _avwap_sup is None if there's no limit leg.
+        _avwap_dip = next((x for x in (s.get("entries") or [])
+                           if x.get("entry_type") == "limit" and x.get("entry")), None)
+        is_avwap = bool(setup_type in ("Pullback @ AVWAP", "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+                        and _avwap_dip)
+        _avwap_sup = _avwap_dip["entry"] if is_avwap else None
         cmenu = lexicon.get_confirm_menu(setup_type)        # Lexicon Phase 2: confirmation menu for this setup
         confirm_trigger = None                              # which menu tag actually fired (set on confirm)
-        if is_deep:
+        if is_deep or is_avwap:
             res_entry, res_stop, cleared = None, None, None
         oc, b5 = None, None
         if active:
@@ -3327,8 +3381,8 @@ def compute_now(shared=False):
                 _adrpx = price * adr_pct / 100 if (price and adr_pct) else None
                 _near = lambda lv: bool(day_high and lv and day_high > lv
                                         and (_adrpx is None or day_high - lv <= 0.6 * _adrpx))
-                if is_deep:
-                    pass                                          # deep pullback: NO day-high/ORH trigger — handled below (50-reclaim + spin)
+                if is_deep or is_avwap:
+                    pass                                          # deep pullback / AVWAP reclaim: NO day-high/ORH trigger — handled below (reclaim + spin)
                 elif b5 and res_entry:
                     if _near(res_entry):
                         res_entry = round(day_high * (1 + (ebuf or 0) / 100), 2)
@@ -3341,7 +3395,8 @@ def compute_now(shared=False):
                         oc = {**oc, "orh": round(day_high, 2), "level": _bc["level"], "_dh_lift": True,
                               "confirmed": _bc["confirmed"], "broke": _bc["broke"],
                               "holding": _bc["holding"], "extended": _bc["extended"]}
-                    # Lexicon Phase 2 — YH_RECLAIM (the Martin-Luk trigger): a pullback/AVWAP setup also
+                    # Lexicon Phase 2 — YH_RECLAIM (the Martin-Luk trigger): a pullback setup also
+                    # (AVWAP setups route to the is_avwap reclaim branch above and never reach this path)
                     # confirms when price RECLAIMS the prior-day high — often an earlier, tighter entry than
                     # the ORH break. ADDITIVE: only when the ORH path hasn't already confirmed, so it can
                     # never remove an existing confirmation; the downstream zone-drift / ADR / buyers gates
@@ -3384,7 +3439,14 @@ def compute_now(shared=False):
                 # toward it (big red candles) — they never tested the 50 or turned, so nothing was reclaimed.
                 # Require: today actually tested the 50 (low reached it) AND price is now off the day's lows
                 # (turning up, not a red crash). THEN the spin (buyers_confirm) confirms it. (user 2026-06-05)
-                reached_50 = bool(_dlo is not None and _dlo <= e50 * 1.005)
+                # The "tagged the 50" tolerance is ADR-SCALED (matches the EOD _respected_bounce gate:
+                # max 0.5% / 0.15×ADR). A flat 0.5% is far too tight for a high-ADR leader — VICR (8.9% ADR)
+                # dipping to 0.85% off the 50 IS a tag, not no-man's-land (2026-06-08). turning_up +
+                # buyers_confirm below still reject a name CRASHING toward the 50 (sitting at its lows / no
+                # buyers); the stop-≤1×ADR guard rejects entering too far above it. So this widens "did it
+                # test the zone", NOT "how far above the 50 you may chase".
+                _reach_buf = max(0.005, 0.0015 * (adr_pct or 0))   # 0.0015×adr% == 0.15×ADR as a fraction
+                reached_50 = bool(_dlo is not None and _dlo <= e50 * (1 + _reach_buf))
                 turning_up = bool(_dlo is not None and _dhi is not None and _dhi > _dlo
                                   and (cur_px - _dlo) >= 0.45 * (_dhi - _dlo))
                 # The reclaim/bounce needs a CLOSED 5-min candle that CLEARS the 50 by ~0.3% — a wick that just
@@ -3440,6 +3502,87 @@ def compute_now(shared=False):
             rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
                    "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
                    "kind": e.get("kind"), "trigger": e50 or (s.get("prior_high") or leg_entry),
+                   "break_level": None, "orh": None, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
+                   "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
+                   "buyable_now": bool(e.get("buyable_now")),
+                   "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
+                   "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
+                   "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
+                   "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+                   "p1m": s.get("p1m"), "p6m": s.get("p6m"),
+                   "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
+                   "confirm_menu": cmenu, "confirm_trigger": confirm_trigger,
+                   "overhead": overhead}
+            (buys if triggered else armed).append(rec)
+            continue
+        if is_avwap:                                          # AVWAP RECLAIM + spin — sibling of the 50-reclaim, on the AVWAP line
+            cur_px = b5[-1]["close"] if b5 else (s.get("close") or leg_entry)
+            if not _avwap_sup or cur_px is None:
+                deep_wait = True
+                cmsg = "AVWAP reclaim — armed at the AVWAP. Waiting for it to bounce off the AVWAP + a spin (buyers stepping in)."
+            elif cur_px < _avwap_sup * (1 - (ebuf or 0) / 100):   # still BELOW the AVWAP → no reclaim yet
+                deep_wait = True
+                cmsg = (f"Pulled back to the AVWAP (${_f(_avwap_sup)}) — waiting to RECLAIM it. Fires on the reclaim "
+                        f"(cur ${_f(cur_px)}) + a spin (buyers stepping in); stop just under the AVWAP. (Room above.)")
+            else:                                                 # cur ≥ AVWAP — genuine reclaim, or floating above while still FALLING?
+                _dlo = min(b["low"] for b in b5) if b5 else None
+                _dhi = max(b["high"] for b in b5) if b5 else None
+                # SAME ADR-scaled "tagged the line" tolerance as the 50-reclaim (max 0.5% / 0.15×ADR). turning_up +
+                # buyers_confirm reject a knife crashing toward the AVWAP (at its lows / no buyers); the stop-≤1×ADR
+                # guard rejects entering too far above it. Widens "did it test the line", not "how far to chase".
+                _reach_buf = max(0.005, 0.0015 * (adr_pct or 0))
+                reached_av = bool(_dlo is not None and _dlo <= _avwap_sup * (1 + _reach_buf))
+                turning_up = bool(_dlo is not None and _dhi is not None and _dhi > _dlo
+                                  and (cur_px - _dlo) >= 0.45 * (_dhi - _dlo))
+                _av_buf = _avwap_sup * 1.003                       # closed 5-min must clear the AVWAP by ~0.3%
+                _closed = b5[-2]["close"] if (b5 and len(b5) >= 2) else cur_px
+                held_above = bool(_closed >= _av_buf)
+                if not reached_av:
+                    deep_wait = True
+                    cmsg = (f"Pulling back toward the AVWAP (${_f(_avwap_sup)}; cur ${_f(cur_px)}) — not there yet. Waiting for it to "
+                            f"REACH the AVWAP and BOUNCE (settle + turn up with buyers — a spin). Don't buy up here in no-man's-land.")
+                elif not held_above:
+                    deep_wait = True
+                    cmsg = (f"Tagging the AVWAP (${_f(_avwap_sup)}) but no 5-min CLOSE ~0.3% above it yet (needs ${_f(_av_buf)}) — "
+                            f"a wick at the AVWAP can get rejected. Waiting for a HELD close above it + a spin.")
+                elif not turning_up:
+                    deep_wait = True
+                    cmsg = (f"Tested the AVWAP (${_f(_avwap_sup)}) but it's still red/falling — no turn yet. "
+                            f"Waiting for a green bounce off the AVWAP (a spin: buyers stepping in).")
+                else:
+                    cand_entry = cur_px                           # buy at the reclaim, near the AVWAP (NOT the day high)
+                    frozen = _frz_day.get(fkey)
+                    if frozen:
+                        cand_entry, cand_stop, stop_lab = frozen["entry"], frozen["stop"], frozen.get("stop_lab")
+                    else:
+                        cand_stop = round(_avwap_sup * (1 - (sbuf or 0) / 100), 2)   # stop JUST UNDER the AVWAP (its invalidation)
+                        stop_lab = "AVWAP"
+                    buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
+                    adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
+                    raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
+                    if adr_px and raw_risk and raw_risk > 1.0 * adr_px:
+                        too_extended = True                      # already too far above the AVWAP → stop > 1× ADR
+                        cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but the stop ${_f(cand_stop)} is already wider than "
+                                f"1× ADR from here — too extended off the AVWAP. No call (don't widen the stop).")
+                    elif not buyers_ok:
+                        buyers_wait = True
+                        cmsg = (f"Tested the AVWAP (${_f(_avwap_sup)}) and turning up, but {buyers_why} — no call yet "
+                                f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
+                    else:
+                        triggered = True
+                        confirm_trigger = "RECLAIM_AVWAP"
+                        entry, stop = cand_entry, cand_stop
+                        _confirmed_fkeys.add(fkey)
+                        if not frozen:                           # first confirm → LOCK the buy price + stop for the day
+                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
+                        cmsg = (f"CONFIRMED — tested the AVWAP (${_f(_avwap_sup)}) and turned up with buyers stepping in. "
+                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP). Room above.")
+            sized = _size_leg(entry, stop)
+            plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
+                                sized, triggered, too_extended), "why": s.get("why")}
+            rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                   "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
+                   "kind": e.get("kind"), "trigger": _avwap_sup or (s.get("prior_high") or leg_entry),
                    "break_level": None, "orh": None, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
                    "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
                    "buyable_now": bool(e.get("buyable_now")),
@@ -3582,6 +3725,15 @@ def compute_now(shared=False):
     # shortlist transiently) keep their lock. This is the only "expiry" — there is no 'ran away' downgrade.
     for k in [k for k in _frz_day if k in _processed_fkeys and k not in _confirmed_fkeys]:
         _frz_day.pop(k, None)
+
+    # ORDER THE CARDS BY GRADE (best at top), rating-within-grade as the tiebreak. buys/armed were appended
+    # in cands rating-order, and Python's sort is STABLE, so sorting by grade alone preserves that. Needed
+    # because grade has CAPS (below-200 / parabolic / mild-pullback) that break rating↔grade monotonicity —
+    # a pure rating sort can float a capped-down high-rating name above a true A. This guarantees
+    # A+ → A → B → C on every surface (Dashboard Live entries, Gameplan, Telegram brief). (user 2026-06-08)
+    _GR = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1}
+    buys.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
+    armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
 
     # ---- the one-line VERDICT (the decisive bit) ----
     if todo:
@@ -3801,13 +3953,13 @@ def compute_prediction():
                    + (" (froth = correction risk)" if s >= 65 else " (washed out)" if s <= 30 else ""),
                    "dir": "neg" if s >= 65 else "pos" if 35 <= s <= 60 else "neutral"})
     if vt:
-        _vlbl = {"spiking": "🚨 spiking", "rising": "rising",
+        _vlbl = {"spiking": "🚨 spiking", "rising": "rising", "elevated": "elevated (post-spike)",
                  "elevated-falling": "elevated but cooling",
                  "falling": "falling", "calm": "calm"}.get(vt["state"], vt["state"])
         od.append({"text": f"VIX {vt['level']} ({_vlbl}, 5-day {vt['change_5d_pct']:+.0f}%)",
-                   "dir": "neg" if vt["state"] in ("spiking", "rising")
+                   "dir": "neg" if vt["state"] in ("spiking", "rising", "elevated")
                           else "pos" if vt["state"] == "elevated-falling" else "neutral"})
-        o += {"spiking": -1.5, "rising": -0.75, "elevated-falling": +0.5,
+        o += {"spiking": -1.5, "rising": -0.75, "elevated": -0.25, "elevated-falling": +0.5,
               "falling": +0.25, "calm": 0}[vt["state"]]   # narrative lean only; no grade impact
     if breadth is not None:
         o += (breadth - 50) / 15.0
@@ -3851,6 +4003,10 @@ def compute_prediction():
     elif vt and vt["state"] == "rising":
         op.append(f"Volatility is building (VIX {vt['level']}, 5-day {vt['change_5d_pct']:+.0f}%) — "
                   f"the tape is getting nervous; tighten up and demand a clean trigger before adding risk.")
+    elif vt and vt["state"] == "elevated":
+        op.append(f"Volatility is elevated (VIX {vt['level']}, {vt['vs_ma20_pct']:+.0f}% above its 20-day mean) "
+                  f"and now draining — the worst may be behind us, but stay patient; prefer at-support entries "
+                  f"over chasing breakouts until VIX is back near its mean.")
     elif vt and vt["state"] == "elevated-falling":
         op.append(f"Volatility is high but rolling over (VIX {vt['level']}, 5-day {vt['change_5d_pct']:+.0f}%) — "
                   f"panic is fading; this is where leaders bottom first, so warm the watchlist and wait for 50-reclaims.")
@@ -4499,7 +4655,9 @@ class Handler(BaseHTTPRequestHandler):
             if not bars:
                 self._json({"error": "no data"}, 404); return
             esettings = _equity_settings()
-            a = scanner.analyze(t, bars, esettings)
+            _fd = _session_today_if_open()
+            a = scanner.analyze(t, bars, esettings,
+                                forming_last=bool(_fd and bars and bars[-1].get("time") == _fd))
             apply_sizing(a, esettings)
             a["sector"] = read_json(sectors_f(), {}).get(t, "Other")
             a["sector_hot"] = a["sector"] in read_json(suggest_f(), {}).get("hot_sectors", [])
@@ -5194,7 +5352,8 @@ def compute_health():
     healthy = yahoo_ok and (watcher_ok or HOSTED)
     return {"ok": True, "healthy": bool(healthy), "active": active, "scanning": bool(watcher_ok and active),
             "market_state": mstate, "armed": info.get("armed"), "buys": info.get("buys"),
-            "light": info.get("light"), "subs": subs, "time": time.strftime("%H:%M:%S")}
+            "light": info.get("light"), "subs": subs, "time": time.strftime("%H:%M:%S"),
+            "boot_id": BOOT_ID}    # frontend auto-reloads when this changes (server restarted)
 
 
 def add_notification(title, body, light="", actionable=False):
@@ -6172,15 +6331,22 @@ def _tg_morning_brief():
     if d.get("on"):
         out.append("🛡️ " + (d.get("reason") or "Defend mode on."))
     buys, armed = n.get("buys") or [], n.get("armed") or []
+    # Show the TRUE count in the header and never silently truncate — the brief must match the Live-entries
+    # panel (compute_now's full list), not hide the tail (2026-06-08: 11 armed showed as 6, dropping 5).
+    # Generous caps so the normal book shows in full; only an unusually long tail collapses to "+N more".
     if buys:
-        out.append("\n🟢 *Confirmed:*")
-        for b in buys[:5]:
+        out.append(f"\n🟢 *Confirmed ({len(buys)}):*")
+        for b in buys[:10]:
             out.append(f"• *{b['ticker']}* {b.get('grade')} — {b.get('shares')} sh @ ${_f(b.get('entry'))}, "
                        f"stop ${_f(b.get('stop'))}")
+        if len(buys) > 10:
+            out.append(f"• …+{len(buys) - 10} more — open the app")
     if armed:
-        out.append("\n⏳ *Armed:*")
-        for a in armed[:6]:
+        out.append(f"\n⏳ *Armed ({len(armed)}):*")
+        for a in armed[:15]:
             out.append(f"• *{a['ticker']}* {a.get('grade')} {a.get('setup_type')} — {a.get('confirm', '')}")
+        if len(armed) > 15:
+            out.append(f"• …+{len(armed) - 15} more — open the app")
     if not buys and not armed:
         top = _top_graded(5)
         if top:

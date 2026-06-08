@@ -1,5 +1,146 @@
 # Changelog
 
+## 2026-06-09 — Competition bots: real-time intraday exits (live-exit lag fix)
+
+**What was done.** Fixed the live-path exit lag the trader flagged (ROADMAP item). `run_bots_live` (bots.py)
+previously only closed on a live hard-stop hit; a midday +R target blast or time-due exit lagged to the next
+EOD pass (unrealistic for a "real-time" leaderboard). Now the live path runs the full price-touch / bar-count
+exit set against the live quote: **hard stop** (existing) · **+R target** (fills at the target level, not the
+overshoot) · **time_stop** · **rebalance** — with `bars_held` derived from the index session count (gap-aware).
+**Decisions.** (A) The EMA/Donchian **trail stays close-confirmed (EOD-only)** — trader's explicit choice;
+firing a close-under signal on an intraday tick would whipsaw out a name that dips under the 9 EMA midday but
+closes back above (respects the locked 9/50-EMA close-under rule). (B) Fill-day guard kept (no same-bar exit).
+Verified in isolation (target/time/stop fire at correct prices; trail + fill-day correctly do NOT exit; live
+`competition.json` untouched — temp-file tests). LOCAL-only, firewalled from grades.
+**Diagnosis of the "no closed trades" symptom:** NOT a bug and NOT this lag — every bot position had `fill_date`
+= today with `bars_held=0`, and the engine correctly never exits on the fill day. First EOD closes expected ~06-09.
+**What's next.** Restart the server (bots.py is imported — running process holds the old module). Burry (qa) to
+verify the bot equity math. Then watch the Competition → closed-trades table populate live.
+
+## 2026-06-08 — Forming-bar buyable fix (no false BUY at the open) + Telegram/Gameplan armed-list parity
+
+**What was done.** Two bugs the trader caught live (war-pause relief gap; AXTI deep pullback).
+- **Forming-bar `buyable_now` fix (engine).** During a live session the daily series' last bar is today's
+  STILL-FORMING bar (close = live price). `_respected_bounce` (the falling-knife gate on `buyable_now`)
+  keyed on `c[-1]`, so a green intraday pop "un-broke" a 50 EMA that yesterday's SETTLED close decisively
+  broke → flashed "BUY NOW" on a knife with zero confirmation (AXTI: closed 89.04 vs 50≈92.15, opens ~94.5).
+  Fix: `analyze(..., forming_last=False)` new param; when True the respected-bounce gate runs on the SETTLED
+  series only (drops the forming bar) — buyable reflects settled structure, and the live **confirmation
+  engine** (50-reclaim + spin + buyers, on completed candles) owns the real intraday call. Threaded via
+  `scan(..., forming_date=...)` + new `_session_today_if_open()` (None after close ⇒ EOD unchanged). Wired
+  into `run_scan`, `run_intraday_partial`, `/api/analyze`. Per-ticker (stale/halted name → unaffected).
+- **Decisions.** (A) knife-below-50 shows ARMED, never auto-buyable; confirmation engine is the single source
+  of the BUY. Confirmation engine left untouched (already uses completed 5-min candles + buyers_confirm).
+  "Doesn't retest, just runs" = MISSED setup (correct) — breakout alt leg + stale re-base already handle it.
+- **Burry (qa): SHIP IT** — grader 7/7 byte-for-byte (buyable_now doesn't feed grade/score; feeds live
+  `timing` only, as before), bug reproduced & closed, no false-negative on a settled next-day jump, edge
+  cases (len<4, forming_date=None, stale ticker) clean, caller isolation confirmed (backtest/bots/tools/
+  analyze_at untouched). **Server restart required.**
+- **Telegram + Gameplan armed-list parity.** Trader's morning brief showed 6 of 11 armed (silent `armed[:6]`
+  cap dropped VICR/NXT/LITE/APLD/VIAV). Headers now show the true count `(N)` and collapse only a long tail
+  to "+N more" (caps: buys 10, armed 15). Matched `compute_gameplan` caps so all 3 surfaces agree (parity rule).
+- **ADR-scaled `reached_50` (live confirmation engine).** Trader (VICR/BE) found the deep-pullback "tested the
+  50" tolerance was a FLAT 0.5% — far too tight for a high-ADR leader (VICR 8.9% ADR, low 0.85% off the 50, and
+  BE 8.5% ADR, low 0.70% off → both wrongly read as "no-man's-land, didn't tag the 50"). Changed
+  `reached_50` to `_dlo <= e50*(1+max(0.005, 0.0015*adr_pct))` — i.e. ADR-scaled (0.15×ADR), consistent with
+  the EOD `_respected_bounce` buffer; low-ADR names keep the 0.5% floor. Widens "did it visit the zone" ONLY;
+  the turning_up + buyers_confirm + stop-≤1×ADR gates still reject a crashing knife and govern the actual fire
+  (verified: VICR/BE register reached_50 but stay ARMED while red/at-lows). **Burry: SHIP, 6/6 PASS.** Loaded
+  live mid-session at trader's choice. FLAG: `swinghelper/app.py` still has the old `e50*1.005` — sync next build.
+- **Watch-stability for patient setups (live confirmation engine).** Trader: top deep-pullback leaders
+  (BE/POET/NXT, rank 2/4/9 by score) vanished from the ARMED panel. Cause (verified, NOT the buffer change —
+  the buffer runs downstream of the grade gate): the watch shortlist (`cands`) was gated A/A+-leg-only, and a
+  leader's A leg FLICKERS to B on live intraday prices (RS dips as a high-beta name sells off). Fix: admit
+  B-grade legs to the WATCH when the setup is patient (`worth_waiting` = Deep Pullback / Consolidation) —
+  `grade in (A+,A) or (worth_waiting and grade==B)`. WATCH is a lower bar than BUY; the reclaim+buyers_confirm+
+  stop-≤1×ADR gates (which never read grade) still govern the FIRE. Breakouts/EPs keep the strict A/A+ gate.
+  best-leg sort still picks the dip-buy leg. **Burry: SHIP, 7/7 PASS** (isolated, only-widens, correctly scoped).
+  Forward-watch: if beep frequency climbs >1-2/session, add a `rating>=68` floor to the B clause (weak-B tail
+  FORM/SEI/etc at 63-67); not shipped now. FLAG: sync swinghelper/app.py for both app.py changes next build.
+- **AVWAP reclaim+spin confirmation branch (live engine).** Trader: AVWAP reclaims should fire on the RECLAIM
+  of the AVWAP + spin (like the deep-pullback 50-reclaim), not the generic ORH/EMA-cluster break. Added a NEW
+  `is_avwap` branch in compute_now mirroring the is_deep logic on the AVWAP support line (= the dip-buy limit
+  leg's entry): reached(ADR-scaled buffer)+held_above+turning_up+buyers_confirm+stop-≤1×ADR, stop just under
+  the AVWAP, confirm_trigger RECLAIM_AVWAP. Covers "Pullback @ AVWAP" / "AVWAP reclaim (ATH)" / "(earnings)".
+  is_deep block left BYTE-FOR-BYTE (guards extended to `is_deep or is_avwap`, False for deep). _avwap_dip=None →
+  graceful fallback to the generic path. **Burry: SHIP, 7/7 PASS** (deep byte-for-byte verified, branches mutually
+  exclusive, knife-protection holds). Trader chose load-live mid-session. FLAG: sync swinghelper next build.
+- **Breakout 2nd-entry + stop-under-pivot — SHIPPED LIVE (grade-affecting; golden re-baselined).** Simons built
+  it in isolation (`dev/breakout/`); **Burry SHIP-gate verified** (clean 4-location diff — nothing leaks into
+  deep-pullback/AVWAP/pullback/grading; 352 grade shifts ALL **D→C/C→B, ZERO A/A+** in or out; clean breakouts
+  unchanged; Part A stop clamped [0.3,1]×ADR; Part B pivot no-lookahead). Applied `dev/breakout/scanner.py` → live
+  `scanner.py`; **golden re-baselined FROM EXISTING FIXTURES** (isolates the engine change — diff shows only the
+  breakout stop moving day-low → "just under the pivot", risk_ps tightening ~10×, entry_quality rising). test_grader
+  **7/7**. **NEEDS RESTART + RESCAN.** Forward-test now runs live per the plan. (`scanner.py.pre-breakout-ship`,
+  `golden_analyze.json.pre-breakout-ship` backed up.)
+- **VIX classifier fix — SHIPPED LIVE (macro layer, firewalled from grades).** Root cause: the `level >= 20`
+  gate dropped an elevated post-spike VIX (19.74, +23% 5d, +14.8% vs MA20, after a +40% Fri spike) to 'calm' — the
+  bug behind the "green light, VIX calm" gameplan that contradicted the 09:05 risk-off alert. Fix: 6-state classifier
+  anchored to **vs_ma20** (relative, per "level is noise" research), adds an **'elevated'** state; +3 app.py consumers
+  updated ('elevated' label/dir/lean-dict — the lean dict was a hard lookup that would KeyError on a new state — and a
+  gameplan narrative branch). Grader **7/7 byte-for-byte**; today's VIX now classifies **'elevated'** (was 'calm');
+  **defend UNAFFECTED** (reads raw vix numbers, not the state label). Burry formal verify running. Surgical (only the
+  vix_trend classifier + the 3 consumers); did NOT wholesale-copy dev/vixfix (it predated the breakout ship). Needs restart.
+  **Burry PASS** (grader 7/7, all 3 backend consumers handle 'elevated', classifier correct across 6 cases, defend
+  unaffected) — AND caught + fixed a FRONTEND gap I missed: `web/app.js` `vixStateColor/Icon/Label` (~1436-1447) had
+  the old 5-state dicts (no 'elevated' → grey/wrong label, not a crash); Burry added 'elevated' (browser-refresh only,
+  no restart). **swinghelper KeyError vector for next build:** `swinghelper/app.py` (~3810) hard lean-dict + `swinghelper/web/app.js`
+  still 5-state — scanner.py + app.py + web/app.js MUST sync TOGETHER or the hosted site KeyErrors on 'elevated'.
+- **Card order now GRADE-first (Live entries / Gameplan / Telegram).** Trader: cards weren't strictly by grade.
+  `compute_now` sorted buys/armed by `rating` (number), but grade CAPS (below-200/parabolic/mild-pullback) break
+  rating↔grade monotonicity, so a capped-down high-rating name could sit above a true A. Added a STABLE grade-rank
+  sort (A+→A→B→C) after the cands loop — rating-order preserved within each grade. Pure display order; grader 7/7,
+  no grade/engine change; fixes all 3 surfaces at once. Needs restart.
+- **Fixed the "restart but nothing changes" friction (trader pain).** Diagnosed live: assets are ALREADY served
+  no-cache; the real causes were (a) reopening the Edge app-mode window doesn't RELOAD the page, and (b) a stale
+  process keeping port 8765 so a relaunch can't bind → old code keeps serving. Two fixes: (1) **auto-reload on
+  restart** — server `BOOT_ID` (per-process, in /api/health); the client polls it every 20s and `location.reload()`s
+  when it changes, so an open window picks up new code on its own. (2) **run.ps1 now kills the stale 8765 owner
+  first**, then relaunches (leaves the coach_app.py tray alone). Compile/grader 7/7, JS `node --check` clean.
+  Bootstrap: ONE manual Ctrl+Shift+R after the next restart to load the new app.js; auto-reload is automatic after that.
+- **Scan freshness — session-aware cache cap (trader-found).** The manual "Scan" button (`runScan`) doesn't send
+  `?fresh`, so `run_scan` fell to the 12h cache → could grade on this-morning's/yesterday's bars intraday. (The
+  AUTOSCAN was already fine — verified cache ~5–30 min fresh; live triggers use fresh 5-min bars+quotes.) Fix:
+  `run_scan` now clamps `max_age ≤ 0.5h` whenever a session is in progress (`_session_today_if_open()`), so NO scan
+  path can serve badly-stale bars intraday — reuses the autoscan's recent cache (no extra Yahoo load), refetches
+  older. After the close the 12h cache stands (bars settled). Grader 7/7 (uses fixed fixtures, not get_bars). Needs restart.
+- **SESSION CLOSE (server restarted on the new code — boot_id 1780944349, VIX reads 'elevated', one server PID
+  52416 + coach tray; stale processes killed).** ONE-TIME on the trader's window: `Ctrl+Shift+R` to load the new
+  `app.js` (auto-reload + "Took it" removal + grade-first cards); after that, auto-reload is automatic.
+- **What's next / open items.**
+  - **swinghelper is BEHIND on ALL of today's changes** (scanner.py, app.py, web/app.js) — sync them TOGETHER next
+    build or the hosted site KeyErrors on the new 'elevated' VIX state.
+  - **Forward-test live** (the real judge): breakout 2nd-entry + stop-under-pivot, VIX 'elevated', RS80→A.
+  - **Open ROADMAP:** chart-bug "jumps to dashboard" is hosted-specific (verify on the hosted site — local works on
+    every path); competition bots' live-exit only stops out (add trail/target/time intraday); the "DO FIRST" chart
+    item is effectively the hosted chart-bug. Forward-watch
+  AXTI: stay ARMED, fire only on a real 50-reclaim+spin. **swinghelper is behind on ALL of today's scanner.py +
+  app.py changes — sync next build.** Backup: `backups/2026-06-08_respected-bounce-forming-fix/`.
+
+## 2026-06-08 — Grade rubric v6 BUILT (test-clean) → synced to swinghelper, awaiting trader push
+
+**What was done.** Resolved the build-block HONESTLY (no test gutting) and ran `make-build.ps1` → all 31 tests
+pass, synced to `swinghelper/` (NOT committed/pushed — trader publishes via the printed git commands; Render
+auto-deploys on push). Trader override: ship LITE→A / MNDY→C to the friends' site to match local.
+- **The 3 failures were resolved by two principled refinements (new `rubric.py` constants):**
+  - `BROAD_CORR_MIN_SECTORS = 8` — `broad_correction` now needs ≥8 sectors, so a 1-sector test heat (or a
+    degenerate real heat) can't trip it. Fixes `falling_group_bypass_requires_top_decile_rs`: a SINGLE Falling
+    group is no longer a "broad correction", so an RS80 there stays capped (NOT A) — while real-market LITE
+    (28/38 Falling) still bypasses. The invariant and the trader's ask are BOTH satisfied; they were never
+    actually in conflict (single group ≠ market-wide pull).
+  - `CAP_PATIENT_MILD = 74` — patient leader in a MILD pullback (posture 40-49) caps at max A, never A+
+    (=81 max-A − the +7 max strength bonus). Fixes the RS96→A+ regressions (A+ reserved for healthy tape).
+- **Constants extracted to rubric.py** (single source of truth): `CAP_BELOW_200=62`, `CAP_PATIENT_MILD=74`,
+  `BROAD_CORR_MIN_SECTORS=8`.
+- **Live + shipped grades:** LITE/APLD/SITM/NXT/VICR/POET/AXTI pullback = A; DXYZ = B (round-trip guard);
+  MNDY/HIMS/RDDT/TEAM = C (below-200 floor). Local server restarted → matches the build.
+- **Burry (qa) sign-off on the SHIPPED v6: 6/6 PASS** — targets correct, NO A+ in sub-50 tape (0 legs ≥82),
+  no junk in A, floor holds, min-sector guard works (1-sector→False/RS80→C, 38-sector→True/RS80→A), monotonic
+  vs pre-refinement (0 up; INTC/LUNR/BE A+→A = the intended A+ reservation). Two non-bug notes: (a) the +7 RS
+  strength bonus applies AFTER the cap, so effective maxes are 79/81 (still <82 A+ — rule holds; the "max B/A"
+  comments describe pre-bonus); (b) a test-harness gotcha (must route via reverse_themes, not item["sector"]).
+- **Still recommended:** forward-test the RS80→A rule live over coming sessions. Trader pushes when ready.
+
 ## 2026-06-08 — BUILD BLOCKED by test gate (floor+ceiling overturns a forward-tested invariant)
 
 **What happened.** Ran `make-build.ps1` → its grader test gate ABORTED the build (working as designed). The

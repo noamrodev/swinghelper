@@ -1222,7 +1222,16 @@ function dataCenter() {
         return 0;
       });
     },
-    async loadHealth() { try { this.health = await this.api('/health'); } catch (e) { this.health = { ok: false, healthy: false, subs: [] }; } },
+    async loadHealth() {
+      try {
+        this.health = await this.api('/health');
+        // AUTO-RELOAD on server restart: when the server's boot_id changes (a code restart/rebuild), reload
+        // the page so an already-open window picks up the new code WITHOUT a manual hard refresh — kills the
+        // "I restarted but don't see the change" annoyance. Fires once per restart (~within the 20s poll). (2026-06-08)
+        const bid = this.health && this.health.boot_id;
+        if (bid) { if (this._bootId && this._bootId !== bid) location.reload(); else this._bootId = bid; }
+      } catch (e) { this.health = { ok: false, healthy: false, subs: [] }; }
+    },
     get armedHistoryDays() {       // [{date, rows[], confirmed}] newest day first, rows by arm time
       const h = this.armedHistory || {};
       return Object.keys(h).sort().reverse().map(date => {
@@ -1430,19 +1439,20 @@ function dataCenter() {
       if (s > 20) return '#22e0a1';
       return '#3b82f6';
     },
-    // VIX velocity state → color/icon/label. Mirrors backend scanner.vix_trend(): 5 labels keyed off
-    // 1d/5d % moves and absolute level (spiking/rising = panic building; elevated-falling = panic
-    // draining; falling/calm = OK). Reused tokens — no new design language.
+    // VIX velocity state → color/icon/label. Mirrors backend scanner.vix_trend(): 6 states keyed off
+    // vs_ma20 / 1d/5d % moves (spiking/rising/elevated = caution; elevated-falling = fading; falling/calm = OK).
+    // Reused tokens — no new design language.
     vixStateColor(s) {
-      return ({ spiking: '#ff5d73', rising: '#ffb53d', 'elevated-falling': '#ffb53d',
+      return ({ spiking: '#ff5d73', rising: '#ffb53d', elevated: '#ffb53d', 'elevated-falling': '#ffb53d',
                 falling: '#22e0a1', calm: '#22e0a1' })[s] || '#64748b';
     },
     vixStateIcon(s) {
-      return ({ spiking: '🚨', rising: '📈', 'elevated-falling': '📉',
+      return ({ spiking: '🚨', rising: '📈', elevated: '📈', 'elevated-falling': '📉',
                 falling: '📉', calm: '😌' })[s] || '📊';
     },
     vixStateLabel(s) {
-      return ({ spiking: 'Panic spike', rising: 'VIX rising', 'elevated-falling': 'Elevated, cooling',
+      return ({ spiking: 'Panic spike', rising: 'VIX rising', elevated: 'VIX elevated',
+                'elevated-falling': 'Elevated, cooling',
                 falling: 'VIX falling', calm: 'VIX calm' })[s] || s;
     },
     stateEmoji(s) {

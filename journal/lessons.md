@@ -113,3 +113,16 @@ Example:
   back to the zone or skip it. Re-entering the SAME name repeatedly after a failure (AAOI appears 3×) is the
   revenge/over-concentration tell — one position per name, and if a setup already failed today, demand a
   genuinely fresh base before going again. (from the 30-trade review, 2026-06-06)
+- **A discretionary macro de-risk can be the RIGHT call — but keep the leader, cut the tails, and never
+  trust a "green light" that contradicts a same-morning risk-off alert.** 2026-06-08: after Friday's QQQ
+  −5% + Iran/Lebanon war headlines + a posture-45 pullback tape, flattened the whole 7-name book (6 Deep
+  Pullback + 1 Consolidation) intraday on a risk-off read. The app's defend was OFF and the gameplan flashed
+  "VIX 19.7 calm" — but that was a **BUG**: `vix_trend` labeled an elevated post-spike VIX ('calm' despite
+  +23% 5d, +14.8% vs MA20, after a +40% Friday spike to 21.51) because the level 19.74 sat under its hard 20
+  cutoff. So the caution was MORE justified than the app showed — a sound discretionary read, **not a panic**.
+  Result: net **+$19.76 / ~+0.7R**, carried entirely by **LITE (+1.49R)**; the other six were ~scratch on tight
+  stops. REFINEMENTS: (1) when de-risking a correlated book, **keep the clear winner** (LITE was trending) and
+  cut the redundant/correlated tails — don't flatten the leader with the laggards. (2) The book was one
+  correlated bet ×7 at **37% > the 30% overnight cap** — that over-concentration is what made it a rollercoaster;
+  size to the cap so a choppy tape doesn't whip the whole book. (3) When two app surfaces disagree (risk-off
+  alert vs green-light gameplan), trust neither blindly — surface the bug. (from the 2026-06-08 flatten)

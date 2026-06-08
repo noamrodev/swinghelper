@@ -980,10 +980,9 @@
                   </div>
                 </div>
 
-                <!-- ===== actions: Chart · Took it · Pass ===== -->
+                <!-- ===== actions: Chart · Pass (trader removed "Took it" 2026-06-08) ===== -->
                 <div class="flex gap-2">
                   <button class="btn2 chart" @click="showChart(s.ticker, s)">📈 Chart</button>
-                  <button class="btn2 took" @click="openTake(s)">Took it</button>
                   <button class="btn2 pass" @click="act(s, s.status==='rejected' ? 'unpass' : 'reject')" x-text="s.status==='rejected' ? '↩ Un-pass' : 'Pass'"></button>
                 </div>
               </div>

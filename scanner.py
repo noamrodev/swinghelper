@@ -393,20 +393,91 @@ def _swing_highs(h, left=3, right=3, lookback=60):
     return out
 
 
+def _pullback_leg_pivot(h, l, close, adr):
+    """[PART B — dev/breakout, 2026-06-08]  The breakout '2nd entry' pivot for a PATIENT setup.
+
+    The trader's 'buy the right side' rule: 1st entry = the pullback/reclaim AT the line (EMA/AVWAP/
+    pivot); if missed, the 2nd entry = the BREAKOUT back THROUGH that pivot — the swing high the stock
+    PULLED BACK FROM. The live alt used max(h[-2:]) (the prior-day high), which after a multi-week base
+    sits far above the EMAs ('too far'). Instead anchor at the NEARER pivot:
+
+      Definition (no lookahead — all bars are <= today):
+        1. Find the pullback LOW = the lowest low since the most-recent confirmed swing high
+           (the leg the stock just pulled back on).
+        2. Among confirmed swing highs (_swing_highs, left/right=3), keep those that are
+             - ABOVE current price (a genuine upside trigger, price has pulled back below them),
+             - the swing high that bounds the pullback leg (index <= the pullback-low index, i.e. the
+               level price fell FROM), and
+             - within a sane band above price (<= ~6x ADR) so we don't grab an ancient unrelated high.
+        3. Take the LOWEST such qualifying pivot = the NEAREST overhead level = where it's basing
+           under. That is the realistic 2nd-entry trigger.
+
+      Returns the pivot price, or None (caller falls back to max(h[-2:]) — the old behaviour)."""
+    sh = _swing_highs(h)
+    if not sh or close <= 0:
+        return None
+    adr_px = close * adr / 100 or 0.01
+    last_sh_i = sh[-1][0]
+    # pullback low = lowest low from the last swing high forward to now (the leg just pulled back)
+    seg = l[last_sh_i:]
+    if not seg:
+        return None
+    pb_low = min(seg)
+    pb_low_i = last_sh_i + seg.index(pb_low)
+    # candidate pivots: confirmed swing highs ABOVE price that the pullback fell from, near enough
+    band_top = close + 6.0 * adr_px
+    cands = [p for (i, p) in sh
+             if p > close + 0.1 * adr_px        # a real upside trigger (not basically at price)
+             and i <= pb_low_i                  # the level price pulled back FROM (bounds the leg)
+             and p <= band_top]                 # not an ancient, unrelated high
+    if not cands:
+        return None
+    return min(cands)                            # the NEAREST overhead pivot
+
+
 # --------------------------------------------------------------------------- #
 # Entry-plan builders. A suggestion can carry up to two entry options (a buy-stop
 # BREAKOUT above a pivot, and/or a buy-the-dip PULLBACK to support below price).
 # Each returns a self-contained plan dict (entry/stop/zone/sizing-ready) or None
 # when the option doesn't make sense — so we "show two only where it makes sense."
 # --------------------------------------------------------------------------- #
-def _breakout_stop(entry, day_low, adr):
-    """A breakout's stop is TODAY'S (the breakout-day) low — Qulla style: you catch the break and risk
-    to the low of the day, NOT a flat 1x ADR (on a high-ADR name like MXL that's a needlessly wide
-    stop). Falls back to 1x ADR below the trigger only when today's low isn't a usable stop (missing,
-    or not below the entry). Returns (stop, basis)."""
-    if day_low and 0 < day_low < entry:
-        return round(day_low, 2), "today's low (breakout-day low)"
-    return round(entry * (1 - adr / 100), 2), "1x ADR below the trigger"
+def _breakout_stop(entry, day_low, adr, pivot=None):
+    """A breakout's stop anchors JUST UNDER THE BREAKOUT PIVOT (the level being broken), NOT the
+    day's low.  [PART A — dev/breakout, 2026-06-08]
+
+    OLD behaviour (live): stop = today's (breakout-day) low. That works when the breakout fires near
+    the highs, but when the pivot sits well ABOVE current price (price has pulled back below it), the
+    day-low is far below the entry → a misleadingly huge risk (the LUNR case: entry $32.69, day-low
+    stop $29.37 = ~10% = well over 1x ADR). The risk should be entry − (just under the pivot), tight,
+    regardless of how far below current price the day's low happens to be.
+
+    NEW behaviour:
+      * Anchor under the pivot: `pivot × (1 − buffer)`, buffer ≈ 0.25x ADR (a structural cushion).
+      * CLAMP the stop distance to [0.3x ADR, 1.0x ADR] below the entry — a hard ≤1x ADR cap
+        (my-rules: 'stop never wider than 1x ADR'), and a 0.3x floor so noise can't wick it out.
+      * Use the day's LOW only when it is the TIGHTER VALID structure — i.e. the day-low sits ABOVE
+        the just-under-pivot anchor but still below the entry (the clean-breakout-near-the-highs case,
+        which stays ~unchanged: there the day-low is close to the pivot anyway).
+      * Falls back to the old 1x-ADR-below-trigger only when no pivot is supplied (back-compat).
+
+    Returns (stop, basis)."""
+    e_adr = entry * adr / 100 or 0.01
+    max_floor = entry - 1.0 * e_adr           # never risk more than 1x ADR (the hard cap)
+    tight_floor = entry - 0.3 * e_adr         # never tighter than 0.3x ADR (RKLB noise lesson)
+    # PREFERENCE: the day's low is the real, lived structure — KEEP it whenever it's a usable stop
+    # INSIDE 1x ADR (this is the clean-breakout-near-the-highs case → byte-for-byte the old behaviour).
+    if day_low and 0 < day_low < entry and day_low >= max_floor:
+        stop = min(day_low, tight_floor)      # but never tighter than 0.3x ADR
+        return round(stop, 2), "today's low (breakout-day low)"
+    # Otherwise the day low is too far below the entry (price has pulled back below the pivot — the
+    # LUNR case) → anchor JUST UNDER THE PIVOT, clamped into [0.3x, 1.0x] ADR.
+    if pivot and 0 < pivot <= entry:
+        piv_stop = pivot * (1 - 0.25 * adr / 100)     # just under the pivot (0.25x ADR cushion)
+        piv_stop = max(piv_stop, max_floor)           # respect the 1x ADR cap
+        piv_stop = min(piv_stop, tight_floor)         # respect the 0.3x ADR tightness floor
+        return round(piv_stop, 2), "just under the breakout pivot"
+    # no pivot supplied and no usable day low -> the old 1x-ADR-below-trigger fallback
+    return round(max_floor, 2), "1x ADR below the trigger"
 
 
 def _breakout_plan(pivot, close, adr, day_low=None, note="buy-stop above the pivot high"):
@@ -416,7 +487,7 @@ def _breakout_plan(pivot, close, adr, day_low=None, note="buy-stop above the piv
         return None
     entry = round(pivot, 2)
     e_adr = entry * adr / 100 or 0.01
-    stop, basis = _breakout_stop(entry, day_low, adr)
+    stop, basis = _breakout_stop(entry, day_low, adr, pivot=pivot)   # PART A: anchor under the pivot
     risk_ps = round(entry - stop, 2)
     if risk_ps <= 0:
         return None
@@ -707,7 +778,13 @@ def detect_pattern(bars, lookback=45, min_cons=6):
 # --------------------------------------------------------------------------- #
 # Analysis
 # --------------------------------------------------------------------------- #
-def analyze(sym, bars, settings=None):
+def analyze(sym, bars, settings=None, forming_last=False):
+    # forming_last=True means bars[-1] is TODAY'S STILL-FORMING daily bar (its close = the live price,
+    # not a settled close). The caller sets it only during a live session (see _session_today_if_open).
+    # It changes ONE thing: the respected-bounce gate below evaluates SETTLED structure (drops the
+    # forming bar) so a name that CLOSED below the 50 yesterday can't flip "buyable now" on an
+    # unsettled intraday pop — the live confirmation engine owns the real reclaim+spin call. Default
+    # False ⇒ EOD/backtest/golden behavior is byte-for-byte unchanged.
     settings = settings or {}
     # Drop corrupt bars (a stray 0.0 OHLC from a Yahoo glitch). One such bar poisons every
     # min-low / ratio downstream (div-by-zero) and would silently drop the whole ticker from the
@@ -1046,7 +1123,8 @@ def analyze(sym, bars, settings=None):
         inval = round(recent_low, 2)
     else:
         entry = round(base_h, 2)                           # buy-stop above the consolidation high
-        stop, stop_basis = _breakout_stop(entry, l[-1], adr)   # risk to today's (breakout-day) low
+        # PART A: anchor the stop under the pivot (base high), clamped <=1x ADR — not the day low.
+        stop, stop_basis = _breakout_stop(entry, l[-1], adr, pivot=base_h)
         inval = round(base_l, 2)
         entry_type = "stop"
         entry_note = "buy-stop above the consolidation high"
@@ -1086,7 +1164,15 @@ def analyze(sym, bars, settings=None):
     # still knifing down through the zone in mid-air. Being inside the band = ARMED (watch), not a buy.
     # Backtest-validated (tools/research_bounce.py): vs the passive limit this ~halves trades, lifts the
     # win rate, and ~doubles avg winsorized R — it discards exactly the falling-knife fills.
-    if entry_type == "limit" and not _respected_bounce(o, h, l, c, entry, adr_px):
+    # FORMING-BAR FIX (user 2026-06-08, the AXTI-at-the-open case): mid-session bars[-1] is today's
+    # FORMING bar — its close = the live price. _respected_bounce is an EOD daily proxy; fed a forming
+    # bar, a green intraday pop would "un-break" a 50 EMA that yesterday's SETTLED close decisively
+    # broke, flipping "buyable now" on with NO confirmation. So when forming_last, evaluate the gate on
+    # the SETTLED series only (drop the forming bar): buyable reflects settled structure, and the live
+    # confirmation engine (50-reclaim + spin + buyers, on completed candles) owns the real intraday buy.
+    _ro, _rh, _rl, _rc = ((o[:-1], h[:-1], l[:-1], c[:-1]) if (forming_last and len(c) >= 4)
+                          else (o, h, l, c))
+    if entry_type == "limit" and not _respected_bounce(_ro, _rh, _rl, _rc, entry, adr_px):
         buyable_now = False
     # "worth waiting" = patient entries you watch and buy at support: a STRONG leader correcting
     # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
@@ -1125,10 +1211,24 @@ def analyze(sym, bars, settings=None):
             supports.append(("AVWAP (earnings)", avwap_earn))
         alt = _pullback_plan(close, adr, supports, min(l[-5:]), sh_prices)
     else:                                                # pullbacks AND patient setups: the secondary is the
-        # BREAKOUT above the prior-day high — buy the strength instead of waiting for the dip. Shown always
-        # (open or closed); on a patient name whose deep dip ran away, this is the realistic plan. (Replaces
-        # the old intraday "confirm/reclaim-the-EMA" alt, which conflated an intraday signal with a setup.)
-        alt = _breakout_plan(max(h[-2:]), close, adr, day_low=l[-1], note="buy-stop above the prior-day high")
+        # BREAKOUT '2nd entry' (the trader's 'buy the right side'). PART B: for a PATIENT setup whose
+        # pullback already happened (Deep Pullback / Pullback / Pullback @ AVWAP / AVWAP reclaims /
+        # Consolidation), anchor the breakout at the NEARER PIVOT — the swing high the stock pulled back
+        # FROM / is basing under — NOT the far prior-day high. The stop then sits just under THAT pivot
+        # (Part A). Falls back to the prior-day high when no defensible nearer pivot exists.
+        patient = setup_type in ("Deep Pullback", "Pullback", "Pullback @ AVWAP",
+                                 "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)", "Consolidation")
+        pdh = max(h[-2:])
+        piv = _pullback_leg_pivot(h, l, close, adr) if patient else None
+        # Only use the nearer pivot when it is genuinely NEARER than the prior-day high — never make the
+        # 2nd-entry trigger FARTHER. (AAOI case: price has already reclaimed its last swing high, so the
+        # only overhead pivot is higher than the prior-day high → fall back to the prior-day high.)
+        if piv and piv <= pdh + 0.1 * (close * adr / 100 or 0.01):
+            alt = _breakout_plan(piv, close, adr, day_low=l[-1],
+                                 note="buy-stop above the pullback-leg pivot (2nd entry)")
+        else:
+            alt = _breakout_plan(max(h[-2:]), close, adr, day_low=l[-1],
+                                 note="buy-stop above the prior-day high")
     entries = [primary]
     if alt and abs(alt["entry"] - primary["entry"]) >= 0.4 * (entry * adr / 100 or 0.01):
         if distribution_today or extended or (parabolic and not worth_waiting):
@@ -1924,14 +2024,22 @@ def vix_trend():
     chg_7d = (level / vc[-8] - 1) * 100 if vc[-8] else 0.0
     ma20 = _sma(vc, 20) if len(vc) >= 20 else st.mean(vc)
     vs_ma20 = (level / ma20 - 1) * 100 if ma20 else 0.0
-    # 5-state classifier, priority order: spiking -> rising -> elevated-falling -> falling -> calm.
-    # 'elevated-falling' = panic draining from a high level (the constructive 'fear is unwinding' tell).
+    # 6-state classifier, anchored to vs_ma20 (VIX relative to its OWN 20-day mean) — NOT absolute level,
+    # because the validated macro research found VIX LEVEL is noise. Fixes the bug where a VIX that spiked
+    # (+40% Fri to 21.51) then drained one day to 19.74 was labelled 'calm' — it fell under the old hard
+    # `level >= 20` gate on 'rising' yet was +23% over 5d / +14.8% above its mean (2026-06-08, trader-found).
+    # Priority: spiking -> elevated-falling -> rising -> elevated -> falling -> calm.
+    # 'elevated-falling' BEFORE 'rising': a high-but-DRAINING VIX travels down, so the trailing-5d spike must
+    # not read as 'rising'. 'rising' requires chg_1d >= -5 so a 5d spike that is NOW unwinding (-8% today)
+    # falls through to 'elevated' rather than falsely implying fear is still building.
     if chg_1d >= 20 or chg_5d >= 30:
         state = "spiking"
-    elif chg_5d >= 12 and level >= 20:
-        state = "rising"
-    elif chg_5d <= -12 and level >= 25:
+    elif vs_ma20 >= 10 and chg_5d <= -12:
         state = "elevated-falling"
+    elif (chg_5d >= 12 or vs_ma20 >= 15) and chg_1d >= -5:
+        state = "rising"
+    elif vs_ma20 >= 10:
+        state = "elevated"
     elif chg_5d <= -12:
         state = "falling"
     else:
@@ -2086,7 +2194,11 @@ def detect_groups(tickers, lookback=15, min_move=8.0, corr_thr=0.86, max_cand=12
     return groups
 
 
-def scan(tickers, settings=None, progress=None, max_age=12, market="us"):
+def scan(tickers, settings=None, progress=None, max_age=12, market="us", forming_date=None):
+    # forming_date = today's market-local date string while a session is IN PROGRESS (else None). A
+    # ticker whose freshest daily bar IS that date has a still-forming last bar, so analyze() runs the
+    # respected-bounce gate on settled structure only (see analyze's forming_last). Per-ticker so a
+    # stale/halted name (last bar != today) is unaffected. None ⇒ all bars treated as settled (EOD).
     results, fails = [], []
     total = len(tickers)
     for i, t in enumerate(tickers, 1):
@@ -2100,7 +2212,8 @@ def scan(tickers, settings=None, progress=None, max_age=12, market="us"):
                 time.sleep(0.05)
             continue
         try:
-            results.append(analyze(t, bars, settings))
+            _forming = bool(forming_date and bars[-1].get("time") == forming_date)
+            results.append(analyze(t, bars, settings, forming_last=_forming))
         except Exception:
             fails.append(t)
         if fetched:                 # only throttle when we actually hit Yahoo (cache miss)
