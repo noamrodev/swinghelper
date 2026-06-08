@@ -1,5 +1,5 @@
 {
-  "computed_at": "2026-06-06 09:37 UTC",
+  "computed_at": "2026-06-08 08:07 UTC",
   "posture": 45,
   "posture_raw": 45,
   "label": "Mixed / pullback",
@@ -57,27 +57,26 @@
     }
   ],
   "fear_greed": {
-    "score": 52,
+    "score": 54,
     "label": "Neutral",
     "components": {
       "extension": 66,
       "rsi": 50,
       "breadth": 56,
       "highs_lows": 75,
-      "vix": 13
+      "vix": 22
     },
     "posture_nudge": 0
   },
   "vix_trend": {
-    "level": 21.51,
-    "change_1d_pct": 39.7,
-    "change_5d_pct": 40.4,
-    "change_7d_pct": 32.0,
-    "ma20": 17.12,
-    "vs_ma20_pct": 25.6,
-    "state": "spiking",
+    "level": 19.74,
+    "change_1d_pct": -8.2,
+    "change_5d_pct": 23.0,
+    "change_7d_pct": 25.4,
+    "ma20": 17.19,
+    "vs_ma20_pct": 14.8,
+    "state": "calm",
     "spark": [
-      17.38,
       17.39,
       17.08,
       17.19,
@@ -100,8 +99,9 @@
       15.77,
       16.06,
       15.4,
-      21.51
+      21.51,
+      19.74
     ],
-    "as_of": "2026-06-05"
+    "as_of": "2026-06-08"
   }
 }

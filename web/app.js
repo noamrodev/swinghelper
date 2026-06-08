@@ -36,6 +36,7 @@ function dataCenter() {
       { id: 'strategy', label: 'Strategy & Rules', icon: '📚' },
     ],
     view: 'dashboard',           // the website is for browsing; the tray "live coach" makes the calls
+    chartOnly: false,            // ?chart= deep-link (autopilot/coach "View chart"): show ONLY the chart, no dashboard
     watchOpen: false,            // 📋 live-market watchlist drawer (right edge) — all names by sector
     watchCollapsed: {},          // per-sector collapse state in the watchlist drawer
     watchSort: 'sector',         // sector | gainers | losers | grade — how the watchlist is organized
@@ -208,6 +209,7 @@ function dataCenter() {
       }
     },
     async init() {
+      window.__dc = this;   // global handle so x-html-rendered controls (plan-view chart button) can call methods
       this.scalePct = parseInt(localStorage.getItem('dc_scale')) || 125;
       this.applyScale();
       window.addEventListener('resize', () => { clearTimeout(this._rt); this._rt = setTimeout(() => this.onResize(), 120); });
@@ -231,6 +233,9 @@ function dataCenter() {
       setInterval(() => { if (this.live.updated_at) this.liveAgeSec = Math.round((Date.now() - this._liveAt) / 1000); }, 1000);
       this.loadHealth();                                     // ❤️ vital signs now + every 20s
       setInterval(() => this.loadHealth(), 20000);
+      // deep-link: Auto Pilot's plan "View chart" button arrives as /?site=1&chart=TICKER
+      const _ct = new URLSearchParams(location.search).get('chart');
+      if (_ct) { this.chartOnly = true; this.view = 'suggestions'; try { this.showChart(_ct.toUpperCase(), {}); } catch (e) {} }
     },
 
     // ---------- live updates (free Yahoo quotes, polled while the market is open) ----------
@@ -585,19 +590,78 @@ function dataCenter() {
       if (!a || !a.trigger || !a.live_price) return null;
       return Math.round((a.trigger / a.live_price - 1) * 1000) / 10;   // % to go (≤0 ⇒ already through)
     },
-    // the per-setup PLAN (the 📋) rendered as the exact if-this-then-that the coach will execute
+    // short, value-only TARGET / INVALID strings per setup type (the levels strip wants values, not sentences)
+    planShortTarget(setup) {
+      const st = (setup || '').toLowerCase();
+      if (st.includes('deep pullback')) return 'trail 50';
+      if (st.includes('consolidation')) return 'trail 9';
+      if (st.includes('avwap') || st.includes('pullback')) return 'trail 20';
+      return 'trim 2R';
+    },
+    planShortInvalid(setup) {
+      const st = (setup || '').toLowerCase();
+      if (st.includes('deep pullback')) return 'close<50';
+      if (st.includes('consolidation')) return 'lose cluster';
+      if (st.includes('avwap')) return 'lose AVWAP';
+      return 'lose day low';
+    },
+    // the per-setup PLAN (the 📋) — v5 layout: BUY hero · levels strip · WHY metric grid · chart button.
+    // Spec: mockups/plan.html. Built from the plan dict (p.plan) + structured fields on the item p.
     planHtml(p) {
       const pl = (p && p.plan) || {};
-      const esc = s => (s == null ? '' : String(s)).replace(/[<>]/g, c => ({ '<': '&lt;', '>': '&gt;' }[c]));
-      const row = (label, val, color) => val
-        ? `<div class="flex gap-2 text-xs py-0.5"><span class="w-20 shrink-0 text-slate-500">${label}</span><span class="${color || 'text-slate-200'}">${esc(val)}</span></div>` : '';
-      return row('1 · Watch', pl.watch)
-        + row('2 · BUY', pl.trigger, 'text-up font-semibold')
-        + row('Stop', pl.stop, 'text-down')
-        + row('Size', pl.size)
-        + row('Target', pl.target)
-        + row('Invalidate', pl.invalidate, 'text-amber-300/90')
-        + row('Why', pl.why, 'text-slate-400');
+      const esc = s => (s == null ? '' : String(s)).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+      const setup = p && p.setup_type;
+
+      // --- BUY hero: the plan's buy/trigger line, kept concise ---
+      const buyTxt = esc(pl.trigger || 'Buy the confirmed trigger off the level — tight stop just under it.');
+
+      // --- levels strip (short values only) ---
+      const stopV = p && p.stop != null ? '$' + p.stop : (esc(pl.stop) || '—');
+      const sizeV = (p && p.shares != null) ? p.shares + ' sh'
+        : (pl.size ? esc(String(pl.size).split('·')[0].trim()) : '—');   // fall back to the plan's size text
+      const tgtV = this.planShortTarget(setup);
+      const invalV = this.planShortInvalid(setup);
+      const levels = `
+        <div class="levels">
+          <div class="lvl5 stop"><div class="lvl-l">Stop</div><div class="lvl-v mono">${stopV}</div></div>
+          <div class="lvl5 size"><div class="lvl-l">Size</div><div class="lvl-v mono">${sizeV}</div></div>
+          <div class="lvl5 tgt"><div class="lvl-l">Target</div><div class="lvl-v">${tgtV}</div></div>
+          <div class="lvl5 inval"><div class="lvl-l">Invalid</div><div class="lvl-v mono">${invalV}</div></div>
+        </div>`;
+
+      // --- WHY grid: real structured metrics (not prose) ---
+      const pct = v => (v == null ? null : (v > 0 ? '+' : '') + Math.round(v) + '%');
+      const cell = (label, val, cls, sub) => {
+        if (val == null) return `<div class="m"><div class="m-l">${label}</div><div class="m-v">—</div></div>`;
+        return `<div class="m"><div class="m-l">${label}</div><div class="m-v ${cls || ''} ${cls ? 'mono' : ''}">${val}${sub ? `<span class="m-s"> ${sub}</span>` : ''}</div></div>`;
+      };
+      const p1 = pct(p && p.p1m), p6 = pct(p && p.p6m);
+      const pull = (p && p.pull_from_high != null) ? Math.round(p.pull_from_high) + '%' : null;
+      const vol = (p && p.volc != null) ? p.volc.toFixed(2) : null;
+      const volDry = (p && p.volc != null && p.volc < 1) ? '↓dry' : (p && p.volc != null ? '↑up' : '');
+      const whyGrid = `
+        <div class="why-grid">
+          ${cell('1-mo', p1, p1 && p1[0] === '+' ? 'up' : (p1 ? 'amb' : ''))}
+          ${cell('6-mo', p6, p6 && p6[0] === '+' ? 'up' : (p6 ? 'amb' : ''))}
+          <div class="m"><div class="m-l">Pullback</div><div class="m-v">${pull || '—'}${pull ? '<span class="m-s"> to 50</span>' : ''}</div></div>
+          ${cell('Volume', vol, 'amb', volDry)}
+        </div>`;
+      // clean one-line thesis — the metrics already live in the grid above, so keep this purely qualitative
+      const _lead = (p && p.p6m != null && p.p6m >= 60) ? 'A strong leader' : 'A leader';
+      const _dry = (p && p.volc != null && p.volc < 0.85) ? ' on drying volume — sellers exhausting' : '';
+      const _st = (setup || '').toLowerCase();
+      const thesis = _st.includes('pullback') ? `${_lead} pulling back into the 50 EMA${_dry}.`
+        : _st.includes('avwap') ? `${_lead} reclaiming its anchored VWAP${_dry}.`
+        : _st.includes('episodic') ? `${_lead} gapping on a fresh catalyst${_dry}.`
+        : (_st.includes('breakout') || _st.includes('consol')) ? `${_lead} breaking out of its base${_dry}.`
+        : `${_lead} setting up${_dry}.`;
+
+      return `<div class="plan5">
+        <div class="buy"><div class="buy-l">🎯 Buy</div><div class="buy-t">${buyTxt}</div></div>
+        ${levels}
+        <div class="why"><div class="why-h">Why this setup</div>${whyGrid}${thesis ? `<div class="thesis">${thesis}</div>` : ''}</div>
+        <button class="chart-btn" onclick="window.__dc && window.__dc.showChart('${esc(p && p.ticker)}', {})">📈 View chart</button>
+      </div>`;
     },
     async loadForward() {
       try {
@@ -746,6 +810,37 @@ function dataCenter() {
       if (t.includes('Episodic')) return 'badge-ep';
       return 'badge-breakout';
     },
+    // ---- Lexicon context badges (display-only; see strategy/lexicon.md) ----
+    // Tags already shown as a dedicated badge (Trend Template / VCP / the setup-type badge) are
+    // suppressed here to avoid a double badge.
+    _LEX_DEDUP: { STAGE2: 1, VCP: 1, EP: 1 },
+    _LEX_LABEL: { '52WH_BO': '52WH BO', RS_LEADER: 'RS Leader', BGU: 'Buyable Gap-Up',
+      YH_RECLAIM: 'YH ↑', TIGHTNESS: 'Tight', VDU: 'Volume Dry-Up', PARABOLIC: '⚠ Parabolic' },
+    lexLabel(tag) { return this._LEX_LABEL[tag] || tag; },
+    lexStyle(role) {
+      return ({
+        S: 'background:rgba(106,141,255,.18);color:#b8c8ff;border-color:rgba(106,141,255,.45)',  // setup → indigo
+        T: 'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.40)',    // trigger → cyan
+        C: 'background:rgba(168,85,247,.18);color:#d9b3ff;border-color:rgba(168,85,247,.45)',    // context → violet
+        X: 'background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)',    // trap → amber
+      })[role] || 'background:rgba(148,163,184,.12);color:#94a3b8;border-color:rgba(148,163,184,.30)';
+    },
+    // Returns { shown:[≤3 tags], moreCount, moreTitle } — backend already sorts by conviction.
+    lexVisible(s) {
+      const all = (s && s.lexicon_tags || []).filter(t => !this._LEX_DEDUP[t.tag]);
+      const shown = all.slice(0, 3);
+      const more = all.slice(3);
+      return { shown, moreCount: more.length,
+        moreTitle: more.map(t => this.lexLabel(t.tag) + ' — ' + t.define).join('\n') };
+    },
+    // Lexicon Phase 2 — the confirmation menu (what will confirm an armed setup), in tag vocabulary.
+    _CONFIRM_LABEL: { ORH_BREAK: "opening-range-high break", HOD_BREAK: "today's-high break",
+      YH_RECLAIM: "reclaim of yesterday's high", RECLAIM_50: "reclaim of the 50 EMA",
+      EMA_RECLAIM: "reclaim above the EMA cluster" },
+    confirmMenuText(a) {
+      const m = (a && a.confirm_menu) || [];
+      return m.map(t => this._CONFIRM_LABEL[t] || t).join(' or ');
+    },
     wl(r) { return this.wlData[r.ticker] || {}; },
     get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected' && s.status !== 'taken').slice(0, 8); },
     // grade band from the rating (A+ 5 … D 1) — used so the sort respects GRADE first:
@@ -758,13 +853,14 @@ function dataCenter() {
         || (b.score || 0) - (a.score || 0);                    // raw-score tiebreak so the order is STABLE (no rating-72 reshuffle)
     },
     get filteredSuggestions() {
-      // DECIDED names leave the default queue: taken (✓) and passed (✗) are hidden so the list only
-      // shows what you still have to decide. status.json is shared, so a decision in the app or here
-      // syncs both. The 'approved' filter surfaces approved+taken; `showPassed` reveals passed ones.
+      // SHOW ALL setups — never hide a decided name (user 2026-06-08: "i want to see all setups").
+      // Taken (✓) and passed (✗) keep their status badge so they're still distinguishable at a glance,
+      // but nothing is removed from the list. status.json still syncs decisions across surfaces.
+      // ('approved'/'pending' explicit filters kept for completeness; default 'all' filters nothing.)
       let items = (this.suggestions.items || []);
       if (this.filter === 'approved') items = items.filter(s => s.status === 'approved' || s.status === 'taken');
       else if (this.filter === 'pending') items = items.filter(s => s.status === 'pending' || !s.status);
-      else items = items.filter(s => s.status !== 'taken' && (this.showPassed || s.status !== 'rejected'));
+      // else ('all'): no status filtering — every setup stays visible
       const sf = this.setupFilter;
       if (sf === 'Pullback') items = items.filter(s => (s.setup_type || '').includes('Pullback'));
       else if (sf === 'AVWAP') items = items.filter(s => (s.setup_type || '').includes('AVWAP'));
@@ -1106,6 +1202,7 @@ function dataCenter() {
         'planner':      { label: 'WAR ROOM',     color: '#f5a623', prop: '🗺️' },
         'analyst':      { label: 'LIBRARY',      color: '#7dd3fc', prop: '📚' },
         'shipper':      { label: 'LAUNCH BAY',   color: '#c084fc', prop: '🚀' },
+        'token-master': { label: 'SIGNAL TOWER', color: '#ec4899', prop: '🗜️' },
       };
       return M[a.name] || { label: (a.squad || 'OFFICE').toUpperCase() + ' ROOM', color: '#6a8dff', prop: '🖥️' };
     },
@@ -1117,7 +1214,7 @@ function dataCenter() {
     // chief first (largest tile), then a stable order grouped by squad
     get hqRooms() {
       const agents = this.hq.agents || [];
-      const order = ['Brain', 'Build', 'Protect', 'Steer', 'Ship'];
+      const order = ['Brain', 'Build', 'Protect', 'Steer', 'Ship', 'Critic'];
       return [...agents].sort((x, y) => {
         if (x.leader !== y.leader) return x.leader ? -1 : 1;
         const sx = order.indexOf(x.squad), sy = order.indexOf(y.squad);
@@ -1406,6 +1503,19 @@ function dataCenter() {
       if (e.trigger_note) return ((e.entry_type === 'stop' ? '▲ ' : '⏳ ') + e.trigger_note + now).replaceAll('$', cur);
       if (e.entry_type === 'stop') return `▲ break above ${cur}${e.entry} to trigger${now}`;
       return `⏳ wait for the pullback to ${cur}${e.entry}${now}`;
+    },
+    // The single condition line for a setup's status panel — same content as entryHint but with the
+    // leading ⏳/▲/⛔ icon stripped (the panel already shows ONE state label + pulsing dot, so the icon
+    // would be a redundant double-hourglass). Kills the "⏳ Waiting · ⏳ wait for the pullback" repeat.
+    condText(e, close) { return this.entryHint(e, close).replace(/^[⏳▲⛔]\s*/, ''); },
+    // The status panel's state for a setup leg → { label, cls } where cls ∈ ''(amber waiting) | 'grn' | 'red'.
+    // 'BUYABLE NOW' (green) only when the engine confirmed; 'In the zone' amber when fillable but unconfirmed;
+    // 'Ran away' red for a stale dip; otherwise 'Waiting'. One label, never doubled.
+    setupState(s, e) {
+      if (e.stale) return { label: 'Ran away', cls: 'red' };
+      if (this.isConfirmedBuyable(s, e)) return { label: 'Buyable now', cls: 'grn' };
+      if (e.buyable_now) return { label: 'In the zone', cls: '' };
+      return { label: 'Waiting', cls: '' };
     },
     // LIVE intraday rotation: once the market's open and a (non-patient) name has broken out and
     // sits ABOVE its daily pullback zone, the realistic pullback entry is the rotation — buy the
@@ -1843,6 +1953,7 @@ function dataCenter() {
       this.chartModal._series = null; this.chartModal._bars = null; this.chartModal._rotStop = null; this.chartModal._priceLine = null;
       this.chartModal._meta = null; this.chartModal._showLive = false;
       this.chartModal.open = false;
+      if (this.chartOnly) this.chartOnly = false;   // chart-only deep-link: closing reveals the app on suggestions, never the dashboard
     },
   };
 }

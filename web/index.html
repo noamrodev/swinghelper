@@ -6,7 +6,7 @@
   <title>Trading Data Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <link rel="stylesheet" href="styles.css" />
@@ -14,7 +14,7 @@
   <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
   <script>
     tailwind.config = { theme: { extend: {
-      fontFamily: { sans: ['Inter', 'sans-serif'] },
+      fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'], head: ['Space Grotesk', 'sans-serif'] },
       colors: {
         ink: '#0a0d14', panel: '#11161f', panel2: '#18202e', line: '#222c3c',
         accent: '#5b8cff', up: '#2ec27e', down: '#f25268', warn: '#f5a623' } } } }
@@ -28,7 +28,7 @@
     <div x-show="mobileNav" @click="mobileNav=false" class="fixed inset-0 bg-black/50 z-30 md:hidden" x-cloak></div>
 
     <!-- Sidebar (off-canvas drawer on mobile, static on md+) -->
-    <aside class="w-64 shrink-0 bg-panel border-r border-line flex flex-col fixed md:static inset-y-0 left-0 z-40 transition-transform duration-200 md:translate-x-0"
+    <aside x-show="!chartOnly" class="w-64 shrink-0 bg-panel border-r border-line flex flex-col fixed md:static inset-y-0 left-0 z-40 transition-transform duration-200 md:translate-x-0"
       :class="mobileNav ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
       <div class="px-5 py-5 border-b border-line">
         <div class="text-xl font-extrabold tracking-tight brand">◆ Data Center</div>
@@ -90,7 +90,7 @@
     </aside>
 
     <!-- Main -->
-    <main class="flex-1 overflow-y-auto">
+    <main x-show="!chartOnly" class="flex-1 overflow-y-auto">
       <header class="sticky top-0 z-10 bg-ink/90 backdrop-blur border-b border-line px-4 sm:px-7 py-4 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3 min-w-0">
           <button class="md:hidden text-2xl leading-none text-slate-300 hover:text-white" @click="mobileNav=true" aria-label="Open menu">☰</button>
@@ -436,7 +436,7 @@
 
           <!-- 🛡️ DEFEND MODE banner — extended + weak tape: flatten momentum into the close, no overnight risk -->
           <template x-if="(now&&now.defend&&now.defend.on)||(gameplan&&gameplan.defend&&gameplan.defend.on)">
-            <div class="rounded-xl px-4 py-3 flex items-start gap-3" style="background:rgba(255,90,114,.13);border:1px solid rgba(255,90,114,.5)">
+            <div class="v4-banner flex items-start gap-3" style="background:linear-gradient(100deg,rgba(255,90,114,.16),rgba(255,90,114,.05));border-color:rgba(255,90,114,.5);border-left-color:#ff5a72">
               <span class="text-2xl leading-none shrink-0">🛡️</span>
               <div class="min-w-0">
                 <div class="text-base font-extrabold" style="color:#ff8aa0">DEFEND MODE
@@ -504,6 +504,8 @@
                             <span class="text-xs text-amber-300 shrink-0" x-text="a.break_level ? ('break $'+a.break_level) : a.orh ? ('OR hi $'+a.orh) : (a.kind==='breakout' ? 'on OR-high break' : 'zone $'+(a.zone||a.entry))"></span>
                             <span class="text-[10px] text-slate-500 shrink-0" x-text="expandedPlan[a.ticker]?'▲':'▼'"></span>
                           </div>
+                          <!-- Lexicon Phase 2: what will confirm this setup, in tag vocabulary -->
+                          <div class="text-[11px] px-2.5 pb-1.5 -mt-0.5" style="color:#ffd591" x-show="confirmMenuText(a)" :title="'The confirmation menu for a '+a.setup_type+' — the engine fires the buy on whichever of these triggers first.'">⏳ confirms on: <span x-text="confirmMenuText(a)"></span></div>
                           <div x-show="expandedPlan[a.ticker]" x-transition.opacity class="px-3 pb-2.5 pt-1 border-t" style="border-color:rgba(255,181,61,.2)" x-html="planHtml(a)"></div>
                         </div>
                       </template>
@@ -533,21 +535,21 @@
             <template x-if="gameplan">
               <div class="space-y-4" x-show="gameplanOpen">
                 <!-- stance banner — the headline -->
-                <div class="rounded-xl px-4 py-3" :style="'background:'+postureColor(gameplan.posture)+'1f;border:1px solid '+postureColor(gameplan.posture)+'55'">
+                <div class="v4-banner" :style="'background:linear-gradient(100deg,'+postureColor(gameplan.posture)+'22,'+postureColor(gameplan.posture)+'0a);border-color:'+postureColor(gameplan.posture)+'55;border-left-color:'+postureColor(gameplan.posture)">
                   <div class="text-lg font-extrabold leading-tight" :style="'color:'+postureColor(gameplan.posture)" x-text="gameplan.stance"></div>
                   <div class="text-sm text-slate-200 mt-1 leading-snug" x-text="gameplan.bottom_line"></div>
                 </div>
                 <!-- exposure mini-stats -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center" x-show="gameplan.exposure.account">
-                  <div class="lvl"><div class="lvl-l">Invested</div><div class="font-bold" x-text="gameplan.exposure.invested_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.invested).toLocaleString()"></div></div>
-                  <div class="lvl"><div class="lvl-l">Free cash</div><div class="font-bold text-up" x-text="cur+Math.round(gameplan.exposure.free_cash).toLocaleString()"></div></div>
-                  <div class="lvl"><div class="lvl-l">Open risk</div><div class="font-bold" :class="gameplan.exposure.open_risk_pct>2?'text-warn':''" x-text="gameplan.exposure.open_risk_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.open_risk).toLocaleString()"></div></div>
-                  <div class="lvl"><div class="lvl-l">Positions</div><div class="font-bold" x-text="gameplan.exposure.positions"></div></div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-show="gameplan.exposure.account">
+                  <div class="v4-tile"><div class="v4-tile-l">Invested</div><div class="v4-tile-v" x-text="gameplan.exposure.invested_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.invested).toLocaleString()"></div></div>
+                  <div class="v4-tile"><div class="v4-tile-l">Free cash</div><div class="v4-tile-v text-up" x-text="cur+Math.round(gameplan.exposure.free_cash).toLocaleString()"></div></div>
+                  <div class="v4-tile"><div class="v4-tile-l">Open risk</div><div class="v4-tile-v" :class="gameplan.exposure.open_risk_pct>2?'text-warn':''" x-text="gameplan.exposure.open_risk_pct+'%'"></div><div class="text-[10px] text-slate-500" x-text="cur+Math.round(gameplan.exposure.open_risk).toLocaleString()"></div></div>
+                  <div class="v4-tile"><div class="v4-tile-l">Positions</div><div class="v4-tile-v" x-text="gameplan.exposure.positions"></div></div>
                 </div>
                 <!-- Your positions — manage + full detail merged (live coach; premarket-aware via _liveCoach) -->
-                <div class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
+                <div class="v4-sub">
                   <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
-                    <div class="text-xs uppercase tracking-wide text-slate-500 font-bold">📊 Your positions <span class="text-slate-600" x-show="openTrades.length" x-text="'· '+openTrades.length"></span></div>
+                    <div class="v4-eyebrow">📊 Your positions <span class="text-slate-600" x-show="openTrades.length" x-text="'· '+openTrades.length"></span></div>
                     <template x-if="entryGradeStats(openTrades)">
                       <span class="text-[11px] flex items-center gap-1" title="Average system grade of your entries, as of each entry date. Below B = worth reviewing.">
                         <span class="text-slate-500">entries avg</span>
@@ -560,7 +562,7 @@
                   <template x-if="openTrades.length===0"><div class="text-sm text-slate-500">No open positions.</div></template>
                   <div class="space-y-1.5">
                     <template x-for="t in openTrades" :key="t.id">
-                      <div class="rounded-lg" style="background:rgba(7,10,18,.4)">
+                      <div class="v4-row" style="background:rgba(7,10,18,.4)">
                         <!-- collapsed: live action + ticker + P&L + reason + show-more -->
                         <div class="flex items-center gap-2 px-2 py-1.5 text-sm">
                           <span class="badge font-extrabold shrink-0 w-[4.6rem] text-center" x-show="(t._liveCoach||t.coach)" :style="actionStyle((t._liveCoach||t.coach||{}).tone)" x-text="(t._liveCoach||t.coach||{}).action"></span>
@@ -609,8 +611,8 @@
                 </div>
 
                 <!-- Avoid (the "New entries" list was removed — "Top suggestions today" below is the entry list) -->
-                <div x-show="gameplan.avoid.length" class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
-                  <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">🛑 Avoid today</div>
+                <div x-show="gameplan.avoid.length" class="v4-sub">
+                  <div class="v4-eyebrow mb-2">🛑 Avoid today</div>
                   <div class="space-y-1">
                     <template x-for="a in gameplan.avoid" :key="a.ticker">
                       <div class="text-sm text-slate-400"><span class="font-bold text-slate-300" x-text="a.ticker"></span> — <span x-text="a.reason"></span></div>
@@ -618,8 +620,8 @@
                   </div>
                 </div>
                 <!-- reminders -->
-                <div x-show="gameplan.lessons.length" class="rounded-lg border border-line p-3" style="background:rgba(255,255,255,.02)">
-                  <div class="text-xs uppercase tracking-wide text-slate-500 font-bold mb-2">💡 Remember (from your lessons)</div>
+                <div x-show="gameplan.lessons.length" class="v4-sub">
+                  <div class="v4-eyebrow mb-2">💡 Remember (from your lessons)</div>
                   <div class="space-y-1">
                     <template x-for="(l,li) in gameplan.lessons" :key="li"><div class="text-xs text-amber-300/80">• <span x-text="l"></span></div></template>
                   </div>
@@ -637,7 +639,7 @@
             </div>
             <template x-if="topSuggestions.length===0"><div class="p-5 text-sm text-slate-500">No scan yet — go to Suggestions and run one.</div></template>
             <template x-for="s in topSuggestions" :key="s.ticker">
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-2.5 border-t border-line text-sm">
+              <div class="v4-divrow flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-2.5 text-sm">
                 <div class="w-7 text-center font-extrabold" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
                 <div class="w-20 font-bold flex items-center gap-1">
                   <span x-show="confStatus(s)==='confirmed' && inZone(s)" title="confirmed — buyable now">🟢</span><span x-show="inZone(s) && !(confStatus(s)==='confirmed')" title="in the zone — waiting for confirmation">⏳</span><span x-text="s.ticker"></span>
@@ -789,11 +791,11 @@
               <span x-show="!scan.running">▶ Run scan</span>
               <span x-show="scan.running">Scanning… <span x-text="scan.done"></span>/<span x-text="scan.total"></span></span>
             </button>
-            <div x-show="scan.running" class="flex-1 max-w-xs h-2 bg-panel2 rounded overflow-hidden">
-              <div class="h-full bg-accent transition-all" :style="`width:${scan.total?Math.round(scan.done/scan.total*100):0}%`"></div>
+            <div x-show="scan.running" class="flex-1 max-w-xs h-2 bg-panel2 rounded-full overflow-hidden">
+              <div class="h-full progress-fill rounded-full transition-all" :style="`width:${scan.total?Math.round(scan.done/scan.total*100):0}%`"></div>
             </div>
             <button class="btn-sm" @click="autoScan=!autoScan"
-              :class="autoScan?'bg-accent/30 border-accent/50':''"
+              :class="autoScan?'fchip on':''"
               title="Auto-rescan the universe every 30 min while the market is open (fresh intraday data) so new setups appear on their own">
               ⟳ Auto-rescan <span x-text="autoScan?'on':'off'"></span>
             </button>
@@ -851,118 +853,138 @@
             </div>
           </div>
 
-          <div x-show="hotSectors.length" class="flex items-center gap-2 flex-wrap text-sm">
-            <span class="text-slate-400">🔥 Hot sectors:</span>
-            <template x-for="hs in hotSectors" :key="hs"><span class="badge badge-hot"><span class="fire">🔥</span><span x-text="hs"></span></span></template>
+          <div x-show="hotSectors.length" class="flex items-center gap-2 flex-wrap text-sm rounded-xl px-3.5 py-2.5" style="background:linear-gradient(180deg,rgba(255,140,90,.06),rgba(255,140,90,.02));border:1px solid rgba(255,140,90,.18)">
+            <span class="fgroup-label" style="color:#ffd0a8">🔥 Hot sectors</span>
+            <template x-for="hs in hotSectors" :key="hs"><button class="badge badge-hot" @click="sectorFilter=hs; showFilters=true" :class="sectorFilter===hs?'ring-1 ring-amber-400/60':''" title="Filter the list to this sector"><span class="fire">🔥</span><span x-text="hs"></span></button></template>
           </div>
 
           <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <template x-for="(s,i) in displayedSuggestions" :key="s.ticker">
-              <div class="card card-hover anim-in p-4 space-y-3" :style="`animation-delay:${Math.min(i*40,400)}ms`" :class="s.extended?'ring-1 ring-amber-500/40':''">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <div class="flex items-center gap-1.5">
-                      <div class="text-xl font-extrabold tracking-tight" x-text="s.ticker"></div>
-                      <template x-if="nowByTicker()[s.ticker]">
-                        <span class="badge shrink-0" :title="nowByTicker()[s.ticker].rec.confirm"
-                          :style="nowByTicker()[s.ticker].state==='confirmed' ? 'background:rgba(34,224,161,.2);color:#9bf0cf;border-color:rgba(34,224,161,.6)' : 'background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)'"
-                          x-text="nowByTicker()[s.ticker].state==='confirmed' ? '🟢 BUYERS CONFIRMED' : '⏳ armed'"></span>
-                      </template>
-                    </div>
-                    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span class="badge" :class="setupClass(s.setup_type)" x-text="s.setup_type"></span>
-                      <span class="badge" :class="s.theme_hot?'badge-hot':''" x-show="s.theme"><span x-show="s.theme_hot" class="fire">🔥</span><span x-text="s.theme"></span></span>
-                      <span class="badge" x-show="groupMedal(s)" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme+' by relative strength'"
-                        style="background:linear-gradient(110deg,rgba(255,181,61,.22),rgba(255,95,162,.18));color:#ffd591;border-color:rgba(255,181,61,.5)">
-                        <span x-text="groupMedal(s)"></span> <span x-text="s.group_leader ? 'Group leader' : '#'+s.group_rank"></span>
-                      </span>
-                      <span class="badge" x-show="s.theme_trend" :class="trendClass(s.theme_trend)"><span x-text="trendIcon(s.theme_trend)"></span> <span x-text="s.theme_trend"></span></span>
-                      <span class="badge" x-show="s.news_trump" style="background:rgba(255,95,162,.22);color:#ffc6dd;border-color:rgba(255,95,162,.5)">🇺🇸 Trump</span>
-                      <span class="badge" x-show="s.news_flag && !s.news_trump"
-                        :style="s.news_dir==='bad'?'background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)':s.news_dir==='good'?'background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)':'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)'"
-                        x-text="(s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰')+(s.news_scope==='sector'?' Sector':' News')"></span>
-                      <template x-for="ms in [['1M',s.screen_1m],['3M',s.screen_3m],['6M',s.screen_6m]]" :key="ms[0]">
-                        <span class="badge" x-show="ms[1]" :title="'Passes the '+ms[0]+' momentum screen'"
-                          style="background:rgba(106,141,255,.18);color:#b8c8ff;border-color:rgba(106,141,255,.45)">🚀 <span x-text="ms[0]"></span></span>
-                      </template>
-                      <span class="badge" x-show="isWorthWaiting(s)" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA"
-                        style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⏳ Worth waiting</span>
-                      <span class="badge" x-show="s.trend_template" :title="'Minervini Trend Template '+(s.tt_count||8)+'/8 — confirmed Stage-2 uptrend leader (worth watching)'"
-                        style="background:rgba(34,224,161,.18);color:#9bf0cf;border-color:rgba(34,224,161,.5)">✓ Trend Template</span>
-                      <span class="badge" x-show="s.vcp" :title="'Volatility Contraction Pattern — '+(s.vcp_contractions||0)+' contractions, coiling near the pivot'"
-                        style="background:rgba(168,85,247,.18);color:#d9b3ff;border-color:rgba(168,85,247,.45)">🌀 VCP</span>
-                      <template x-if="earnBadge(s)">
-                        <span class="badge" :style="earnBadge(s).style" :title="(earnBadge(s).soon?'Earnings within a week — skip new entries (binary risk)':'Earnings coming up — be cautious sizing in')+(s.earnings_date?' · '+s.earnings_date:'')" x-text="earnBadge(s).text"></span>
-                      </template>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-3xl font-extrabold leading-none" :style="'color:'+gradeColor(cardGrade(s).grade)" x-text="cardGrade(s).grade"></div>
-                    <div class="text-[10px] text-slate-500" x-text="cardGrade(s).rating+'/100 · ADR '+s.adr+'%'"></div>
-                    <div class="text-xs font-bold" x-show="s._livechg!=null" :class="s._livechg>=0?'text-up':'text-down'">
+              <div class="card2 anim-in space-y-3" x-data="{showAllTags:false, showDetails:false}" :style="`animation-delay:${Math.min(i*40,400)}ms`" :class="s.extended?'ring-1 ring-amber-500/40':''">
+                <!-- ===== header: sector / ticker / price · grade chip + armed pill ===== -->
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="sec2 truncate" x-show="s.theme" x-text="s.theme"></div>
+                    <div class="tk2" x-text="s.ticker"></div>
+                    <div class="text-xs font-bold mt-1" x-show="s._livechg!=null" :class="s._livechg>=0?'text-up':'text-down'">
                       <span class="text-up text-[9px]">●</span> <span x-text="cur"></span><span x-text="s.close"></span> <span x-text="(s._livechg>=0?'+':'')+s._livechg+'%'"></span>
                     </div>
-                    <span class="badge mt-1" x-show="s.status==='taken'" :class="statusClass(s.status)">✓ taken</span>
+                  </div>
+                  <div class="flex flex-col items-end gap-1.5 shrink-0">
+                    <div class="grade2" :style="'color:'+gradeColor(cardGrade(s).grade)+';background:'+gradeColor(cardGrade(s).grade)+'1f;border-color:'+gradeColor(cardGrade(s).grade)+'4d'" :title="cardGrade(s).rating+'/100 · ADR '+s.adr+'%'" x-text="cardGrade(s).grade"></div>
+                    <template x-if="nowByTicker()[s.ticker]">
+                      <span class="armed2" :title="nowByTicker()[s.ticker].rec.confirm"
+                        :style="nowByTicker()[s.ticker].state==='confirmed' ? 'color:#9bf0cf;background:rgba(34,224,161,.14);border-color:rgba(34,224,161,.45)' : ''"
+                        x-text="nowByTicker()[s.ticker].state==='confirmed' ? '🟢 confirmed' : '⏳ armed'"></span>
+                    </template>
+                    <span class="badge" x-show="s.status==='taken'" :class="statusClass(s.status)">✓ taken</span>
                   </div>
                 </div>
-                <!-- entry options: a Breakout (buy-stop above a pivot) and/or a Pullback (buy the dip to
-                     support below price). Each is typed + phrased correctly — a buy-stop is "break above",
-                     a limit is "wait for the pullback", never "pull back toward" an upside trigger. -->
-                <div class="space-y-2">
-                  <template x-for="(e,ei) in displayEntries(s)" :key="ei">
-                    <div class="rounded-xl p-2.5" :class="(ei===0?'border border-white/10 bg-white/[0.03]':'border border-white/5 bg-white/[0.015]')+(e.stale?' opacity-60':'')">
-                      <div class="flex items-center justify-between gap-2 mb-1.5">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                          <span class="badge shrink-0" :class="e.kind==='breakout'?'badge-ep':(e.kind==='confirm'?'':'badge-pullback')"
-                            :style="e.kind==='confirm'?'background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)':''"
-                            :title="e.kind==='confirm'?'Confirmation entry — instead of catching the deep dip, buy once buyers prove themselves by reclaiming the 50 EMA (if price slid below it) or breaking the prior-day high. 1× ADR stop. Graded & forward-tested like any entry.':''"
-                            x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))+(ei===0?'':' · alt')"></span>
-                          <span x-show="e.stale" class="badge shrink-0" title="Price has broken out and run far above this dip entry (more than ~1× ADR above the buy zone). A pullback this deep is unlikely, so this option is graded as a chase and no longer carries the card's grade. If price does correct back to support, it'll re-grade as a fresh dip setup." style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.5)">⛔ ran away</span>
-                          <span x-show="e.rotation" class="badge shrink-0" title="Market's open — this pullback is now the intraday ROTATION: buy the reclaim of the prior-day high, stop at the day's low. Updates live." style="background:rgba(34,211,238,.16);color:#a5ecf7;border-color:rgba(34,211,238,.4)">🔄 live rotation</span>
-                          <span x-show="e.breakoutCatch" class="badge shrink-0" title="Market's open and this strong leader already BROKE OUT above its deep dip zone — a pullback all the way to the 50 EMA is unlikely now. The realistic dip is a shallow pullback to the nearest rising EMA; catch it there. Updates live." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">🎯 breakout catch</span>
-                          <span x-show="e.rotation && e.wide" class="badge shrink-0" title="The day's-low stop is wider than 1× ADR — a wide-stop trade; size is reduced to keep 1% risk." style="background:rgba(255,181,61,.16);color:#ffd591;border-color:rgba(255,181,61,.45)">⚠ wide stop</span>
-                          <span x-show="e.adr_violation && !(e.rotation && e.wide)" class="badge shrink-0" title="This stop sits more than 1× ADR below the entry — by your ground rules a stop wider than 1× ADR means the setup is too extended. Treat it as a chase: wait for a tighter entry or skip it." style="background:rgba(255,93,115,.18);color:#ffb3bf;border-color:rgba(255,93,115,.55)">⚠ stop &gt; 1× ADR</span>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                          <span class="font-extrabold text-base leading-none" x-show="e.grade && !e.stale" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100) — each setup is graded on its own entry'" x-text="e.grade"></span>
-                          <span class="text-[10px] uppercase tracking-wide text-slate-500" x-text="e.stale?'ran away':(ei===0?'primary':'option')"></span>
-                        </div>
-                      </div>
-                      <!-- no take-profit target: we trail (exit on a close under the 9 EMA), aiming to ride for as much as possible -->
-                      <div class="grid grid-cols-2 gap-2 text-center text-sm">
-                        <div class="lvl"><div class="lvl-l" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="text-up font-bold text-[13px]" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
-                        <div class="lvl"><div class="lvl-l" x-text="(e.rotation||e.dayLowStop)?'Stop (day low)':'Stop'"></div><div class="text-down font-bold" x-text="e.stop"></div></div>
-                      </div>
-                      <!-- LIVE CONFIRMATION STATUS — the only "buyable now" is CONFIRMED + in the zone -->
-                      <!-- 1) confirmed + in zone → BUYABLE NOW (shows the engine's confirm line) -->
-                      <div x-show="isConfirmedBuyable(s,e)" class="text-center text-xs font-extrabold py-1.5 mt-2 rounded-lg" style="background:rgba(34,224,161,.18);color:#22e0a1;border:1px solid rgba(34,224,161,.55)"
-                        :title="(confRec(s)&&confRec(s).confirm)||''">🟢 BUYABLE NOW · confirmed — <span x-text="cur"></span><span x-text="s.close"></span> in the zone, trigger taken out</div>
-                      <!-- 2) in the zone but NOT confirmed → waiting (price reached support; wait for the trigger) -->
-                      <div x-show="e.buyable_now && !isConfirmedBuyable(s,e)" class="text-center text-xs font-bold py-1.5 mt-2 rounded-lg" style="background:rgba(255,181,61,.14);color:#ffd591;border:1px solid rgba(255,181,61,.38)"
-                        title="Price is in the buy zone, but the entry isn't confirmed yet. Wait for the confirmation: it settles in the zone and reclaims the day's high (a green candle off support = buyers stepping in / the low is in), or breaks its level on volume. Don't grab the first touch.">⏳ In the zone — waiting for confirmation</div>
-                      <!-- 3) not in the zone → where the trigger is + waiting -->
-                      <div x-show="!e.buyable_now" class="text-xs mt-1.5"><span class="text-amber-300/80 font-semibold">⏳ Waiting for confirmation</span><span class="text-slate-500"> · </span><span class="text-slate-500" x-text="entryHint(e, s.close)"></span></div>
-                      <!-- armed note: the engine is actively watching this one for its trigger -->
-                      <div x-show="confStatus(s)==='armed' && !isConfirmedBuyable(s,e)" class="text-[11px] text-cyan-300/80 mt-1" x-text="(confRec(s)&&confRec(s).confirm)||'Armed — the confirmation engine is watching this for its trigger.'"></div>
-                      <div class="text-[11px] text-slate-400 mt-1" x-show="e.shares!=null"><b class="text-slate-200" x-text="e.shares ?? '—'"></b> sh · risk <span x-text="cur"></span><span x-text="e.risk_ps"></span>/sh</div>
-                    </div>
+
+                <!-- ===== tag expander: KEY chips pinned, lead tags, then the rest behind "＋ all tags" ===== -->
+                <div class="chips2">
+                  <!-- KEY tags (gold, pinned FIRST): 🏆 Leader · 🚀 Rising sector — the two that matter most -->
+                  <span class="chip2 key" x-show="s.group_leader || (s.rs_pct||0)>=90" :title="s.group_leader ? ('#1 of '+s.group_size+' in '+(s.theme||'its group')+' by relative strength') : ('Relative-strength leader — RS '+(s.rs_pct||0)+'/100, top decile of the scanned universe')">🏆 Leader</span>
+                  <span class="chip2 key" x-show="s.theme_trend==='Rising' || s.theme_hot" :title="'Sector '+(s.theme||'')+' is rotating in — momentum trend Rising'+(s.theme_hot?' · hot':'')">🚀 Rising sector</span>
+                  <!-- LEAD tags (always visible): setup type · leadership/quality · worth-waiting -->
+                  <span class="chip2 lead" x-text="s.setup_type"></span>
+                  <template x-for="lt in lexVisible(s).shown" :key="lt.tag">
+                    <span class="chip2" :class="lt.role==='S'?'lead':''" :title="lt.name+' — '+lt.define" x-text="lexLabel(lt.tag)"></span>
                   </template>
+                  <span class="chip2 lead" x-show="isWorthWaiting(s)" title="Patient entry — buy zone is below price / a deep pullback into the 50 EMA">⏳ Worth waiting</span>
+                  <span class="chip2" x-show="s.trend_template" :title="'Minervini Trend Template '+(s.tt_count||8)+'/8 — confirmed Stage-2 uptrend leader'" style="color:#9bf0cf;background:rgba(34,224,161,.14)">✓ Trend Template</span>
+                  <!-- high-value tags shown by DEFAULT so a data-rich card carries ~6 (setup-quality, group rank, momentum) -->
+                  <span class="chip2" x-show="s.vcp" :title="'Volatility Contraction Pattern — '+(s.vcp_contractions||0)+' contractions, coiling near the pivot'" style="color:#d9b3ff;background:rgba(168,85,247,.16)">🌀 VCP</span>
+                  <span class="chip2" x-show="groupMedal(s) && !s.group_leader" :title="'#'+s.group_rank+' of '+s.group_size+' in '+s.theme+' by relative strength'" style="color:#ffd591;background:rgba(255,181,61,.16)"><span x-text="groupMedal(s)"></span> <span x-text="'#'+s.group_rank"></span></span>
+                  <template x-for="ms in [['1M',s.screen_1m],['3M',s.screen_3m],['6M',s.screen_6m]]" :key="ms[0]">
+                    <span class="chip2" x-show="ms[1]" :title="'Passes the '+ms[0]+' momentum screen'" style="color:#b8c8ff;background:rgba(106,141,255,.16)">🚀 <span x-text="ms[0]"></span></span>
+                  </template>
+
+                  <!-- EXTRA tags (the long tail — revealed by the toggle) -->
+                  <template x-if="showAllTags">
+                    <span class="contents">
+                      <span class="chip2" x-show="lexVisible(s).moreCount>0" :title="lexVisible(s).moreTitle" x-text="'+'+lexVisible(s).moreCount+' more tags'"></span>
+                      <span class="chip2" x-show="s.theme && s.theme_hot" style="color:#ffd0a8;background:rgba(255,140,90,.16)"><span class="fire">🔥</span> <span x-text="s.theme"></span></span>
+                      <span class="chip2" x-show="s.news_trump" style="color:#ffc6dd;background:rgba(255,95,162,.18)">🇺🇸 Trump</span>
+                      <span class="chip2" x-show="s.news_flag && !s.news_trump"
+                        :style="s.news_dir==='bad'?'color:#ffb3bf;background:rgba(255,93,115,.16)':s.news_dir==='good'?'color:#9bf0cf;background:rgba(34,224,161,.14)':'color:#a5ecf7;background:rgba(34,211,238,.14)'"
+                        x-text="(s.news_dir==='good'?'📈':s.news_dir==='bad'?'📉':'📰')+(s.news_scope==='sector'?' Sector':' News')"></span>
+                      <template x-if="earnBadge(s)">
+                        <span class="chip2" :style="earnBadge(s).style" :title="(earnBadge(s).soon?'Earnings within a week — skip new entries':'Earnings coming up — be cautious')+(s.earnings_date?' · '+s.earnings_date:'')" x-text="earnBadge(s).text"></span>
+                      </template>
+                    </span>
+                  </template>
+                  <span class="chip2 toggle" @click="showAllTags=!showAllTags" x-text="showAllTags?'– fewer tags':'＋ all tags'"></span>
                 </div>
-                <div x-show="s.earnings_soon" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,93,115,.16);color:#ffb3bf;border:1px solid rgba(255,93,115,.5)">⚠️ Earnings in <span x-text="s.earnings_days"></span>d<span x-show="s.earnings_estimate"> (est.)</span> — probably skip, binary risk</div>
-                <div x-show="s.distribution_today" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Distribution / reversal day — let it settle, don't buy the drop</div>
-                <div x-show="s.parabolic && !s.worth_waiting" class="text-center text-xs font-extrabold py-1.5 rounded-lg" style="background:rgba(255,181,61,.16);color:#ffd591;border:1px solid rgba(255,181,61,.5)">⚠️ Extended ~<span x-text="s.ext50_adr"></span>× ADR above the 50 EMA — chasing; wait for a pullback</div>
-                <div class="text-xs text-slate-400">primary ≈<span x-text="cur"></span><span x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></span> at 1% risk<span x-show="s.capped" class="text-warn"> · capped</span> · <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <span x-text="fmtDollarVol(s.dollar_vol)"></span></span></div>
-                <div class="text-xs text-slate-500" x-text="(s.why||'').replaceAll('$',cur)"></div>
-                <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
-                <div class="flex flex-wrap gap-2 pt-1">
-                  <button class="btn-sm flex-1" @click="showChart(s.ticker, s)">📈 Chart</button>
-                  <button class="btn-sm flex-1" :class="onWatch(s.ticker)?'':'btn-up text-white'" @click="addSugToWatch(s)"
-                    x-text="onWatch(s.ticker)?'✓ Watchlist':'+ Watchlist'"></button>
-                  <button class="btn-sm flex-1" style="background:rgba(106,141,255,.25);border-color:rgba(106,141,255,.5)" @click="openTake(s)">Took it</button>
-                  <button class="btn-sm flex-1"
-                    :style="s.status==='rejected' ? 'background:rgba(148,163,184,.2);border-color:rgba(148,163,184,.45)' : 'background:rgba(255,93,115,.16);border-color:rgba(255,93,115,.4);color:#ffb3bf'"
-                    @click="act(s, s.status==='rejected' ? 'unpass' : 'reject')"
-                    x-text="s.status==='rejected' ? '↩ Un-pass' : '✗ Pass'"></button>
+
+                <!-- ===== entries: BOTH setups get the IDENTICAL full treatment ===== -->
+                <!-- a Breakout (buy-stop above a pivot) and/or a Pullback (buy the dip below price). Each is
+                     typed + phrased correctly. Both render pill + per-entry grade + 2-col stat cards + its
+                     own status panel; a horizontal .split divides them (no boxed sub-card). -->
+                <template x-for="(e,ei) in displayEntries(s)" :key="ei">
+                  <div :class="e.stale?'opacity-70':''">
+                    <!-- divider between consecutive setups -->
+                    <div x-show="ei>0" class="split"></div>
+                    <div class="space-y-2.5">
+                      <!-- setup header: type pill + context chips + per-entry grade -->
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="pill2" :class="e.kind==='breakout'?'brk':'pb'"
+                          :title="e.kind==='confirm'?'Confirmation entry — buy once buyers prove themselves (reclaim 50 EMA / prior-day high). 1× ADR stop.':''"
+                          x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))+(ei>0?' · alt':'')"></span>
+                        <span x-show="e.rotation" class="chip2" title="Market's open — buy the reclaim of the prior-day high, stop at the day's low." style="color:#a5ecf7;background:rgba(34,211,238,.14)">🔄 live rotation</span>
+                        <span x-show="e.breakoutCatch" class="chip2" title="Already broke out — catch the shallow pullback to the nearest rising EMA." style="color:#ffd591;background:rgba(255,181,61,.16)">🎯 breakout catch</span>
+                        <span x-show="(e.rotation && e.wide)" class="chip2" title="Day's-low stop wider than 1× ADR — size reduced to keep 1% risk." style="color:#ffd591;background:rgba(255,181,61,.16)">⚠ wide stop</span>
+                        <span x-show="e.adr_violation && !(e.rotation && e.wide)" class="warn2" title="Stop wider than 1× ADR — too extended; treat as a chase.">⚠ stop &gt; 1× ADR</span>
+                        <span class="ml-auto font-extrabold text-[14px] leading-none" x-show="e.grade && !e.stale" :style="'color:'+gradeColor(e.grade)" :title="'this option\'s grade ('+(e.rating||'')+'/100)'" x-text="e.grade+(ei===0?' · primary':'')"></span>
+                      </div>
+                      <!-- 2-col Buy / Stop stat cards -->
+                      <div class="stats2">
+                        <div class="stat2"><div class="sl2" x-text="e.entry_type==='stop'?'Buy stop':'Buy zone'"></div><div class="sv2 grn" x-text="e.zone_bottom+'–'+e.zone_top"></div></div>
+                        <div class="stat2"><div class="sl2" x-text="(e.rotation||e.dayLowStop)?'Stop (day low)':'Stop'"></div><div class="sv2 red" x-text="e.stop"></div></div>
+                      </div>
+                      <!-- STATUS PANEL: one state label + one condition line + the Lexicon confirms-on row -->
+                      <div class="statusbox" :class="setupState(s,e).cls" :title="(confRec(s)&&confRec(s).confirm)||''">
+                        <div class="st-state"><span class="dot"></span> <span x-text="setupState(s,e).label"></span></div>
+                        <!-- condition line (de-iconed so there's no double hourglass) -->
+                        <div class="st-cond" x-show="setupState(s,e).cls==='grn'"><span x-text="cur"></span><span x-text="s.close"></span> is in the zone and the trigger is taken out — buyable now.</div>
+                        <div class="st-cond" x-show="setupState(s,e).cls!=='grn'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
+                        <!-- Lexicon Phase-2 confirmation menu — only on an armed, not-yet-buyable setup -->
+                        <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && confirmMenuText(confRec(s))">
+                          <span class="lab">confirms on</span>
+                          <template x-for="t in ((confRec(s)&&confRec(s).confirm_menu)||[])" :key="t">
+                            <span class="trg" x-text="(_CONFIRM_LABEL[t]||t)"></span>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- ===== card-level warnings ===== -->
+                <div x-show="s.earnings_soon" class="status2" style="background:rgba(255,93,115,.16);border-color:rgba(255,93,115,.5);color:#ffb3bf">⚠️ Earnings in <span x-text="s.earnings_days"></span>d<span x-show="s.earnings_estimate"> (est.)</span> — probably skip, binary risk</div>
+                <div x-show="s.distribution_today" class="status2">⚠️ Distribution / reversal day — let it settle, don't buy the drop</div>
+                <div x-show="s.parabolic && !s.worth_waiting" class="status2">⚠️ Extended ~<span x-text="s.ext50_adr"></span>× ADR above the 50 EMA — chasing; wait for a pullback</div>
+
+                <!-- ===== Details collapse: shares / risk / $ / liquidity / thesis ===== -->
+                <div class="border-t border-line pt-3">
+                  <div class="det2-summary" @click="showDetails=!showDetails"><span class="ch2" :style="showDetails?'transform:rotate(90deg)':''">›</span> Details</div>
+                  <div class="det2-body mt-2.5 space-y-2" x-show="showDetails">
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                      <span x-show="displayEntries(s)[0] && displayEntries(s)[0].shares!=null"><b class="text-slate-200" x-text="displayEntries(s)[0].shares ?? '—'"></b> shares</span>
+                      <span x-show="displayEntries(s)[0] && displayEntries(s)[0].risk_ps!=null">risk <span x-text="cur"></span><b class="text-slate-200" x-text="displayEntries(s)[0].risk_ps"></b>/sh</span>
+                      <span>≈<span x-text="cur"></span><b class="text-slate-200" x-text="s.cost?Math.round(s.cost).toLocaleString():'—'"></b> at 1%<span x-show="s.capped" class="text-warn"> · capped</span></span>
+                      <span :style="'color:'+liqColor(s.liq_score)" :title="'Avg daily dollar volume — liquidity score '+s.liq_score+'/100'">💧 <b x-text="fmtDollarVol(s.dollar_vol)"></b></span>
+                    </div>
+                    <div class="text-xs text-slate-400 leading-relaxed" x-text="(s.why||'').replaceAll('$',cur)"></div>
+                    <a x-show="s.news_headline" :href="s.news_link" target="_blank" class="block text-xs hover:underline truncate" :class="s.news_dir==='bad'?'text-down':s.news_dir==='good'?'text-up':'text-cyan-300/80'" x-text="(s.news_scope==='sector'?'📰 [sector] ':'📰 ')+s.news_headline"></a>
+                  </div>
+                </div>
+
+                <!-- ===== actions: Chart · Took it · Pass ===== -->
+                <div class="flex gap-2">
+                  <button class="btn2 chart" @click="showChart(s.ticker, s)">📈 Chart</button>
+                  <button class="btn2 took" @click="openTake(s)">Took it</button>
+                  <button class="btn2 pass" @click="act(s, s.status==='rejected' ? 'unpass' : 'reject')" x-text="s.status==='rejected' ? '↩ Un-pass' : 'Pass'"></button>
                 </div>
               </div>
             </template>
@@ -976,11 +998,11 @@
         <!-- ===== SCREENERS ===== -->
         <section x-show="view==='screeners'" x-transition.opacity.duration.250ms class="space-y-5">
           <div class="flex gap-2 flex-wrap">
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='lists'?'btn':'btn-sm'" @click="screenTab='lists'">🗂️ Screener lists</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='heat'?'btn':'btn-sm'" @click="screenTab='heat'; loadSectorHeat(); if(marketOpen) loadSectorHeatLive()">🔥 Sector Heat</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='premarket'?'btn':'btn-sm'" @click="screenTab='premarket'; loadPremarket()">🌅 Pre-market</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='spinning'?'btn':'btn-sm'" @click="screenTab='spinning'; loadSpinning()">🔄 Spinning</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="screenTab==='groups'?'btn':'btn-sm'" @click="screenTab='groups'; loadGroups()">🧭 New groups</button>
+            <button class="tabpill" :class="screenTab==='lists'?'on':''" @click="screenTab='lists'">🗂️ Screener lists</button>
+            <button class="tabpill" :class="screenTab==='heat'?'on':''" @click="screenTab='heat'; loadSectorHeat(); if(marketOpen) loadSectorHeatLive()">🔥 Sector Heat</button>
+            <button class="tabpill" :class="screenTab==='premarket'?'on':''" @click="screenTab='premarket'; loadPremarket()">🌅 Pre-market</button>
+            <button class="tabpill" :class="screenTab==='spinning'?'on':''" @click="screenTab='spinning'; loadSpinning()">🔄 Spinning</button>
+            <button class="tabpill" :class="screenTab==='groups'?'on':''" @click="screenTab='groups'; loadGroups()">🧭 New groups</button>
           </div>
 
           <!-- pre-market movers -->
@@ -1190,7 +1212,7 @@
               </div>
             </template>
             <div class="card overflow-x-auto">
-              <div class="grid grid-cols-12 min-w-[52rem] px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-500 border-b border-line font-semibold select-none">
+              <div class="grid grid-cols-12 min-w-[52rem] px-4 py-2.5 v4-eyebrow border-b border-line2 select-none">
                 <div class="col-span-4">Sector</div>
                 <div class="col-span-2">Trend</div>
                 <div class="text-right cursor-pointer hover:text-white" :class="sectorSort==='perf_1d'?'text-white':''" @click="sectorSort='perf_1d'">Today<span x-show="sectorSort==='perf_1d'"> ▾</span></div>
@@ -1216,7 +1238,7 @@
                     <div class="text-right"><span class="badge" :class="tierClass(s.tier)" x-text="s.tier"></span></div>
                   </div>
                   <div x-show="secOpen[s.sector]" x-cloak class="px-4 pb-3 pt-1" style="background:rgba(7,10,18,.45)">
-                    <div class="grid grid-cols-12 text-[10px] uppercase tracking-wide text-slate-500 px-2 py-1">
+                    <div class="grid grid-cols-12 v4-eyebrow px-2 py-1.5">
                       <div class="col-span-4">Symbol (hottest first)</div><div class="text-right col-span-2">Last</div><div class="text-right col-span-2">Today</div><div class="text-right col-span-2">Week</div><div class="text-right col-span-2">Month</div>
                     </div>
                     <template x-for="(m,mi) in s.members" :key="m.ticker">
@@ -1351,9 +1373,9 @@
         <!-- ===== NEWS ===== -->
         <section x-show="view==='news'" x-transition.opacity.duration.250ms class="space-y-5">
           <div class="flex gap-2 flex-wrap">
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='news'?'btn':'btn-sm'" @click="newsTab='news'">📰 News</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='suspicious'?'btn':'btn-sm'" @click="newsTab='suspicious'; loadSuspicious()">🕵️ Suspicious activity</button>
-            <button class="px-4 py-2 rounded-xl text-sm font-bold transition" :class="newsTab==='prediction'?'btn':'btn-sm'" @click="newsTab='prediction'; loadPrediction()">🔮 Prediction</button>
+            <button class="tabpill" :class="newsTab==='news'?'on':''" @click="newsTab='news'">📰 News</button>
+            <button class="tabpill" :class="newsTab==='suspicious'?'on':''" @click="newsTab='suspicious'; loadSuspicious()">🕵️ Suspicious activity</button>
+            <button class="tabpill" :class="newsTab==='prediction'?'on':''" @click="newsTab='prediction'; loadPrediction()">🔮 Prediction</button>
           </div>
 
           <div x-show="newsTab==='news'" class="space-y-5">
@@ -1372,11 +1394,11 @@
               <span class="text-xs font-normal text-slate-500" x-show="catalystTable.length" x-text="catalystTable.length+' stocks'"></span>
             </div>
             <template x-if="!catalystTable.length"><div class="p-5 text-sm text-slate-500">No stock-specific catalysts right now — click <b>Refresh news</b>, or see Market headlines below.</div></template>
-            <div x-show="catalystTable.length" class="hidden md:grid grid-cols-[9rem_1fr_11rem] gap-3 px-5 py-2 text-[10px] uppercase tracking-wide text-slate-500 font-bold border-t border-line">
+            <div x-show="catalystTable.length" class="hidden md:grid grid-cols-[9rem_1fr_11rem] gap-3 px-5 py-2.5 v4-eyebrow border-t border-line2">
               <div>Stock</div><div>Catalyst &amp; why</div><div class="text-right">What to do</div>
             </div>
             <template x-for="r in catalystTable" :key="r.ticker">
-              <div class="grid grid-cols-1 md:grid-cols-[9rem_1fr_11rem] gap-1.5 md:gap-3 px-5 py-3 border-t border-line hover:bg-white/5 cursor-pointer" @click="showChart(r.ticker, r._sug||{})">
+              <div class="v4-divrow grid grid-cols-1 md:grid-cols-[9rem_1fr_11rem] gap-1.5 md:gap-3 px-5 py-3 cursor-pointer" @click="showChart(r.ticker, r._sug||{})">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-extrabold" x-text="r.ticker"></span>
                   <span class="w-5 text-center font-extrabold" x-show="r.grade" :style="'color:'+gradeColor(r.grade)" x-text="r.grade"></span>
@@ -1408,7 +1430,7 @@
             </div>
             <template x-if="!news.feed || news.feed.length===0"><div class="p-5 text-sm text-slate-500">No fresh catalysts — click <b>Refresh news</b>.</div></template>
             <template x-for="(it,ii) in (news.feed||[])" :key="ii">
-              <a :href="it.link" target="_blank" class="flex items-start gap-3 px-5 py-3 border-t border-line hover:bg-white/5 transition">
+              <a :href="it.link" target="_blank" class="v4-divrow flex items-start gap-3 px-5 py-3">
                 <span class="text-sm shrink-0 mt-0.5" x-text="it.sentiment==='good'?'📈':it.sentiment==='bad'?'📉':'•'"></span>
                 <div class="min-w-0 flex-1">
                   <div class="text-sm font-medium leading-snug" :class="it.trump?'text-pink-300':it.sentiment==='bad'?'text-down':it.sentiment==='good'?'text-up':'text-slate-200'" x-text="it.title"></div>
@@ -1430,9 +1452,11 @@
               <span class="text-xs text-slate-500" x-show="suspicious.scanned_at">Scanned <span x-text="suspicious.scanned"></span> · <span x-text="suspicious.scanned_at"></span></span>
               <div class="ml-auto flex items-center gap-2 text-xs">
                 <span class="text-slate-500">Sort:</span>
+                <div class="v4-seg">
                 <template x-for="o in [['vol_mult','Volume'],['move','Move'],['strength','Strength']]" :key="o[0]">
-                  <button class="px-2.5 py-1 rounded-lg font-semibold" :class="suspSort===o[0]?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="suspSort=o[0]" x-text="o[1]"></button>
+                  <button :class="suspSort===o[0]?'on':''" @click="suspSort=o[0]" x-text="o[1]"></button>
                 </template>
+                </div>
               </div>
             </div>
             <p class="text-xs text-slate-500 -mt-2">Unusual end-of-day / after-hours volume + move — often an insider/institutional footprint. Highest first.</p>
@@ -1441,7 +1465,7 @@
                 <div class="card-head flex items-center justify-between"><span>🟢 Unusual buying</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.buying||[]).length+' names'"></span></div>
                 <template x-if="!(suspicious.buying||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
                 <template x-for="s in suspSorted(suspicious.buying)" :key="'b'+s.ticker">
-                  <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
+                  <div class="v4-divrow flex items-center gap-2 px-5 py-2.5 text-sm cursor-pointer" @click="showChart(s.ticker,{})">
                     <span class="font-bold w-14" x-text="s.ticker"></span>
                     <span class="text-up font-bold w-16 text-right" x-text="(s.move>=0?'+':'')+s.move+'%'"></span>
                     <span class="badge" style="background:rgba(34,224,161,.16);color:#9bf0cf;border-color:rgba(34,224,161,.45)" x-text="s.vol_mult+'× vol'"></span>
@@ -1454,7 +1478,7 @@
                 <div class="card-head flex items-center justify-between"><span>🔴 Unusual selling</span><span class="text-xs font-normal text-slate-500" x-text="(suspicious.selling||[]).length+' names'"></span></div>
                 <template x-if="!(suspicious.selling||[]).length"><div class="p-5 text-sm text-slate-500">Nothing flagged — run a scan.</div></template>
                 <template x-for="s in suspSorted(suspicious.selling)" :key="'s'+s.ticker">
-                  <div class="flex items-center gap-2 px-5 py-2.5 border-t border-line text-sm hover:bg-white/5 cursor-pointer transition" @click="showChart(s.ticker,{})">
+                  <div class="v4-divrow flex items-center gap-2 px-5 py-2.5 text-sm cursor-pointer" @click="showChart(s.ticker,{})">
                     <span class="font-bold w-14" x-text="s.ticker"></span>
                     <span class="text-down font-bold w-16 text-right" x-text="s.move+'%'"></span>
                     <span class="badge" style="background:rgba(255,93,115,.16);color:#ffb3bf;border-color:rgba(255,93,115,.45)" x-text="s.vol_mult+'× vol'"></span>
@@ -1577,12 +1601,8 @@
 
               <!-- TAB TOGGLE -->
               <div class="flex gap-2">
-                <button class="flex-1 py-2 rounded-xl text-sm font-bold transition"
-                  :class="lhTab==='brief' ? 'btn' : 'btn-sm'"
-                  @click="lhTab='brief'">Today's Brief</button>
-                <button class="flex-1 py-2 rounded-xl text-sm font-bold transition"
-                  :class="lhTab==='edge' ? 'btn' : 'btn-sm'"
-                  @click="lhTab='edge'">Edge History</button>
+                <button class="tabpill flex-1 text-center" :class="lhTab==='brief' ? 'on' : ''" @click="lhTab='brief'">Today's Brief</button>
+                <button class="tabpill flex-1 text-center" :class="lhTab==='edge' ? 'on' : ''" @click="lhTab='edge'">Edge History</button>
               </div>
 
               <!-- ========== TODAY'S BRIEF ========== -->
@@ -1639,28 +1659,28 @@
                       </div>
                       <!-- rows table -->
                       <div class="overflow-x-auto" x-show="learning.execution_gap.rows && learning.execution_gap.rows.length">
-                        <table class="w-full text-xs">
+                        <table class="v4-table">
                           <thead>
-                            <tr class="text-slate-500 text-left border-b border-line">
-                              <th class="py-1 pr-2">Ticker</th>
-                              <th class="pr-2">Setup</th>
-                              <th class="pr-2 text-right">Entry</th>
-                              <th class="pr-2 text-right">Plan</th>
-                              <th class="pr-2 text-right">Chase%</th>
-                              <th class="text-right">R</th>
+                            <tr>
+                              <th>Ticker</th>
+                              <th>Setup</th>
+                              <th class="num">Entry</th>
+                              <th class="num">Plan</th>
+                              <th class="num">Chase%</th>
+                              <th class="num">R</th>
                             </tr>
                           </thead>
                           <tbody>
                             <template x-for="(row,ri) in (learning.execution_gap.rows||[])" :key="ri">
-                              <tr class="border-b border-line/40">
-                                <td class="py-1 pr-2 font-bold" x-text="row.ticker"></td>
-                                <td class="pr-2 text-slate-400 truncate max-w-[8rem]" x-text="row.setup"></td>
-                                <td class="pr-2 text-right tabular-nums" x-text="row.entry!=null?('$'+row.entry):'—'"></td>
-                                <td class="pr-2 text-right tabular-nums text-slate-400" x-text="row.planned_entry!=null?('$'+row.planned_entry):'—'"></td>
-                                <td class="pr-2 text-right tabular-nums font-bold"
+                              <tr>
+                                <td class="font-bold" x-text="row.ticker"></td>
+                                <td class="text-slate-400 truncate max-w-[8rem]" x-text="row.setup"></td>
+                                <td class="num" x-text="row.entry!=null?('$'+row.entry):'—'"></td>
+                                <td class="num text-slate-400" x-text="row.planned_entry!=null?('$'+row.planned_entry):'—'"></td>
+                                <td class="num font-bold"
                                     :class="(row.chase_pct||0)>=10?'text-down':'text-warn'"
                                     x-text="row.chase_pct!=null?(row.chase_pct+'%'):'—'"></td>
-                                <td class="text-right tabular-nums font-bold"
+                                <td class="num font-bold"
                                     :class="(row.result_r||0)>=0?'text-up':'text-down'"
                                     x-text="row.result_r!=null?((row.result_r>=0?'+':'')+row.result_r+'R'):'—'"></td>
                               </tr>
@@ -1689,7 +1709,7 @@
                   <template x-if="learning.today && ((learning.today.armed&&learning.today.armed.length) || (learning.today.confirmed&&learning.today.confirmed.length))">
                     <div class="space-y-1">
                       <template x-for="ev in (learning.today.confirmed||[])" :key="ev.arm_id||ev.ticker">
-                        <div class="rounded-lg px-2.5 py-1.5 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(34,224,161,.10);border:1px solid rgba(34,224,161,.35)">
+                        <div class="v4-row px-2.5 py-2 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(34,224,161,.10);border-color:rgba(34,224,161,.35)">
                           <span class="text-up font-bold shrink-0">✓</span>
                           <span class="font-extrabold shrink-0 w-6 text-center" :style="'color:'+gradeColor(ev.grade)" x-text="ev.grade||'—'"></span>
                           <span class="font-bold" x-text="ev.ticker"></span>
@@ -1698,7 +1718,7 @@
                         </div>
                       </template>
                       <template x-for="ev in (learning.today.armed||[])" :key="ev.arm_id||ev.ticker">
-                        <div class="rounded-lg px-2.5 py-1.5 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(255,181,61,.08);border:1px solid rgba(255,181,61,.25)">
+                        <div class="v4-row px-2.5 py-2 text-sm flex items-center gap-2 flex-wrap" style="background:rgba(255,181,61,.08);border-color:rgba(255,181,61,.25)">
                           <span class="text-warn shrink-0">⏳</span>
                           <span class="font-extrabold shrink-0 w-6 text-center" :style="'color:'+gradeColor(ev.grade)" x-text="ev.grade||'—'"></span>
                           <span class="font-bold" x-text="ev.ticker"></span>
@@ -1723,20 +1743,20 @@
                   </template>
                   <template x-if="learning.by_setup && Object.keys(learning.by_setup).length">
                     <div class="space-y-2">
-                      <table class="w-full text-sm mb-3">
-                        <thead><tr class="text-slate-500 text-xs text-left border-b border-line">
-                          <th class="py-1 pr-2">Setup</th>
-                          <th class="pr-2 text-right">n</th>
-                          <th class="pr-2 text-right">Win%</th>
-                          <th class="text-right">Avg R</th>
+                      <table class="v4-table mb-3">
+                        <thead><tr>
+                          <th>Setup</th>
+                          <th class="num">n</th>
+                          <th class="num">Win%</th>
+                          <th class="num">Avg R</th>
                         </tr></thead>
                         <tbody>
                           <template x-for="(v,k) in learning.by_setup" :key="k">
-                            <tr class="border-b border-line/40">
-                              <td class="py-1.5 pr-2" x-text="k"></td>
-                              <td class="pr-2 text-right text-slate-400" x-text="v.n"></td>
-                              <td class="pr-2 text-right" x-text="v.win_rate+'%'"></td>
-                              <td class="text-right font-bold" :class="v.avg_r>=0?'text-up':'text-down'"
+                            <tr>
+                              <td x-text="k"></td>
+                              <td class="num text-slate-400" x-text="v.n"></td>
+                              <td class="num" x-text="v.win_rate+'%'"></td>
+                              <td class="num font-bold" :class="v.avg_r>=0?'text-up':'text-down'"
                                   x-text="(v.avg_r>=0?'+':'')+v.avg_r+'R'"></td>
                             </tr>
                           </template>
@@ -1768,23 +1788,23 @@
                   </div>
                   <template x-if="forward && forward.aggregate">
                     <div class="space-y-3">
-                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                        <div class="lvl">
-                          <div class="lvl-l">Avg R (winsor)</div>
-                          <div class="text-xl font-extrabold" :class="(forward.aggregate.avg_r_w||forward.aggregate.avg_r||0)>=0?'text-up':'text-down'"
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="v4-tile">
+                          <div class="v4-tile-l">Avg R (winsor)</div>
+                          <div class="v4-tile-v" :class="(forward.aggregate.avg_r_w||forward.aggregate.avg_r||0)>=0?'text-up':'text-down'"
                                x-text="(forward.aggregate.avg_r_w!=null ? forward.aggregate.avg_r_w : forward.aggregate.avg_r)+'R'"></div>
                         </div>
-                        <div class="lvl">
-                          <div class="lvl-l">Win Rate</div>
-                          <div class="text-xl font-extrabold" x-text="forward.aggregate.win_rate+'%'"></div>
+                        <div class="v4-tile">
+                          <div class="v4-tile-l">Win Rate</div>
+                          <div class="v4-tile-v" x-text="forward.aggregate.win_rate+'%'"></div>
                         </div>
-                        <div class="lvl">
-                          <div class="lvl-l">&gt;1R</div>
-                          <div class="text-xl font-extrabold" x-text="forward.aggregate.pct_gt1R+'%'"></div>
+                        <div class="v4-tile">
+                          <div class="v4-tile-l">&gt;1R</div>
+                          <div class="v4-tile-v" x-text="forward.aggregate.pct_gt1R+'%'"></div>
                         </div>
-                        <div class="lvl">
-                          <div class="lvl-l">n matured</div>
-                          <div class="text-xl font-extrabold" x-text="forward.matured||0"></div>
+                        <div class="v4-tile">
+                          <div class="v4-tile-l">n matured</div>
+                          <div class="v4-tile-v" x-text="forward.matured||0"></div>
                         </div>
                       </div>
                       <div class="text-[11px] text-slate-500">Winsorized avg R caps each pick at +10R — measures the durable edge, same methodology as the backtest. Grows every day the app runs (currently <span x-text="forward.days_logged||0"></span> days, <span x-text="forward.total_picks||0"></span> picks total).</div>
@@ -1846,32 +1866,32 @@
                                   x-text="((d.n||d.rows&&d.rows.length||0)-(d.confirmed||0))+' near-miss'"></span>
                           </div>
                           <div x-show="d._open" class="overflow-x-auto">
-                            <table class="w-full text-xs">
+                            <table class="v4-table">
                               <thead>
-                                <tr class="text-slate-500 text-left border-b border-line/60">
-                                  <th class="py-1 pr-2">Gr</th><th class="pr-2">Ticker</th>
-                                  <th class="pr-2 hidden sm:table-cell">Setup</th>
-                                  <th class="pr-2">Armed</th>
-                                  <th class="pr-2">Outcome</th>
-                                  <th class="text-right pr-2">Entry</th>
-                                  <th class="text-right">Stop</th>
+                                <tr>
+                                  <th>Gr</th><th>Ticker</th>
+                                  <th class="hidden sm:table-cell">Setup</th>
+                                  <th>Armed</th>
+                                  <th>Outcome</th>
+                                  <th class="num">Entry</th>
+                                  <th class="num">Stop</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 <template x-for="r in (d.rows||[])" :key="(r.arm_id||r.ticker)+r.setup_type">
-                                  <tr class="border-b border-line/30 hover:bg-white/5 cursor-pointer" @click="showChart(r.ticker)">
-                                    <td class="py-1 pr-2">
+                                  <tr class="cursor-pointer" @click="showChart(r.ticker)">
+                                    <td>
                                       <span class="font-extrabold" :style="r.grade?('color:'+gradeColor(r.grade)):''" x-text="r.grade||'—'"></span>
                                     </td>
-                                    <td class="pr-2 font-bold" x-text="r.ticker"></td>
-                                    <td class="pr-2 text-slate-400 truncate max-w-[10rem] hidden sm:table-cell" x-text="r.setup_type"></td>
-                                    <td class="pr-2 text-slate-300" x-text="r.first_armed"></td>
-                                    <td class="pr-2">
+                                    <td class="font-bold" x-text="r.ticker"></td>
+                                    <td class="text-slate-400 truncate max-w-[10rem] hidden sm:table-cell" x-text="r.setup_type"></td>
+                                    <td class="text-slate-300" x-text="r.first_armed"></td>
+                                    <td>
                                       <span x-show="r.confirmed" class="text-up font-semibold" x-text="'✓ confirmed '+(r.confirmed_at||'')"></span>
                                       <span x-show="!r.confirmed" class="text-slate-500">armed only</span>
                                     </td>
-                                    <td class="pr-2 text-right tabular-nums" x-text="r.plan_entry!=null?('$'+r.plan_entry):(r.trigger!=null?('$'+r.trigger):'—')"></td>
-                                    <td class="text-right tabular-nums" x-text="r.plan_stop!=null?('$'+r.plan_stop):'—'"></td>
+                                    <td class="num" x-text="r.plan_entry!=null?('$'+r.plan_entry):(r.trigger!=null?('$'+r.trigger):'—')"></td>
+                                    <td class="num" x-text="r.plan_stop!=null?('$'+r.plan_stop):'—'"></td>
                                   </tr>
                                 </template>
                               </tbody>
@@ -2259,10 +2279,10 @@
               </div>
             </div>
           </div>
-          <div class="flex gap-2">
+          <div class="flex gap-2 flex-wrap">
             <template x-for="d in docTabs" :key="d.id">
-              <button @click="docTab=d.id; loadDoc(d.id)" class="px-3 py-1.5 rounded text-sm"
-                :class="docTab===d.id?'bg-accent text-white':'bg-panel2 text-slate-400'" x-text="d.label"></button>
+              <button @click="docTab=d.id; loadDoc(d.id)" class="tabpill text-sm"
+                :class="docTab===d.id?'on':''" x-text="d.label"></button>
             </template>
           </div>
           <div class="card p-4 space-y-3">
@@ -2367,8 +2387,8 @@
   </aside>
 
   <!-- ===== Chart modal ===== -->
-  <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="closeChart()" x-cloak>
-    <div class="bg-panel border border-line rounded-lg w-[1340px] max-w-[97vw] max-h-[95vh] overflow-y-auto p-3 sm:p-4">
+  <div x-show="chartModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm" @click.self="closeChart()" x-cloak>
+    <div class="v4-modal w-[1340px] max-w-[97vw] max-h-[95vh] overflow-y-auto p-3 sm:p-4">
       <div class="flex justify-between items-center gap-2 mb-3 flex-wrap">
         <div class="flex items-center gap-2 flex-wrap">
           <div class="font-bold text-xl" x-text="chartModal.ticker"></div>
@@ -2387,31 +2407,31 @@
         </div>
         <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
           <template x-if="chartModal._meta && chartModal._meta.frozen">
-            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Frozen = the entry/stop I gave you at the signal. Live = compares the ENTRANCE to where price is NOW (the idea's progress, no setup lines). The candles show how it did after the ▲ signal.">
-              <button class="px-2.5 py-1 text-xs font-bold" :class="!chartModal._showLive?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="chartModal._showLive=false; renderChart()">🔬 Frozen</button>
-              <button class="px-2.5 py-1 text-xs font-bold" :class="chartModal._showLive?'bg-accent text-white':'bg-panel2 text-slate-400'" @click="chartModal._showLive=true; renderChart()">📈 Live</button>
+            <div class="v4-seg" title="Frozen = the entry/stop I gave you at the signal. Live = compares the ENTRANCE to where price is NOW (the idea's progress, no setup lines). The candles show how it did after the ▲ signal.">
+              <button :class="!chartModal._showLive?'on':''" @click="chartModal._showLive=false; renderChart()">🔬 Frozen</button>
+              <button :class="chartModal._showLive?'on':''" @click="chartModal._showLive=true; renderChart()">📈 Live</button>
             </div>
           </template>
           <template x-if="chartModal._obj && chartModal._obj.entries && chartModal._obj.entries.length>1">
-            <div class="flex items-center rounded-lg overflow-hidden border border-line" title="Switch which setup's levels are drawn on the chart">
+            <div class="v4-seg" title="Switch which setup's levels are drawn on the chart">
               <template x-for="(e,ei) in chartModal._obj.entries" :key="ei">
-                <button class="px-2.5 py-1 text-xs font-bold" :class="chartModal.entryIdx===ei?'bg-accent text-white':'bg-panel2 text-slate-400'"
+                <button :class="chartModal.entryIdx===ei?'on':''"
                   @click="chartModal.entryIdx=ei; renderChart()" x-text="(e.kind==='confirm'?'🔔 Confirm':(e.kind==='breakout'?'▲ Breakout':'⏳ Pullback'))"></button>
               </template>
             </div>
           </template>
-          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showEmas?'bg-accent text-white':'bg-panel2 text-slate-400'"
+          <button class="ctrl-btn" :class="chartModal.showEmas?'on':''"
             @click="chartModal.showEmas=!chartModal.showEmas; renderChart()" title="Show/hide the 9 / 21 / 50 EMAs">EMAs</button>
-          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showVolume?'bg-accent text-white':'bg-panel2 text-slate-400'"
+          <button class="ctrl-btn" :class="chartModal.showVolume?'on':''"
             @click="chartModal.showVolume=!chartModal.showVolume; renderChart()" title="Show/hide the volume pane">Vol</button>
-          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showAvwap?'bg-accent text-white':'bg-panel2 text-slate-400'"
+          <button class="ctrl-btn" :class="chartModal.showAvwap?'on':''"
             @click="chartModal.showAvwap=!chartModal.showAvwap; renderChart()" title="Show/hide the AVWAP lines (ATH & earnings)">AVWAP</button>
-          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.logScale?'bg-accent text-white':'bg-panel2 text-slate-400'"
+          <button class="ctrl-btn" :class="chartModal.logScale?'on':''"
             @click="chartModal.logScale=!chartModal.logScale; renderChart()" title="Logarithmic price scale">Log</button>
-          <button class="px-3 py-1 rounded-lg text-xs font-bold" :class="chartModal.showChannel?'bg-accent text-white':'bg-panel2 text-slate-400'"
+          <button class="ctrl-btn" :class="chartModal.showChannel?'on':''"
             @click="chartModal.showChannel=!chartModal.showChannel; renderChart()" title="Pattern overlay — the relevant flag / pennant / wedge (falls back to the regression channel)"
             x-text="chartModal.showChannel && chartModal._patternLabel ? ('🚩 '+chartModal._patternLabel) : '📐 Pattern'"></button>
-          <button class="btn-ghost" @click="closeChart()">✕</button>
+          <button class="v4-modal-x" @click="closeChart()">✕</button>
         </div>
       </div>
       <div id="chartBox" class="w-full h-[60vh] sm:h-[72vh]"></div>
@@ -2427,8 +2447,8 @@
   </div>
 
   <!-- ===== Take / Close modal ===== -->
-  <div x-show="tradeModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="tradeModal.open=false" x-cloak>
-    <div class="bg-panel border border-line rounded-lg w-full max-w-[420px] mx-4 p-5 space-y-3">
+  <div x-show="tradeModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm" @click.self="tradeModal.open=false" x-cloak>
+    <div class="v4-modal w-full max-w-[420px] mx-4 p-5 space-y-3">
       <div class="font-bold text-lg" x-text="(tradeModal.mode==='take'?'Took ':tradeModal.mode==='edit'?'Edit ':'Close ')+tradeModal.ticker"></div>
       <template x-if="tradeModal.mode==='edit'">
         <div class="space-y-2">
@@ -2467,11 +2487,11 @@
   </div>
 
   <!-- ===== Position calculator modal ===== -->
-  <div x-show="calcModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="calcModal.open=false" x-cloak>
-    <div class="bg-panel border border-line rounded-2xl w-[470px] max-w-[95vw] p-5 space-y-3">
+  <div x-show="calcModal.open" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm" @click.self="calcModal.open=false" x-cloak>
+    <div class="v4-modal w-[470px] max-w-[95vw] p-5 space-y-3">
       <div class="flex justify-between items-center">
         <div class="font-bold text-lg">🧮 Position size <span class="text-slate-500" x-show="calcModal.ticker" x-text="'· '+calcModal.ticker"></span></div>
-        <button class="btn-ghost" @click="calcModal.open=false">✕</button>
+        <button class="v4-modal-x" @click="calcModal.open=false">✕</button>
       </div>
       <div class="text-xs text-slate-500">risk ≤ <span x-text="settings.risk_pct||1"></span>% (<span x-text="cur"></span><span x-text="riskDollar"></span>) · position ≤ <span x-text="settings.max_position_pct||15"></span>%</div>
       <div class="flex gap-3">

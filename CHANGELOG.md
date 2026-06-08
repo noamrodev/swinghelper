@@ -1,5 +1,421 @@
 # Changelog
 
+## 2026-06-08 — BUILD BLOCKED by test gate (floor+ceiling overturns a forward-tested invariant)
+
+**What happened.** Ran `make-build.ps1` → its grader test gate ABORTED the build (working as designed). The
+floor+ceiling batch fails 3 of 7 `tests/test_grader.py` cases. Diagnosed cleanly by swapping each backup:
+- **de-bias ONLY (`app.py.pre-batch`): 7/7 PASS** — clean, independently shippable.
+- **pre-all-grade (`app.py.pre-debias`): 7/7 PASS.**
+- **full batch (floor+ceiling): 4 pass / 3 FAIL.**
+
+**The 3 failures are real design conflicts, not sloppy bugs:**
+1. `falling_group_bypass_requires_top_decile_rs` — asserts an **RS80 deep pullback must NOT reach A** (only
+   RS≥90 bypasses). But the trader's ask THIS session is **LITE (RS80) → A** — which directly overturns that
+   forward-tested invariant. This is the "RS>80" change Jim Chanos/critic flagged earlier; it needs its OWN
+   forward-test before the test is rewritten.
+2 & 3. `deep_pullback_leader_is_A_in_falling_group` / `..is_patient_not_regime_discounted` — RS96 leader at
+   posture 45 now grades **A+(82)**, tests expect **A**. The ceiling fully uncaps the 40-49 band → top-decile
+   reaches A+. Open question: should a leader at the 50 in a mild pullback be A or A+? (If A, cap the relaxed
+   band at ~81 instead of uncapping.)
+
+**Two real bugs in the batch were already fixed** (live in app.py): floor now fires only on `above_200 is
+False` (not missing/None — was wrongly flooring test leaders); ceiling round-trip guard now scoped to the
+40-49 band only (was capping healthy-tape ≥50 leaders too).
+
+**Burry (qa) full-batch verdict: 5/5 PASS** — no junk in A (12 A-legs, 0 violators), below-200 floor holds
+(0 below-200 names with a B+ leg), all 10 target tickers correct (LITE/APLD/SITM/NXT/VICR=A, DXYZ=B,
+MNDY/HIMS/RDDT/TEAM=C), de-bias firewall intact (0 unexplained diffs when broad_correction=False), monotonic
+(0 unexpected cross-effects). So the IMPLEMENTATION is verified correct — the only thing standing between this
+and shipping is the deliberate RULE decision + forward-test, NOT a code bug. Burry's 2 minor notes: (a) two
+below-200 AVWAP names (RDDT/HOOD) get a small WITHIN-C numeric uplift from de-bias+floor interaction (letter
+unchanged); (b) AXTI sits right at the 60.8% round-trip boundary (reaches A via strength bonus anyway).
+
+**State left for next session:**
+- `app.py` = FULL BATCH, live locally (server running it → trader can still SEE LITE→A / MNDY→C). NOT built,
+  NOT shipped, NOT committed. Behavior Burry-verified; build blocked ONLY by the 3 invariant tests.
+- **De-bias is clean + Burry-friendly** — buildable on its own if desired (but that reverts LITE→B locally).
+- **TODO before this ships:** (a) decide RS80→A and A-vs-A+ rules deliberately; (b) add a min-sector-count
+  guard to `broad_correction` so a tiny test heat can't trip it; (c) update the 3 tests to the agreed rules;
+  (d) forward-test; (e) Burry sign-off (his full-batch run was in flight). Backups: `2026-06-08_grade-batch/`.
+
+## 2026-06-08 — Grade batch APPLIED + server restart (floor + ceiling)
+
+**What was done** (trader: "restart… i cant see the update"; backups `2026-06-08_grade-batch/app.py.pre-batch`
+= de-bias-only, `app.py.staged` = the applied batch)
+- **Applied to app.py** the staged grade batch and **restarted the local server** (killed pythonw PID, relaunched
+  `app.py --background`). Verified live via `/api/suggestions`.
+  - **Floor:** below the 200-day SMA → `r = min(r, 62)` (max C) — after the leadership gate. Stage-2 rule.
+  - **Ceiling:** patient cap threshold `posture<50 → <40`, plus a round-trip guard `pull_from_high ≤ 60`
+    (else cap at B). Real leaders reach A in a mild pullback; >60% drawdowns can't.
+- **Live result:** LITE/APLD/SITM/NXT/VICR pullback legs → **A**; DXYZ held **B** (74% pull); MNDY/HIMS/RDDT/TEAM
+  → **C** (below-200). No below-200 name keeps a B+ leg; the only A-legs with deep pulls are RS≥90 elites
+  (POET 95/+86%, AXTI 96/+636% — the intended explosive-leader case).
+- **LOCAL ONLY — not built/shipped.** Burry re-running on the FULL batch (de-bias + floor + ceiling) as the
+  pre-ship gate; forward-test still pending. Old de-bias-only Burry run superseded.
+- Headline still = average of legs (so LITE headline reads B though its pullback leg is A) — flagged to trader.
+
+## 2026-06-08 — Show ALL setups (stop hiding decided names) + RGTI/APLD un-flag
+
+**What was done** (trader: "i want to see all setups"; data backup `2026-06-08_status-fix/`)
+- **`web/app.js filteredSuggestions`** no longer hides decided names. Was: default queue filtered out
+  `status==='taken'` and (without `showPassed`) `status==='rejected'`. Now: every setup stays visible,
+  taken (✓) / passed (✗) keep their badge. 13 names were being hidden at the time (8 taken: MXL AEHR LUNR
+  CRWV NXT FIX AAOI VIAV; 5 passed: SITM BE VRT CRDO FLNC — incl. the RS-88 SITM leader). Frontend-only →
+  browser reload, no server restart. Logic-verified; couldn't live-screenshot (single-instance guard blocks
+  attaching the preview to the running app) — trader to confirm on reload.
+- **Cleared stale status flags:** RGTI (`taken`, but the trade is closed) and APLD (`rejected`, blank reason)
+  removed from status.json so they rejoin the queue.
+- **Staged, NOT built:** the patient-cap relaxation (posture<50→<40 for patient setups + ≤60% round-trip
+  guard so DXYZ-type −74% names don't reach A). Blast radius measured (LITE/APLD/SITM/NXT → A-leg; DXYZ stays
+  B). Held behind forward-test + Burry sign-off per trader — no second unverified rubric change back-to-back.
+
+## 2026-06-08 — Broad-correction de-bias (the APLD/sector double-count)
+
+**What was done** (backup `2026-06-08_gameplan-engine-sync/app.py.pre-debias`; trader-approved)
+- **Problem:** in a market-wide pullback (today 28/38 sectors "Falling"), a leader's Falling-sector tag is
+  just the market — already in `posture` — yet the rubric penalized it (sector factor 12) AND applied the
+  cooling-sector cap on top. Double-counting the same correction buried genuine deep-pullback leaders
+  (APLD RS84, VICR RS91/+187%/6m) at C. Investigation started from "why isn't APLD showing" — it was both
+  `rejected` in status.json AND grade-capped.
+- **Fix (`grade_suggestions`):** compute `broad_correction` once = ≥65% of sectors "Falling". When broad,
+  for PATIENT at-support setups only (Deep Pullback / Consolidation / AVWAP): (1) lift the Falling sector
+  factor off the floor to NEUTRAL, and (2) let them take the patient cap-bypass branch regardless of the
+  RS≥90 gate. **FIREWALL:** when <65% Falling, `broad_correction` is False and both edits are no-ops →
+  grades byte-for-byte unchanged.
+- **Verified (fresh-subprocess A/B, posture 45):** provably **monotonic — 0 rating decreases, 0 downgrades**;
+  **13 letter upgrades** (D→C / C→B), all quality semis/AI-infra leaders (VICR, FORM, FN, AMKR, APP, ONTO,
+  CIEN, MTZ, MPWR, CLS, PWR, GEV, CRDO); **no new A/A+** (weak-tape `CAP_PATIENT_WEAK` still blocks A's in a
+  correction — they lift to A only once posture ≥ 50). APLD pullback leg C(52)→B(72).
+- **Note:** earlier "15 downgrades" reading was a same-process two-module cache artifact, disproved by the
+  clean subprocess A/B. Engine change — should still get Burry (qa) sign-off + forward-test before fully
+  trusted. Needs server restart.
+
+## 2026-06-08 — Gameplan ↔ Live entries sync (bottom-line "no setups" bug)
+
+**What was done** (backup `2026-06-08_gameplan-engine-sync`)
+- **Bug:** the Daily Gameplan read *"No positions, no buyable A/A+ setups… doing nothing is the right move"*
+  while the **Live entries** panel showed **6 armed A-grade Deep Pullbacks** (POET/INTC/LUNR/TSEM/RKLB/AXTI).
+- **Root cause:** `compute_gameplan` filtered `buy_now`/`watch` on the **headline** grade, but the confirmation
+  engine (`compute_now`) arms on the best **A/A+ leg** — so A-grade legs of B-headline names were invisible to
+  the gameplan. Two surfaces, two sources of truth → they disagreed.
+- **Fix:** `compute_gameplan` now derives `buy_now` (= CONFIRMED buys) and `watch` (= ARMED) from `compute_now()`
+  itself — the exact list the Live entries panel renders. Added `_now_compact()` to map an engine rec to the
+  gameplan's compact shape. compute_now already excludes held names + earnings and applies the regime gate, so
+  the lists match the panel by construction. **Grades untouched** (presentation/synthesis layer only — no
+  `grade_suggestions`/`scanner.analyze` change).
+- **Verified live:** bottom-line now reads *"No positions and nothing in a buy zone yet — the plan is patience.
+  Watching: POET, INTC, LUNR, TSEM, RKLB."*
+- **Note:** needs a server restart to take effect (`app.py` change).
+
+## 2026-06-08 — Plan-view v5 (compact, new font) + two render-path fixes + chart-button fix
+
+**What was done** (trader-driven, mockup-approved via `mockups/plan.html`; backups `2026-06-08_pre-fullsite-v4`,
+`2026-06-08_planview-v5`)
+- **New font site-wide:** Plus Jakarta Sans (body) + Space Grotesk (labels/tickers) + JetBrains Mono (numbers),
+  replacing Inter. Font `<link>`s in index/autopilot/panel heads; `--muted`/`--faint` lifted + new `--content`
+  for readable context text (the dim-grey "blends into the background" fix, applied globally).
+- **Plan view redesigned to v5** (BUY hero → 4-cell levels strip → "Why this setup" metric grid from real
+  fields p1m/p6m/pull_from_high/volc → one clean thesis line → 📈 View chart button). Replaces the old flat
+  Watch/BUY/Stop/… text dump. `app.py` passes those 4 metric fields onto the `/now` recs (text-only, grades
+  verified unchanged).
+- **Caught TWO separate plan renderers** (the trader spotted the app's was right-ish but the Live Coach was
+  still old): (1) `app.js planHtml` — its "thesis" was dumping the full cryptic `pl.why`; now a clean derived
+  one-liner; SIZE falls back to the plan's size text. (2) `panel.html planRows` (Live Coach) — was still the
+  old `1·Watch/2·BUY` list; **rewritten to the v5 layout** to match.
+- **Chart button no longer dumps you into the dashboard:** root cause was the `?chart=` deep-link (used by
+  autopilot + Live Coach) loading the app at the default `view:'dashboard'`. Fix = a **chart-only mode**: when
+  `?chart=X` is present, a new `chartOnly` flag hides the sidebar + `<main>` (via `x-show="!chartOnly"`) so ONLY
+  the chart modal renders — no dashboard. Closing it reveals the app on **suggestions** (never dashboard).
+  Autopilot + coach links open in a new tab (`target="_blank"`); the main app already used an in-place modal.
+- Verified: `node --check` clean (app.js + autopilot + panel inline JS), grades firewall + grader suite PASS,
+  CSS balanced. **Frontend = hard-refresh** (incl. the Live Coach window, which caches hard); the `app.py`
+  metric pass-through wants a **server restart** to light up the WHY grid (degrades to "—" otherwise).
+
+## 2026-06-08 — v4 design language applied to the WHOLE site (every screen, Lynch)
+
+**What was done** (trader loved the v4 cards — "WAY better, that's my style" — wanted EVERY screen to match;
+last cohesion sweep was too subtle/invisible, so this round hand-swept bespoke per-screen markup. Backup at
+`backups/2026-06-08_pre-fullsite-v4/web/`)
+- **Card v4 finalized** (round 2, trader-reviewed via the `mockups/cards.html` TSEM spec): ≥6 tags with
+  **🏆 Leader + 🚀 Rising sector pinned first** (gold `.key` chips); **both setups identical** (full Buy/Stop
+  stat cards + own status panel) **split by a divider**; **status in its own `.statusbox` panel** (state +
+  condition + the Lexicon **"confirms on"** trigger chips — the confirm_menu that had gone missing); cleaned
+  the double-hourglass; **bigger type** across the card.
+- **Top bar** restyled to v4 (Filters / SIGNALS / SETUP / MOMENTUM / SECTOR chips, scan + auto-rescan controls,
+  Hot-sectors strip — spring hover, accent active-state, spacing).
+- **Every screen hand-swept to v4** via new shared helpers (`.v4-sub/.v4-eyebrow/.v4-row/.v4-divrow/.v4-table/
+  .tabpill/.v4-tile/.v4-banner/.v4-seg/.v4-modal/.ctrl-btn`, all `@media(hover:hover)`-gated + reduced-motion):
+  Dashboard (tiles/positions/banners), Learning Hub (tab pills + tables + tiles), News + Screeners + Strategy
+  (tab pills, tables, list rows), the **Chart modal** + Take/Close/Position-calc modals (v4 modal surface),
+  **panel.html** (Live Coach cells + action rows) and **autopilot.html** (buy/armed cards). HQ + Competition
+  were already v4-quality (own dedicated CSS) — left by design.
+- **STYLE.md** bumped to **Design language v4** (the law for future work).
+- **Verified live** on :8765: `node --check` clean, 692/692 div balance, zero console errors, computed-style
+  checks pass, **all 11 views zero horizontal overflow at 375px**. Frontend-only → **hard-refresh shows it,
+  no server restart.**
+
+**Open follow-ups (small):** the deep "Stats" forward-test internals still ride v4 *inheritance* rather than
+the new table/row helpers (reads fine); and the "≥6 tags" target shows only genuinely-true tags (data-sparse
+scans may show 4–5 rather than invent filler — trader to decide if he wants padding).
+
+## 2026-06-07 — Card design language v3 + site-wide polish (Lynch, trader-approved mockup)
+
+**What was done** (trader: "this isn't professional… too much text/clutter, basic font". Picked direction C via rendered mockups; backup at `backups/2026-06-07_pre-ui-redesign/web/`)
+- **Designed in the open:** built 3 rendered card directions (`mockups/cards.html`, served via a `mockups`
+  launch.json entry + the preview tool) → trader picked **C (modern fintech)**, refined with: 2-setup support,
+  **Chart button replaces Watchlist**, verbose info (shares/risk/$/thesis) under a collapsed **"Details"**, a
+  **tag expander** (important tags pinned, "＋ all tags" reveals the rest), and tasteful **micro-animations**.
+- **STYLE.md "Design language v3" (LOCKED)** — codified the tokens (`--ease` spring, `--faint`), the card/chip/
+  tag-expander/stat/status/alt/Details/button recipes, and the animation conventions (hover-grow, card lift,
+  `pulse2` for live states, `fade2` for reveals, chevron rotate; honor reduced-motion; never animate layout on
+  mobile via `@media (hover:hover)`).
+- **Suggestion cards rebuilt** (`web/index.html`) onto v3 with full Alpine fidelity — header (sector/ticker/
+  price/grade chip/armed pill), pinned-lead tag expander, `displayEntries` primary (Buy-zone/Stop stat cards +
+  pulsing live status) vs compact alt block, Details collapse, Chart·Took it·Pass. All live states preserved
+  (confirmed/buyable/armed/taken/stale/defend, confirm-menu, lexicon tags). Fixed a `$…/d/d` double-suffix.
+- **Site-wide cohesion** — central v3 component set + global spring hover-polish on `.btn/.fchip/.badge/
+  .card-hover/.scale-btn` in `web/styles.css` (reaches Dashboard/HQ/Competition/Journal/Watchlist/LearningHub/
+  News/Screeners) + button polish in `panel.html` + `autopilot.html`.
+- **Verified live:** 120 cards render, zero JS/Alpine console errors across all 9 views, no horizontal overflow
+  at 360px (kept fluid — no fixed card width). **Frontend only → hard-refresh shows it, no server restart.**
+
+**Optional follow-up:** the non-Suggestions screens inherited the motion/button/chip language but still use the
+v2 `.card` surface (not the full v3 gradient `.card2`) — a deeper migration of those panels is a larger sweep,
+flagged if literal visual parity is wanted.
+
+## 2026-06-07 — Site-wide readability/UX redesign (Lynch) — bigger, higher-contrast type
+
+**What was done** (trader: "I can't read half this stuff — the entire site"; backup at `backups/2026-06-07_pre-ui-redesign/web/`)
+- **Central, no per-element hacks** — all fixes in `web/styles.css` so they cascade across every screen
+  (Suggestions/Dashboard/HQ/Competition/Journal/Watchlist/Learning Hub/Coach/Autopilot) without editing the
+  690-div `index.html`:
+  - **Type scale:** root `font-size` 20→22px; pixel-locked Tailwind tiny classes overridden — `text-[8px]`→11,
+    `text-[9px]`/`[10px]`→12, `text-[11px]`/`[12px]`→13 (nothing real-content below ~12px); body `line-height` 1.55.
+  - **Contrast (the big one):** the ~289 dim greys in index.html — Tailwind `text-slate-400/500/600` — lifted
+    centrally via `!important`: 400 `#94a3b8`→`#b8ccd8`, 500 `#64748b`→`#9dafbf`, 600 `#475569`→`#788da3`
+    (hierarchy preserved, not flat white). `--muted` also lifted `#93a1b8`→`#a8b8d0`.
+  - `panel.html` (Live Coach) + `autopilot.html` font sizes bumped to match.
+- **Mobile safe:** app already caps the user zoom to 100% below 760px, so the 22px base + default 1.25× desktop
+  zoom never overflows a 375px phone. `STYLE.md` updated with the v2 type-scale + contrast rules (LOCKED).
+- **Only CSS/HTML touched** (no Python) → a hard-refresh (Ctrl+Shift+R) shows it; no server restart needed.
+  The in-app zoom can now be dialed back toward 100% since contrast no longer depends on it.
+
+## 2026-06-07 — Lexicon Phase 2 SHIPPED: tags drive the confirmation engine (Burry-verified)
+
+**What was done** (the trader's "make tags USEFUL, not just shown" directive)
+- **`lexicon.py`** — added `SETUP_CONFIRM_MENU` (per-setup confirmation menu, pure data) + `get_confirm_menu()`
+  + `confirm_menu_text()` + `CONFIRM_TAG_LABEL`. The Lexicon vocabulary now defines *what confirms each setup*.
+- **`app.py` `compute_now`** (the trade-critical confirmation engine) — additive only:
+  - Every armed/buy rec now carries **`confirm_menu`** (what will confirm it) + **`confirm_trigger`** (what fired).
+  - New **YH_RECLAIM trigger** (the Martin-Luk prior-day-high reclaim) for the pullback/AVWAP family via the
+    existing `scanner.breakout_confirm(prior_high)` — fires only when the ORH path hasn't already confirmed, so
+    it can never remove an existing confirmation; the 0.7×ADR guard blocks chasing; zone-drift / ADR-cap /
+    buyers-confirm / overhead / frozen-price gates all still apply. Often a tighter, earlier entry than ORH.
+  - `confirm_trigger` labels every path: RECLAIM_50 (deep) · YH_RECLAIM · EMA_RECLAIM · HOD_BREAK · ORH_BREAK.
+- **UI** — armed cards show "⏳ confirms on: reclaim of yesterday's high or opening-range-high break".
+- **Tests** — new `tests/test_lexicon_confirm_menu.py` (menu data + the YH_RECLAIM trigger on synthetic 5-min
+  bars: fires / no-fire-on-wick / no-fire-when-extended), added to the build gate. **31 tests pass.**
+- **Burry-verified PASS**: additive, no-regression on existing confirmations, grades firewalled, None-safe.
+
+**Decisions made**
+- YH_RECLAIM confirms on "whichever fires first" (OR, not AND) — it's the correct Luk trigger and a *tighter*
+  (less-chasing) entry, so additive is right. Easy to gate to AND if the trader wants.
+- Only wired triggers are listed in the menu (ORH/HOD/YH/RECLAIM_50). ORB15/PMH/DVWAP = Phase 2b (need feeds).
+
+**What's next**
+- ⚠️ **Restart the server** to load it. Live-session smoke: confirm a pullback actually fires on YH_RECLAIM
+  intraday (built + verified offline; markets were closed today). Then Phase 3 (backtested grade weights).
+
+## 2026-06-07 — Roadmap cleanup + Lexicon re-centered on USEFULNESS (trader direction)
+
+**What was done**
+- Trader called out "Phase-1-itis" (shipping a Phase 1 and abandoning the rest) → saved as standing rule
+  `finish-features-no-phase1-itis`. Cleaned ROADMAP.md accordingly:
+  - **Removed** the whole Chanos-audit post-verdict section (all closed/rejected/shipped): #7 phantom-stops
+    "false positive", rejected #1/#4/#5/#6, and the #2 same-name re-entry **chase reminder** (trader: "I don't
+    need someone to keep reminding me not to chase"). Also pulled the loss-streak nag + breakout-volume badge.
+  - **Removed** shipped B1/B2 from the active bug list (→ CHANGELOG).
+  - **Re-centered the Lexicon** entry on the real goal — the engine USING tags (Phase 2 confirmation-engine,
+    Phase 3 backtested grade weights), not just display badges. Committed the full arc (M6–M9 → 1b → 2 → 3).
+  - **Learning Hub** promoted from "deferred extras / not needed" to ACTIVE "finish phases 1–4 fully".
+  - **Kept** (trader's call): Israel market Phase 2 + pre-market movers (both "later").
+
+**Decisions made**
+- Lexicon's value is tag-driven confirmation + grading, not decoration. Phases are gates, not stop points.
+- No behavioral "chase/streak reminder" features — the trader manages that himself; the $500 cap is the control.
+
+**What's next**
+- Build, not defer: make Lexicon tags useful (confirmation engine first) AND finish the Learning Hub (1–4).
+
+## 2026-06-07 — The Lexicon Phase 1 (M1–M5) SHIPPED — context badges, Burry-verified
+
+**What was done** (team design: quant/Lynch/Burry/Graham/Munger + chief; backup at `backups/2026-06-07_pre-lexicon/`)
+- **`lexicon.py`** — new leaf module (imports nothing from app/scanner/rubric, reads no files): a tag registry
+  + pure detectors + `detect_all(item)`. **10 Phase-1 tags** (all display-only, status `detected`, zero grade
+  weight): EP, 52WH_BO, STAGE2, VCP, RS_LEADER, BGU, YH_RECLAIM, TIGHTNESS, VDU, PARABOLIC.
+- **Firewall** — wired into `grade_suggestions` as a pure append (one `lexicon_tags` key, AFTER grades finalize;
+  reads the graded item dict, can't touch the grade). Proven by `tests/test_lexicon_tags_do_not_change_grades.py`
+  (golden grade snapshot via new `tools/make_grade_snapshot.py`) + `tests/test_lexicon_detectors.py` (13 cases).
+  Both added to the `make-build.ps1` test gate. Existing 7-test grader suite still passes.
+- **UI (M5)** — role-colored badges on the main suggestion card (`web/app.js` `lexVisible/lexStyle/lexLabel`
+  + `web/index.html` band): cap 3 + "+N more", tooltip = the tag's define; STAGE2/VCP/EP deduped against the
+  existing dedicated badges. Live-data sanity: 233/793 names tagged, avg 1.6, max 5.
+- **Burry caught + fixed a CRITICAL build bug:** `make-build.ps1` wasn't copying `lexicon.py` to swinghelper →
+  the hosted build would have crashed on `import lexicon`. Fixed.
+
+**Decisions made**
+- Detectors read the GRADED ITEM dict (not raw bars), called from `grade_suggestions` (Burry's placement) — keeps
+  `scanner.analyze` + its golden untouched and makes grade-safety structural.
+- Dropped the EMA/VWAP **reclaim** tags + true **ATH_BO** from Phase 1 → Phase 1b: they can't be detected
+  honestly from a single snapshot (no prior-bar-vs-line field; our 1y window ≠ true ATH). Honest beats more.
+- Short-history guard rides on `trend_template` (needs 200 bars) since the item carries no bar count.
+
+**What's next**
+- ⚠️ **Restart the server** (port 8765) — the serve path re-grades on read (`app.py:4281`), so badges appear on
+  restart, no full rescan needed.
+- Phase 1 cont. (M6–M9): Live Coach chips, Telegram digest line, Autopilot pills, journal auto-tag.
+- Phase 1b: true ATH_BO + reclaim tags. Phase 3 (gated): backtest-validated grade weights — grades frozen till then.
+
+## 2026-06-07 — The Lexicon (Context Layer) spec'd + new feature ideas → roadmap
+
+**What was done**
+- Named & documented the trader's idea — **The Lexicon** (`strategy/lexicon.md`): a canonical vocabulary of
+  every named setup/trigger/context/trap pattern + a runtime **Context Layer** that detects which apply and
+  reuses them across setups, the confirmation engine, the grade, and the journal. Organized the trader's full
+  taxonomy (~150 patterns) into 7 categories with a per-entry schema (tag/role/detect/feeds/status) + guardrails
+  (grade-firewall, backtest-gated weighting, no double-count, earnings=catalyst-not-fundamentals, long-only,
+  no-lookahead) + a 4-phase rollout (detect+display → confirmation menu → backtested grade weights → extend).
+- ROADMAP.md now has a **BIG IDEA** pointer to the doc + a **NEW FEATURES** section (chief's net-new ideas:
+  "why this grade" explainer, stalk mode, regime-aware playbook, inline setup win%/median-R, one-tap
+  suggestion→journal, post-mortem auto-tagger) — the crew had leaned bug-heavy.
+- Memory `lexicon-context-layer` added for cross-session continuity.
+
+**Decisions made**
+- The Lexicon is firewalled: a tag may DISPLAY immediately but never changes a grade until a blind no-curve-fit
+  backtest proves edge + Burry verifies. Catalog ≠ grading.
+- Earnings tags (EGU/PEG) are catalyst context, not a fundamentals filter — `no-fundamental-filter` stays in force.
+
+**What's next**
+- Phase 1: a `lexicon.py` registry (tag → detector + metadata) for the cheap unambiguous tags, shown as
+  informational badges (zero grade change). Trader will extend the vocabulary over time.
+
+## 2026-06-07 — Shipped B1 + B2 from the crew brainstorm (Burry-verified)
+
+**What was done**
+- **B1 — forward-sim primary trail 20→9-EMA.** `_sim_forward` & `_trail_results` (`app.py:2052`/`:2118`) set
+  `pn = 50 if patient else 9` (was 20); docstrings at `:2095`/`:2369` corrected. "System Edge" now measures the
+  9-EMA the user actually trades instead of a 20-EMA trail no one runs. Isolated to the forward-test path — does
+  NOT feed grades (the grade nudge reads real closed-trade `result_r`, not the forward sim). r9/r20/r50 all still
+  stored, so a future 20-vs-9 backtest is still possible.
+- **B2 — realized-results grade nudge MEAN→MEDIAN R.** `compute_stats()` gained a `_median()` helper + a
+  `median_r` field per setup; the nudge (`app.py:1522`) now uses `median_r` (avg_r fallback for stale cache).
+  Resists fat-tail skew. **The nudge was already ARMED** (not dormant as first thought): Consolidation (n=9) and
+  Pullback@AVWAP (n=6) both ≥5 closed. Live grade impact: **Consolidation nudges ~1 pt harder** (−2.05→−3.00,
+  median −1.00 vs mean −0.68 — its typical trade is a clean −1R); Pullback@AVWAP ≈ unchanged; all other setups
+  dormant (<5) = zero nudge.
+- **Burry (qa) verified both** PASS — KeyError-safe, isolated, median correct for odd/even/empty, no double-count,
+  impact numbers confirmed against `data/trades.json`. He caught one stale docstring (now fixed).
+
+**Decisions made**
+- B1 was a straight alignment to the live 9-EMA rule, not a re-derivation. If a backtest later argues 20 is the
+  better trail, that's a separate strategy call (r20 still recorded).
+- B2 intentionally moves Consolidation grades down ~1 pt — accepted as the more honest "typical trade" read.
+
+**What's next**
+- ⚠️ **Restart the app server** (port 8765) for both changes to take effect — code edits to app.py/rubric.py.
+- Remaining NOW items from the brainstorm: B3 market-staleness guard, overnight-exposure warning, same-name
+  re-entry warning, loss-streak size banner, breakout volume badge. (Context being cleared — see ROADMAP.md.)
+
+## 2026-06-07 — Chanos studies the masters + full-crew feature brainstorm → roadmap
+
+**What was done**
+- **Chanos studied the trading canon** (cheap/haiku research agents): distilled the Market Wizards series,
+  Minervini SEPA/VCP/Trend-Template, O'Neil CANSLIM, Darvas Box, and the user's *Principles of Great Traders*
+  PDF (76pp, fully extracted) into `strategy/masters/*.md` (4 files, ~1,360 lines). Then delivered **Critique
+  Memo #001** (`journal/critic-log.md`) — 7 findings, evidence-cited.
+- **Trader's verdict logged** in critic-log: #1 fundamentals REJECTED (→ memory `no-fundamental-filter`),
+  #4 9-EMA exit REJECTED (shield mode + pullback regime context Chanos missed), #5 progressive-exposure
+  ALREADY DONE ($500 cap = ¼ size), #6 volume MINOR/opt-in, #7 phantom-stops **FALSE POSITIVE** (verified in
+  `trades.json`: the 7 `stop==entry` rows are legit breakeven exits, `initial_stop` preserved, R correct).
+  Hardened critic.md: always verify against `data/*.json`, never the regenerated views.
+- **Full-crew feature brainstorm** (Workflow `crew-feature-brainstorm`, 10 specialists + Munger, 50 ideas):
+  scored into ROADMAP.md as a new "Crew Brainstorm" section (bugs + NOW/NEXT/LATER). Chief **code-verified
+  the bug claims**: B1 (forward sim trails 20-EMA not 9 — ✅ real, needs quant decision) and B2 (nudge uses
+  mean avg_r, arms at 5/setup — ✅ real) confirmed; B3 market-staleness likely; B4 overstated (R not corrupted,
+  only a fat-finger upper-bound gap); B5/B6 unverified.
+
+**Decisions made**
+- Backup cadence corrected: ONE backup per NEW DAY, not per feature (memory `backup-before-changes` updated).
+- Fundamentals/earnings filters are permanently OUT OF SCOPE — trend-following, not value.
+- Nothing built this session — roadmap only; trader decides what ships next.
+
+**What's next**
+- Highest-conviction builds queued: **B1 trail decision** + **median-R nudge (B2)** + the behavioral guardrails
+  (overnight-exposure warning, same-name re-entry, loss-streak sizer). All quant/risk-auditor, mostly S-effort.
+- Engine touches (B1/B2) need Burry verification + no grade regression before shipping.
+
+## 2026-06-07 — New crew member: Chanos 🐻, the critic (red-team / skeptic)
+
+**What was done**
+- Added an **11th subagent** — `critic` (codename **Jim Chanos** 🐻), a standalone skeptic whose only job is
+  to find what we got **wrong**: pressure-tests our setups, the engine, the data, AND the user's live
+  decisions against how the greatest traders actually operate (deep-reads *The Market Leaders*, *Principles
+  of Great Traders*, Qullamaggie/Livermore/Soros/Druckenmiller/O'Neil, *Market Wizards*, etc.).
+- **Evidence-only, no yes-manning, no reflexive contrarianism** — every finding ships with a master's
+  principle + citation → our reality (file:line/trade/rule) → cost in R → fix/owner. Steelmans his own thesis
+  before raising it; states plainly when we're actually right.
+- Files: `.claude/agents/critic.md` (charter); `journal/critic-log.md` (his running memo, newest-on-top).
+  Wired into the roster + sprint fan-out in `.claude/agents/README.md`, and into the **HQ tab**
+  (`HQ_ROSTER` + squads list in app.py, `hqRooms` order in web/app.js — new "Critic" squad, DiceBear avatar).
+  Memory `agent-crew.md` updated 9→11 (also backfilled Shannon).
+
+**Decisions made**
+- Left the existing 10 untouched (user's call) — Chanos is additive and independent, mandate = *everything*.
+- Model = sonnet (judgment role, like qa/risk-auditor); he does his own web research rather than spawning.
+
+**What's next**
+- **Restart the app server** (port 8765) to see Chanos in the HQ tab — code changes need a restart.
+- Take him for a test drive: "ask Chanos to critique our pullback grading vs Minervini's *Market Leaders*."
+
+## 2026-06-07 — Doc architecture overhaul: researched, codified, applied (token diet)
+
+**What was done**
+- **Researched** proper CLAUDE.md / agent-doc architecture (official Claude Code memory docs + HumanLayer)
+  and adopted the **3-layer progressive-disclosure** model: L1 index (always loaded) *orients & routes, never
+  documents*; L2 topic docs load on demand; L3 = code/data/CHANGELOG.
+- **CLAUDE.md → a 49-line index** (12.2KB → **3.25KB, −73%**). Trading ground rules, sizing formula, and the
+  setup output-format template moved OUT to `strategy/my-rules.md` (read before every setup); slash-command
+  docs removed; kept only the universal "always" guardrails + Context-Management loop + a router table.
+- **MEMORY.md → 36 lines** (7.9KB → **4.1KB**). Added the 95%-confidence rule + Context-Management to CLAUDE.md.
+- **PROJECT.md** 60KB → **8.3KB**: deleted the "Recent session history" table (duplicated CHANGELOG), moved the
+  66-line feature catalog to new **`FEATURES.md`**, trimmed hosting to a pointer. Kept file-map + locked rules + gotchas.
+- **Per-session memory files DELETED** (`session-2026-06-*.md` ×4, `next-task-forward-review.md`,
+  `macro-regime-research-2026-06-06.md`) — dated history belongs in CHANGELOG only. Missing content migrated
+  first → added `2026-06-06 (optimization + crew-roadmap)` and `2026-06-04 (forward-review + PROFIT GUARD)` entries.
+- **ROADMAP.md** 26KB → 15KB; shipped items → `ROADMAP-archive.md`. Memory dir 184KB → **70KB (−62%)**.
+- **New crew agent: 🗜️ Shannon = `token-master`** (`.claude/agents/token-master.md`) — owns context/token
+  efficiency, separate from the optimizer (runtime). The full doc-architecture **standard is codified inside it**
+  so we never re-derive it; memory pointer `doc-memory-architecture.md` + README updated (now 10 specialists).
+- **Whole-tree audit** (not just the headline files): swept every doc + memory file against the standard
+  and fixed the duplication/conflicts it found — retired the stale `journal/backtest-findings.md` (→ pointer
+  to `swing-system.md`), redirected root `DEPLOY.md` → `swinghelper/DEPLOY.md`, de-duped grading (FEATURES →
+  pointer to `scoring.md`), fixed the **10%-vs-15% max-position conflict** (10% operative, 15% ceiling) across
+  PROJECT/FEATURES, fixed two stale `scoring.md` weight headers (15%→14%), trimmed PROJECT's locked-rules to a
+  checklist + pointers, trimmed `lessons.md` + `backtest-validation.md` of stats duplicated in swing-system,
+  deleted the superseded `screener-universe.md`, and archived the shipped Competition tab in ROADMAP.
+- Backups: `backups/2026-06-07_token-diet/` + `…-2/`. (Risk-auditor PASS on the first batch.)
+
+**Decisions made**
+- **Always-loaded tax (CLAUDE.md + MEMORY.md) = 20KB → 7.4KB (−63%)** — paid back every turn.
+- One fact, one home, by type: rules→domain file, dated history→CHANGELOG (query by date), features→FEATURES.md,
+  plans→ROADMAP.md, lessons→memory topic files. **Prefer pointers to copies.** No per-session `.md` files, ever.
+- `token-master` ≠ `optimizer`: context cost vs runtime cost. Standard lives in the agent so it's reusable.
+
+**What's next**
+- ⚠️ The `token-master` agent file is saved but the runtime registry loads it **next session** — Shannon can't be
+  spawned until then (this round's memory cleanup ran via a general agent).
+- Owner to review the 49-line CLAUDE.md before lock-in. No code touched — nothing to restart.
+
 ## 2026-06-06 (evening — Telegram upgrade · macro-layer rewire · Today-prediction fix)
 - **Telegram bot upgraded (LOCAL-ONLY, free)** — inline action buttons on alerts ([✅ Took it]/[👀 Watch]/[❌ Pass];
   [🔴 Closed it]/[🟡 Raise stop]), a `/` command menu (`setMyCommands`: /setups /positions /pnl /brief /recap /regime
@@ -27,6 +443,19 @@
   added: compact + route the always-read docs (CLAUDE.md/ROADMAP/PROJECT/MEMORY) to cut standing token cost.
 - **Synced to the build** (`make-build.ps1`, test-gate 7/7) — NOT pushed (user pushes). ⚠️ **Restart the server** to load
   the Telegram + macro + prediction changes. Friend handout written: `UNIVERSE_AND_DATA_HOWTO.md`.
+
+## 2026-06-06 (optimization + crew-roadmap batch)
+- **Tier-1 performance + correctness** — `scanner.get_bars` in-memory bar cache keyed by file mtime (~0.09ms warm vs re-reading 800 JSON files); DST fix (`_et_now` manual EDT/EST offset — box has no tzdata so hardcoded −4 was wrong Nov–Mar); `analyze()` drops 0.0-OHLC glitch bars (was silently div-by-zero + drop); `close_trade` defaults `result_r=0.0` not None; scan/universe-rebuild mutual-exclusion guard (`UNIVERSE["running"]`/`SCAN["running"]`); `compute_stats` 15s TTL cache (was re-reading trades.json on every grade pass); `_FETCH_STATE` thread-local replaces racy global `_DID_FETCH`.
+- **Golden-file test harness** — `tests/test_grader.py` + `tests/golden_analyze.json` + `tools/make_golden.py`. 8 frozen tickers byte-compared through `scanner.analyze`. Re-baseline ONLY via `make_golden.py` after a sanctioned change.
+- **Money-leak #1 fixed: live-equity sizing** — `compute_equity` values open positions at live `fetch_quotes` price during RTH; `compute_now` sizes BUYs off `_equity_settings()` (real equity), not the static account figure.
+- **Money-leak #2 fixed: zone-drift gate (the −8.73R leak)** — in `compute_now` confirmed-breakout path, a buy-at-support setup (Pullback/Pullback@AVWAP/AVWAP-reclaim/Consolidation) whose live price runs >½× ADR above the planned zone stays ARMED but won't freeze a chase entry. Breakout/EP/DeepPullback exempt.
+- **Winsorized forward R** — `_agg_rs` adds `avg_r_w`/`total_r_w` capped at +10R (`FWD_WINSOR_CAP`). Surfaced as subnote on Forward-test Avg R.
+- **>1× ADR stop flag** — `_adr_violation` helper; `adr_violation` field on item + each leg; ⚠ badge on card leg.
+- **RS lookahead fix** — `_attach_rs` accepts optional `benchmark` param; `research_stage1` passes AS-OF index returns. ⚠️ `research_watch.json` needs regen (`python tools/research_stage1.py`) — not yet run.
+- **UX** — staleness banner on Suggestions tab when scan date < latest session; gzip on `/api/*` responses >1.4KB (≈9× compression); dashboard top-suggestions strip `flex-wrap` + mobile line-2 for 375px.
+- **Learning loop** — nudge audit (Consolidation −2.04, Pullback@AVWAP −2.19 confirmed); fixed "Deep pullback"→"Deep Pullback" typo; added `entry_vs_plan_pct` to closed trades; RKLB lessons added to `journal/lessons.md`.
+- NOT shipped: grade-output response cache (conflicts with live-equity sizing), sector-heat members strip, app.py module split (needs golden-file gate first), intraday-equity live quotes (BUG-03).
+- Burry-verified (both batches). ⚠️ Restart server + rescan to load. Backups: `backups/20260606-001545-pre-tier1` + `backups/20260606-005302-pre-crew-roadmap`.
 
 ## 2026-06-06 (VIX velocity · grader fixes · build gate · Learning Hub)
 - **VIX velocity feature** — `scanner.vix_trend()` (a SIBLING of fear_greed, never folded into posture → can't
@@ -69,6 +498,13 @@
 - **The Agent Crew** — 10 reusable subagents (`.claude/agents/`) with investor personas + model tiers, and the
   **🧠 HQ "Agent Office"** tab (animated, plain-English, local-only; `/api/hq`).
 - ⚠️ Restart the server + rescan to load. STANDING RULE: engine changes go through a repro + Burry (qa) before shipping.
+
+## 2026-06-04 (forward-review + PROFIT GUARD)
+- **Forward-review finding:** the app's offered slate (103 picks, 2026-06-04) = net +0.26R / 66% green; user's 5 CLOSED trades = −2.55R (−0.51R avg). **Gap is 100% execution, not the system** — every red trade was a chase above the planned entry + improvised tight stop (RKLB: planned 113.66 pullback → user entered at 116.58 with a 14¢ stop → shaken for −0.02R; INTC/AEHR: planned entries never filled so losses were self-made).
+- **Grade calibration finding:** B avg +0.39R vs C avg +0.24R (B edges C), BUT 3 of 6 big winners were C-grade (CRDO +2.11, SUNB +2.07, AVAV +1.95) → grader under-rates clean RS-strong pullbacks. Calibrate via forward-test loop as data accrues.
+- **PROFIT GUARD built** (`GUARD STOP`, `design-rules-sizing-stops.md`) — ATR-aware 1.5× buffer: after a position moves enough, the stop auto-raises to entry + 1.5× ATR so a retracement doesn't give back full profit. Built off user's "stop giving money back at breakeven" request.
+- **AAOI validation:** first AAOI failed on OLD logic (−1R); same name on the fixed live engine → ripped to $200+ (+2.58R open). Validates the mid-day rebuild (entry-confirmation-mechanics).
+- **Account base set:** $19,477.20; equity = base + realized (−$400.86) + open. `account_size` in settings = fixed base; never overwrite with the live balance.
 
 ## 2026-06-03 (Real-time intraday backtest + visual report — proves the confirmation engine works)
 - Built `tools/sim_intraday.py`: replays the LIVE coach on **5-minute bars** — watches each A/A+ setup and

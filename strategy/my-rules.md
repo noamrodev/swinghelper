@@ -55,6 +55,34 @@ here to match how you actually trade.
 - Don't widen a stop. Don't average down. Don't enter before the breakout actually triggers.
 - Don't size up past 1% risk because a setup "looks great."
 
+## Position sizing â€” the math (1% risk)
+```
+risk_per_share = entry âˆ’ stop                 (for longs)
+shares         = (account_size Ã— 0.01) / risk_per_share
+dollar_risk    = shares Ã— risk_per_share      (should â‰ˆ 1% of account)
+R              = (target âˆ’ entry) / risk_per_share
+```
+- Use the account size above for real share counts. Sanity-check: if `risk_per_share > 1Ã— ADR`, the
+  stop is too wide â€” the setup is too extended, say so.
+- Also cap the position at â‰¤10% of account (15% hard ceiling) regardless of what 1% risk allows.
+
+## How to present a setup (output format â€” use every time)
+Rank ideas best-first. "No clean setups" is a valid answer. For each idea give exactly:
+
+> **TICKER** â€” *setup type* (breakout / episodic pivot / pullback / deep pullback / consolidation)
+> - **Entry:** price + trigger. Two options when both make sense (don't force it):
+>   **Breakout** = *buy-stop above $X* â†’ phrase "break above $X" (X above current price);
+>   **Pullback** = *buy-limit at support below* â†’ "wait for the pullback to $Y" (Y below price â€” the
+>   breakout level / reclaimed swing high / 9â€“20â€“50 EMA / AVWAP). Never say "pull back toward" a price
+>   that's above current price. Mark **Episodic Pivot only for a true open GAP (~8%+) on fresh news**;
+>   a multi-day run into a base high is a **Breakout**.
+> - **Stop:** price + why ("$Y, low of breakout candle; risk $Z/sh = 0.8Ã— ADR âœ…")
+> - **Size:** N shares (1% = $â€¦ risk) â€” or % of account if size unknown
+> - **First target / trim:** ~$â€¦ (â‰ˆ R), then trail per the 9/50 rule above
+> - **Why it fits:** one line (relative strength, tight base, catalystâ€¦)
+> - **Catalyst/hype:** from `/check-hype`, if any
+> - **Data source:** e.g. "TradingView screener, read 2026-05-30 14:05 ET"
+
 ## Notes to the agent
 - I'll confirm or correct these rules. Treat this file as authoritative when it conflicts with the
   generic Qullamaggie/Martin-Luk docs.

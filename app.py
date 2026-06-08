@@ -30,6 +30,7 @@ from urllib.parse import urlparse, unquote, quote, parse_qs
 import scanner
 import universe
 import rubric
+import lexicon
 # bots (Competition) + learning (Learning Hub) are LOCAL-ONLY features and are NOT shipped to the hosted
 # build (make-build.ps1 omits them by design). Guard the imports so the hosted server boots without them —
 # every bots.*/learning.* call site is HOSTED-gated or only runs on the local path, so None is never used there.
@@ -1404,6 +1405,16 @@ def grade_suggestions(items, settings, posture=None, heat=None):
     backfill of a missed past day); when None they read the current files (the normal live path)."""
     rev = reverse_themes()
     heat = heat if heat is not None else {h["sector"]: h for h in read_json(sector_heat_f(), {}).get("sectors", [])}
+    # BROAD-CORRECTION DE-BIAS (user 2026-06-08, the APLD case): when nearly EVERY sector is "Falling",
+    # a leader's Falling-sector tag is just the market pulling back — already priced into `posture` — NOT a
+    # stock-specific negative. Penalizing it (sector=12) AND capping the setup on top double-counts the same
+    # correction (the AXTI double-count bug, generalized). Measure the breadth of the selloff ONCE here; when
+    # it's broad, _rating stops the Falling penalty/cap for PATIENT at-support setups only (deep pullbacks /
+    # consolidations / AVWAP — the backtest-validated any-tape workhorses). FIREWALL: when NOT broad
+    # (<65% of sectors Falling) `broad_correction` is False and every grade is byte-for-byte unchanged.
+    _htr = [h.get("trend") for h in heat.values() if h.get("trend")]
+    broad_correction = (len(_htr) >= rubric.BROAD_CORR_MIN_SECTORS
+                        and sum(1 for t in _htr if t == "Falling") / len(_htr) >= 0.65)
     news_data = read_json(news_f(), {})
     news_map = news_data.get("ticker_news", {})
     theme_news = news_data.get("theme_news", {})
@@ -1508,6 +1519,10 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         # so Rising now outranks Hot.
         sector = 100 if tr == "Rising" else (85 if tier == "Hot" else 25 if tr == "Slowing"
                                              else 12 if tr == "Falling" else 55)
+        # broad-correction de-bias: a Falling sector during a market-wide pull carries no stock-specific
+        # signal for a leader bought AT support — lift it off the floor to neutral (patient setups only).
+        if broad_correction and tr == "Falling" and patient_quality:
+            sector = max(sector, rubric.NEUTRAL)
         # timing rewards WAITING (backtest: not-buyable +0.36R beat buyable-now +0.17R): the in-zone
         # bonus only goes to patient setups OR a non-extended name — never an extended in-zone chase.
         timing = 75 if (ww or (buyable and ext < 2)) else 55
@@ -1516,8 +1531,11 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         r = rubric.composite(setup, rs, regime, entry_loc, liq, sector, timing, news)
         hist = bysetup.get(st)                                          # learns from realized results
         if hist and hist.get("n", 0) >= rubric.HIST_MIN_N:
+            # B2 (2026-06-07): nudge off MEDIAN R, not mean — on a fat-tailed momentum book the mean is
+            # dragged by −1R stops and would demote exactly the setups with an outlier winner. Fallback to
+            # avg_r only for a stale cache that predates the median_r field.
             r += max(-rubric.HIST_NUDGE_MAX, min(rubric.HIST_NUDGE_MAX,
-                                                 hist.get("avg_r", 0) * rubric.HIST_NUDGE_K))
+                                                 hist.get("median_r", hist.get("avg_r", 0)) * rubric.HIST_NUDGE_K))
         # earnings overhang: a print inside a week is a hard demote (don't open binary risk);
         # 8-14 days out is a lighter caution.
         if it.get("earnings_soon"):
@@ -1548,15 +1566,24 @@ def grade_suggestions(items, settings, posture=None, heat=None):
                 r = min(r, rubric.CAP_BREAKOUT_MIXED)       # breakouts fail in weak tape -> max B
         elif patient_quality and ext < rubric.CHASE_SOFT_ADR and (
                 tr != "Falling"
+                or broad_correction                                # market-wide pull → Falling isn't stock-specific
                 or (st in ("Deep Pullback", "Consolidation") and (it.get("rs_pct", 0) or 0) >= 90)):
             # A top-decile leader (RS≥90) buying a Deep Pullback/Consolidation TO support BYPASSES the
             # "cooling group" exclusion: the deep pull already priced the group selloff in. Sector=12
             # (Falling) still costs ~10 composite points — that's enough penalty; capping at C on top of
             # it is double-counting fear and was killing exactly the workhorse setup (the AXTI case,
             # bug fix 2026-06-06). Plain pullbacks in a Falling group still fall to the else branch.
-            if posture < rubric.REGIME_WEAK:
-                r = min(r, rubric.CAP_PATIENT_WEAK)         # deep correction: even the best -> max B, not A
-            # posture >= 50: no cap -> A/A+ reachable for the best patient setups (near their base)
+            # Ceiling relax: a patient LEADER at support can reach A in a MILD pullback (posture 40-49),
+            # not just a healthy tape — but a >60% round-trip (DXYZ) isn't a clean A, so it stays capped in
+            # that relaxed band. Below 40 (real correction) still caps everyone. At posture >= REGIME_WEAK
+            # (50) the original behavior is UNTOUCHED: no cap (a top-decile deep pull like AXTI at 60%+ still
+            # reaches A via its strength bonus). The round-trip guard ONLY gates the newly-relaxed 40-49 band.
+            _rt_ok = (it.get("pull_from_high") or 0) <= 60
+            if posture < 40 or (posture < rubric.REGIME_WEAK and not _rt_ok):
+                r = min(r, rubric.CAP_PATIENT_WEAK)         # real correction OR >60% round-trip in a mild pull -> max B
+            elif posture < rubric.REGIME_WEAK:
+                r = min(r, rubric.CAP_PATIENT_MILD)         # mild pullback (40-49) clean leader -> max A, never A+
+            # posture >= REGIME_WEAK (50): no cap -> A+ reachable (healthy tape only)
         else:                                               # plain pullbacks & everything else
             if posture < rubric.REGIME_WEAK:
                 r = min(r, rubric.CAP_PLAIN_WEAK)
@@ -1569,6 +1596,8 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         is_leader = (it.get("rs_pct", 0) or 0) >= rubric.LEADER_RS or bool(it.get("trend_template"))
         if not is_leader:
             r = min(r, rubric.CAP_NONLEADER)
+        if it.get("above_200") is False:                    # explicit below-200 only (not missing/None)
+            r = min(r, rubric.CAP_BELOW_200)               # below the 200-day SMA = not Stage 2 -> max C
         return round(max(0, min(99, r)))
 
     patient_or_pullback = pullback_setups   # Deep Pullback + Consolidation now live in pullback_setups
@@ -1606,6 +1635,10 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         ratings = [e["rating"] for e in ratable]
         it["rating"] = round(sum(ratings) / len(ratings)) if ratings else _rating(it)
         it["grade"] = _grade_letter(it["rating"])
+        # ---- Lexicon Phase 1 — Context Layer (DISPLAY-ONLY) ----
+        # Runs AFTER the grade/rating are finalized and writes ONE new key. It reads existing fields
+        # and CANNOT affect the grade (firewall — see strategy/lexicon.md). Pure append.
+        it["lexicon_tags"] = lexicon.detect_all(it)
     # break rating ties with the raw setup `score` so the order is STABLE + meaningful (many names tie at
     # rating 72 when a weak-tape regime gate caps grades at B; without a tiebreak the list reshuffles).
     return sorted(items, key=lambda x: (x.get("rating", 0), x.get("score", 0)), reverse=True)
@@ -2049,7 +2082,9 @@ def _sim_forward(bars, trade_date, entry, stop, entry_type, setup_type=None):
         if rr is None:
             rr = round((bars[end]["close"] - entry) / risk, 2)
         results[n] = {"R": rr, "exit": reason, "matured": matured, "exj": exj}
-    pn = 50 if patient else 20                             # config-E primary trail
+    pn = 50 if patient else 9                              # primary trail = the 9-EMA the user actually trades
+                                                           # (50 ONLY for a deep-at-the-50 leader). B1 fix 2026-06-07:
+                                                           # was 20 — System Edge measured a trail we don't run.
     pr = results[pn]
     return {"R": pr["R"], "exit": pr["exit"], "matured": pr["matured"],
             "status": "matured" if pr["matured"] else "open",
@@ -2092,7 +2127,7 @@ def _sim_forward_best(bars, trade_date, pick):
 
 def _trail_results(bars, fi, entry, stop, patient):
     """Manage a filled trade forward from bar `fi`: exit on a daily close < the trailing EMA or the stop.
-    Returns R under all three trails (9/20/50); the PRIMARY R trails the 20-EMA (50 for patient leaders)."""
+    Returns R under all three trails (9/20/50); the PRIMARY R trails the 9-EMA (50 for patient leaders)."""
     risk = entry - stop
     if risk <= 0:
         return None
@@ -2115,7 +2150,7 @@ def _trail_results(bars, fi, entry, stop, patient):
         if rr is None:
             rr = round((bars[end]["close"] - entry) / risk, 2)
         results[n] = {"R": rr, "exit": reason, "matured": matured, "exj": exj}
-    pn = 50 if patient else 20
+    pn = 50 if patient else 9                              # primary trail = 9-EMA (B1 fix 2026-06-07; was 20)
     pr = results[pn]
     return {"R": pr["R"], "exit": pr["exit"], "matured": pr["matured"],
             "status": "matured" if pr["matured"] else "open",
@@ -2361,7 +2396,7 @@ def forward_day(date):
 def score_forward(include_picks=False):
     """Overview across ALL logged days: per-day summaries (the calendar grid), an overall aggregate, and
     the global learning dimensions. Each pick is simulated forward (fill on its trigger, exit on a daily
-    close < the trailing EMA — primary 20-EMA, 50 for patient leaders — or a stop). `include_picks` adds
+    close < the trailing EMA — primary 9-EMA, 50 for patient leaders — or a stop). `include_picks` adds
     every day's full pick list (heavy); the calendar uses the lightweight default + /api/forward/day."""
     log = read_json(forward_f(), {"snapshots": {}})
     snaps = log.get("snapshots", {})
@@ -2556,6 +2591,16 @@ _STATS_CACHE = {"t": 0.0, "v": None}   # short TTL: compute_stats reads+parses t
                                        # /api/suggestions, forward backfill...). Cleared on any trade mutation.
 
 
+def _median(xs):
+    """Plain median — resistant to fat-tail blow-up losses skewing the realized-results nudge (B2)."""
+    s = sorted(xs)
+    n = len(s)
+    if not n:
+        return 0.0
+    m = n // 2
+    return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
+
+
 def compute_stats():
     c = _STATS_CACHE
     if c["v"] is not None and (time.time() - c["t"]) < 15:
@@ -2575,7 +2620,8 @@ def compute_stats():
             w = [x for x in grp if x > 0]
             out["by_setup"][stp] = {"n": len(grp),
                                     "win_rate": round(100 * len(w) / len(grp), 1),
-                                    "avg_r": round(sum(grp) / len(grp), 2)}
+                                    "avg_r": round(sum(grp) / len(grp), 2),
+                                    "median_r": round(_median(grp), 2)}    # B2: the nudge uses THIS, not mean
     # learning-loop activation: the ±8 realized-results nudge fires per setup at ≥5 CLOSED trades. Surface
     # how close each setup is so the user knows the grader is data-waiting, not broken.
     out["activation"] = {stp: {"closed": v["n"], "active": v["n"] >= 5, "to_go": max(0, 5 - v["n"])}
@@ -2730,6 +2776,18 @@ def _sug_compact(s):
             "rating": s.get("rating"), "why": s.get("why")}
 
 
+def _now_compact(r):
+    """A confirmation-engine rec (compute_now's armed/buys) → the gameplan's compact setup shape, so the
+    gameplan's buy_now/watch are the SAME names the Live entries panel shows. The engine grades PER LEG and
+    arms on the best A/A+ leg, so this captures A-grade legs of B-headline names that the old headline-grade
+    filter dropped (the 6 armed Deep Pullbacks that read 'no A/A+ setups' in the gameplan)."""
+    return {"ticker": r.get("ticker"), "grade": r.get("grade"), "setup_type": r.get("setup_type"),
+            "theme": r.get("theme"), "entry": r.get("entry"), "entry_type": r.get("entry_type"),
+            "trigger_note": r.get("trigger_note"), "entries": [], "zone_bottom": None, "zone_top": None,
+            "close": None, "earnings_days": None, "rating": None, "why": r.get("why"),
+            "confirm": r.get("confirm"), "stop": r.get("stop"), "shares": r.get("shares")}
+
+
 # --------------------------------------------------------------------------- #
 # Daily Gameplan — one synthesized plan from positions + cash + regime + setups + news
 # --------------------------------------------------------------------------- #
@@ -2757,13 +2815,18 @@ def compute_gameplan():
 
     sug_items = read_json(suggest_f(), {}).get("items", [])
     graded = grade_suggestions(sug_items, settings) if sug_items else []
-    good_grades = ("A+", "A")
-    buy_now = [_sug_compact(s) for s in graded
-               if s.get("buyable_now") and s.get("grade") in good_grades
-               and not s.get("earnings_soon") and s["ticker"] not in held][:5]
-    watch = [_sug_compact(s) for s in graded
-             if not s.get("buyable_now") and s.get("grade") in good_grades
-             and not s.get("earnings_soon") and s["ticker"] not in held][:5]
+    # buy_now / watch come from the SAME confirmation engine that powers the Live entries panel (compute_now)
+    # — so the gameplan can NEVER disagree with what's armed/confirmed on screen. The old headline-grade
+    # filter dropped A-grade *legs* of B-headline names (the engine arms on the best A/A+ leg), which is why
+    # 6 armed Deep Pullbacks could show live while the gameplan said "no buyable A/A+ setups." One truth now:
+    # buy_now = CONFIRMED buys (a real call), watch = ARMED (lined up, waiting). compute_now already excludes
+    # held names + earnings and applies the regime gate, so the lists match the panel by construction.
+    try:
+        _ne = compute_now()
+    except Exception:
+        _ne = {"buys": [], "armed": []}
+    buy_now = [_now_compact(r) for r in (_ne.get("buys") or [])][:5]
+    watch = [_now_compact(r) for r in (_ne.get("armed") or [])][:5]
     avoid = [{"ticker": s["ticker"], "reason": f"earnings in {s.get('earnings_days')}d — skip new entries"}
              for s in graded[:40] if s.get("earnings_soon")][:5]
 
@@ -2823,9 +2886,19 @@ def compute_gameplan():
 
     # bottom line — honest, "do nothing" is allowed
     if not open_pos and not buy_now:
-        if watch:
-            bottom = ("No positions and nothing in a buy zone yet — the plan is patience. "
-                      "Watching: " + ", ".join(s["ticker"] for s in watch) + ".")
+        armed_all = _ne.get("armed") or []
+        if armed_all:
+            # Don't name tickers (the list is longer than the capped `watch`) and don't say "nothing in a
+            # buy zone" — some ARE at support, just not confirmed by buyers yet. Describe what they're
+            # waiting for by setup family (pullback reclaims/bounces vs breakouts).
+            n = len(armed_all)
+            sts = [(a.get("setup_type") or "") for a in armed_all]
+            pull = sum(1 for s in sts if ("Pullback" in s or "AVWAP" in s or s == "Consolidation"))
+            kind = ("leaders pulled back to support — watching for the reclaim/bounce with buyers stepping in"
+                    if pull >= n - pull else
+                    "setups coiled at their pivots — watching for a clean break with buyers stepping in")
+            bottom = (f"No positions yet — {n} A-grade setup{'s' if n != 1 else ''} armed and waiting "
+                      f"({kind}). None has confirmed, so the plan is patience: let one trigger before you buy.")
         else:
             bottom = "No positions, no buyable A/A+ setups, tape " + (label or "unclear") + " — doing nothing is the right move today."
     elif todo:
@@ -3236,6 +3309,8 @@ def compute_now(shared=False):
         # → use the day-high break, gate it on holding the 50, stop under the 50. The 9/21 above = upside room.
         is_deep = setup_type.strip().lower() == "deep pullback"
         e50 = s.get("ema50")
+        cmenu = lexicon.get_confirm_menu(setup_type)        # Lexicon Phase 2: confirmation menu for this setup
+        confirm_trigger = None                              # which menu tag actually fired (set on confirm)
         if is_deep:
             res_entry, res_stop, cleared = None, None, None
         oc, b5 = None, None
@@ -3266,6 +3341,19 @@ def compute_now(shared=False):
                         oc = {**oc, "orh": round(day_high, 2), "level": _bc["level"], "_dh_lift": True,
                               "confirmed": _bc["confirmed"], "broke": _bc["broke"],
                               "holding": _bc["holding"], "extended": _bc["extended"]}
+                    # Lexicon Phase 2 — YH_RECLAIM (the Martin-Luk trigger): a pullback/AVWAP setup also
+                    # confirms when price RECLAIMS the prior-day high — often an earlier, tighter entry than
+                    # the ORH break. ADDITIVE: only when the ORH path hasn't already confirmed, so it can
+                    # never remove an existing confirmation; the downstream zone-drift / ADR / buyers gates
+                    # still apply, and breakout_confirm's own 0.7×ADR guard blocks firing on a name already
+                    # extended above yesterday's high.
+                    _ph = s.get("prior_high")
+                    if _ph and "YH_RECLAIM" in cmenu and not (oc and oc.get("confirmed")):
+                        _yc = scanner.breakout_confirm(b5, _ph, adr_pct)
+                        if _yc and _yc.get("confirmed"):
+                            oc = {**(oc or {}), "orh": round(_ph, 2), "level": _yc["level"],
+                                  "_yh_reclaim": True, "confirmed": True, "broke": _yc["broke"],
+                                  "holding": _yc["holding"], "extended": _yc["extended"]}
             except Exception:
                 oc, b5 = None, None
         triggered, too_extended, vol_wait, overhead, deep_wait, buyers_wait = False, False, False, None, False, False
@@ -3337,6 +3425,7 @@ def compute_now(shared=False):
                                 f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
                     else:
                         triggered = True
+                        confirm_trigger = "RECLAIM_50"
                         entry, stop = cand_entry, cand_stop
                         _confirmed_fkeys.add(fkey)
                         if not frozen:                           # first confirm → LOCK the buy price + stop for the day
@@ -3358,6 +3447,9 @@ def compute_now(shared=False):
                    "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
                    "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
                    "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+                   "p1m": s.get("p1m"), "p6m": s.get("p6m"),
+                   "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
+                   "confirm_menu": cmenu, "confirm_trigger": confirm_trigger,
                    "overhead": overhead}
             (buys if triggered else armed).append(rec)
             continue
@@ -3367,10 +3459,11 @@ def compute_now(shared=False):
                 trig_lv = res_entry
                 fb_stop = round(res_stop * (1 - sbuf / 100), 2) if (res_stop and sbuf) else res_stop
                 trig_desc = f"broke above {cleared} (${_f(res_entry)})"
-            else:                                            # price above all EMAs → ORH / pivot break
+            else:                                            # price above all EMAs → ORH / pivot / YH-reclaim
                 trig_lv = orh
                 fb_stop = round(lod * (1 - sbuf / 100), 2) if (lod and sbuf) else lod
-                trig_desc = (f"took out today's high ${_f(orh)}" if oc.get("_dh_lift")
+                trig_desc = (f"reclaimed yesterday's high ${_f(orh)}" if oc.get("_yh_reclaim")
+                             else f"took out today's high ${_f(orh)}" if oc.get("_dh_lift")
                              else f"took out the opening-range high ${_f(orh)}")
             # ENTRY = the CURRENT price, not the stale trigger level (the move already fired). So a name that
             # broke its level hours ago and ran shows the buy where you'd ACTUALLY get in now (~$51 on VIAV,
@@ -3430,6 +3523,10 @@ def compute_now(shared=False):
                             f"overhead (+{overhead['dist_pct']}%) — no clean room. No call until it clears.")
                 else:
                     triggered = True
+                    confirm_trigger = ("YH_RECLAIM" if (oc and oc.get("_yh_reclaim"))
+                                       else "EMA_RECLAIM" if res_entry
+                                       else "HOD_BREAK" if (oc and oc.get("_dh_lift"))
+                                       else "ORH_BREAK")
                     entry, stop = cand_entry, cand_stop
                     _confirmed_fkeys.add(fkey)
                     if not frozen:                           # first confirm → LOCK the buy price + stop for the day
@@ -3474,6 +3571,9 @@ def compute_now(shared=False):
                "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
                "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
                "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+               "p1m": s.get("p1m"), "p6m": s.get("p6m"),
+               "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
+               "confirm_menu": cmenu, "confirm_trigger": confirm_trigger,
                "overhead": overhead}
         (buys if triggered else armed).append(rec)
 
@@ -3570,6 +3670,8 @@ HQ_ROSTER = [
      "Keeps the cockpit dead-simple to read at a glance — and mobile-friendly. Invest in what you understand."),
     ("optimizer", "Bogle", "JohnBogle", "⚡", "Build", False, "sonnet", "#22e0a1",
      "Strips waste — faster scans, leaner fetches, no wasted cycles. Guards against the freeze-risk."),
+    ("token-master", "Shannon", "ClaudeShannon", "🗜️", "Build", False, "haiku", "#ec4899",
+     "Keeps the docs and context lean — ruthless about token cost, owns the memory architecture."),
     ("qa", "Burry", "MichaelBurry", "🐛", "Protect", False, "sonnet", "#ef4444",
      "Hunts the crack everyone else missed — reproduces the bug, fixes it, and proves the fix."),
     ("risk-auditor", "Tudor Jones", "PaulTudorJones", "🛡️", "Protect", False, "sonnet", "#ffb53d",
@@ -3582,6 +3684,9 @@ HQ_ROSTER = [
      "Knows when you're wrong, fast — reads your real trades, finds the leaks, and feeds the lessons back."),
     ("shipper", "Marks", "HowardMarks", "🚀", "Ship", False, "haiku", "#818cf8",
      "Ships the build carefully — leaks nothing, oversteps nothing, and never touches your git."),
+    ("critic", "Chanos", "JimChanos", "🐻", "Critic", False, "sonnet", "#f97316",
+     "The skeptic — paid to find what we got wrong. Pressure-tests our setups, system, data and your live "
+     "decisions against how the masters actually trade. Evidence-only, never a yes-man."),
 ]
 
 
@@ -3618,7 +3723,7 @@ def compute_hq():
             "summary": b.get("summary", ""), "proposals": b.get("proposals", []),
             "updated": s.get("updated", ""),
         })
-    return {"agents": agents, "squads": ["Brain", "Build", "Protect", "Steer", "Ship"],
+    return {"agents": agents, "squads": ["Brain", "Build", "Protect", "Steer", "Ship", "Critic"],
             "consensus": (briefs.get("consensus", "") if isinstance(briefs, dict) else ""),
             "updated": (status.get("_updated", "") if isinstance(status, dict) else "")}
 

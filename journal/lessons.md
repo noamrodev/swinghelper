@@ -65,21 +65,8 @@ lessons, newest insights merged in (not an endless list of duplicates).
   on the break of the prior-day candle, stop at structure, 0.73% risk. Miss: entered $873 *after* the
   candle ran ~8% off the low, so the stop is ~1.2× ADR and entry location is stretched. Take the spin,
   but nearer the reclaim for a tighter stop. (from LITE, 2026-06-01)
-- **Maximize R, not win rate — let winners RUN.** A full intraday backtest (2026-06-03, `tools/sim_intraday.py`)
-  tested every "fix" for patchy setups — waiting for the opening-range break, dip-buying, requiring the full
-  base breakout — and EVERY one raised the win rate but *cut* total R (they enter higher / trade less / clip
-  the big winners). The max-R recipe is the momentum one: enter **EARLY** (the prior-day-high break), stop at
-  the **DAY'S LOW** (wide enough not to get wicked), and trail (the backtest favored the looser 20 EMA — DOCN
-  +21R vs +11R — **but I overrode it back to the 9 EMA on 2026-06-05** for tighter discipline: *"the only long
-  positions is when i buy a market leader on the 50 emas, the rest is using the 9 ema."* The 50-EMA trail is
-  ONLY for a leader bought DEEP at the 50, like CIEN; everything else trails the 9). A 48–52% win rate with
-  monster winners beats a 60%+ win rate that clips them. **Full ruleset:
-  [strategy/swing-system.md](../strategy/swing-system.md).** (from the intraday backtest, 2026-06-03; trail revised 2026-06-05)
-- **Don't trade a deep correction — stand aside.** Backtesting March (posture 18, a real correction): the
-  system correctly graded NOTHING A-worthy → 0 trades. Forcing it to trade the "RS leaders" anyway lost −13%
-  at a 9% win rate — even the strongest names get whipsawed in a crash. The monsters that "came out of" March
-  (WDC +40R, AGX +16R) actually ran in the April–May RECOVERY, and the system catches those when the tape
-  turns back up. Cash is a position; never knife-catch a falling market. (from the March backtest, 2026-06-03)
+- **Maximize R, not win rate — let winners RUN.** Every "fix" that raised win rate cut total R (enters higher / clips big winners). The max-R recipe: enter **EARLY** (prior-day-high break), stop at the **DAY'S LOW**, trail the 9 EMA. The 50-EMA trail is ONLY for a leader bought DEEP at the 50; everything else trails the 9. A 48–52% win rate with monster winners beats a 60%+ win rate that clips them. **Full ruleset: [strategy/swing-system.md](../strategy/swing-system.md).** (from the intraday backtest, 2026-06-03; trail revised 2026-06-05)
+- **Don't trade a deep correction — stand aside.** The system correctly grades NOTHING A-worthy in a real correction and even the strongest names get whipsawed in a crash. The big winners ran in the RECOVERY, and the system catches those when the tape turns back up. Cash is a position; never knife-catch a falling market. (from the March backtest, 2026-06-03; full stats → strategy/swing-system.md)
 - **Never decide — or TUNE — with hindsight.** A backtest is only honest if every call uses bars up to THAT
   day only. I once peeked at which March stocks had risen and tuned the grader to reward them — pure
   curve-fitting; it fell apart (−13%) when traded blind. Holding a trade forward to measure it is fair; using

@@ -67,8 +67,14 @@ REGIME_DISCOUNT = 0.6   # the discount applied to the regime factor in soft tape
 CAP_BREAKOUT_WEAK  = 52   # breakout/EP in weak tape (posture < WEAK) → max C
 CAP_BREAKOUT_MIXED = 72   # breakout/EP in mixed tape (posture < MIXED) → max B
 CAP_PATIENT_WEAK   = 72   # best patient at-support setup in weak tape → max B
+CAP_PATIENT_MILD   = 74   # patient LEADER in a MILD pullback (posture 40-49) → max A, never A+ (=81 max-A
+                          # minus the +7 max strength bonus, so even an RS99 leader can't reach A+ in a sub-50
+                          # tape; A+ is reserved for a healthy tape, posture ≥ REGIME_WEAK). The LITE case.
 CAP_PLAIN_WEAK     = 52   # plain pullback / other in weak tape → max C
 CAP_PLAIN_MIXED    = 78   # plain pullback / other in mixed tape → allow A, not A+
+CAP_BELOW_200      = 62   # below the 200-day SMA = not Stage 2 → max C (the MNDY case)
+BROAD_CORR_MIN_SECTORS = 8  # broad_correction needs a real market's worth of sectors falling, not a tiny
+                            # (e.g. single-group) heat — guards the de-bias from a degenerate sector table
 # LEADERSHIP GATE (user 2026-06-05, the TER case): A/A+ is reserved for LEADERS. A name that is neither a
 # strong-RS leader NOR a confirmed Stage-2 trend-template uptrend caps at B — a tidy AVWAP/pullback on a
 # choppy non-leader (TER: RS 58, fails the trend template, months of chop) is a B at best, never an A.
@@ -78,8 +84,8 @@ CAP_NONLEADER = 72        # not a leader (RS < LEADER_RS and not trend-template)
 EARN_SOON_PEN = 18      # earnings within ~a week → hard demote
 EARN_NEAR_PEN = 6       # earnings ~8-14 days out → lighter caution
 
-HIST_NUDGE_MAX = 8      # ± realized-results nudge cap (|avg_R × 3| clamped)
-HIST_NUDGE_K   = 3      # realized avg-R → rating-point multiplier
+HIST_NUDGE_MAX = 8      # ± realized-results nudge cap (|median_R × 3| clamped)
+HIST_NUDGE_K   = 3      # realized MEDIAN-R → rating-point multiplier (B2 2026-06-07: median, not mean)
 HIST_MIN_N     = 5      # min CLOSED trades per setup before the nudge arms
 
 

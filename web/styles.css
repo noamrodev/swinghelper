@@ -4,7 +4,8 @@
   --panel2: #18202e;
   --line: rgba(120, 140, 180, 0.14);
   --text: #eaf0fa;
-  --muted: #93a1b8;
+  --muted: #c7d1e4;     /* v5 lift (was #a8b8d0) — match the plan-view mockup, readable on dark bg */
+  --content: #dde4f3;   /* v5 — body/context prose, brighter than muted */
   --indigo: #6366f1;
   --violet: #a855f7;
   --cyan: #22d3ee;
@@ -13,20 +14,80 @@
   --down: #ff5d73;
   --warn: #ffb53d;
   --pink: #ff5fa2;
+  --faint: #9aa8c2;   /* v5 lift (was #788da3) — dim chrome but still legible (matches plan mockup) */
+  --ease: cubic-bezier(.34, 1.4, .5, 1);   /* spring curve — micro-animations (v3, 2026-06-07) */
 }
 
 [x-cloak] { display: none !important; }
-html { font-size: 20px; }
+
+/* ===== TYPOGRAPHY SCALE — v2 (2026-06-07) =====
+   Base bumped 20→22px so 1rem = 22px. Every rem-based size scales automatically.
+   Tailwind pixel-locked classes (text-[10px], text-[11px]) are lifted by the
+   blanket overrides below so nothing real content sits below ~13px.
+   ================================================ */
+html { font-size: 22px; }
+
+/* Lift Tailwind's hard-coded tiny pixel sizes — these bypass rem, so we override
+   them centrally. Pure chrome/labels may still use true 11px via class .text-11px-ok. */
+.text-\[10px\]  { font-size: 12px !important; }
+.text-\[11px\]  { font-size: 13px !important; }
+.text-\[12px\]  { font-size: 13px !important; }
+.text-\[9px\]   { font-size: 12px !important; }
+.text-\[8px\]   { font-size: 11px !important; }
+/* text-xs in Tailwind = 0.75rem. At 22px base that is 16.5px — fine.
+   No override needed; Tailwind xs is now ~16px which is very readable. */
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   letter-spacing: -0.011em;
+  line-height: 1.55;       /* was browser default ~1.2 — more breathing room on dense text */
   color: var(--text);
   background: var(--bg);
   position: relative;
   overflow-x: hidden;
 }
+
+/* ===== HEADING / LABEL / TICKER FONT — Space Grotesk (v5, 2026-06-08) =====
+   Body is Plus Jakarta Sans; headings, micro-labels and tickers get Space Grotesk;
+   numbers stay JetBrains Mono (.mono / .font-mono). Apply via the .font-head utility
+   or the class list below so the new voice lands site-wide without markup churn. */
+.font-head,
+h1, h2, h3,
+.brand, .card-head,
+.tk2, .ar-tk, .ar-g,
+.stat-label, .sl2, .v4-eyebrow, .st-state,
+.buy-l, .why-h, .lvl-l, .m-l, .chart-btn {
+  font-family: 'Space Grotesk', 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/* ===== CONTRAST & READABILITY HELPERS =====
+   Tailwind's slate-* classes are too dim on our near-black bg (#070a12).
+   We override them globally here so the 289 instances in index.html get
+   lifted without touching the markup — while preserving visual hierarchy.
+
+   Hierarchy on dark bg (brightest → dimmest):
+     --text  #eaf0fa  ← primary (ticker symbols, big numbers)
+     slate-400 lifted → #b8ccd8  ← near-primary labels, timestamps w/ emphasis
+     slate-500 lifted → #9dafbf  ← standard secondary content (the workhorse)
+     slate-600 lifted → #788da3  ← truly decorative chrome (separators, counts)
+
+   Raw Tailwind values on this bg (too dim to read under pressure):
+     slate-400 was #94a3b8, slate-500 was #64748b, slate-600 was #475569
+
+   Use !important to win against Tailwind's specificity. */
+
+.text-slate-400 { color: #b8ccd8 !important; }
+.text-slate-500 { color: #9dafbf !important; }
+.text-slate-600 { color: #788da3 !important; }
+
+/* Preserve hierarchy: slate-300 and brighter remain untouched (already fine).
+   slate-700+ are structural (bg fills in index.html) — not overridden here. */
+
+.text-up   { color: var(--up)   !important; }
+.text-down { color: var(--down) !important; }
+/* Sidebar footer / secondary chrome — intentionally smaller, keep as-is */
+.sidebar-meta { font-size: .72rem; line-height: 1.6; }
 /* colorful aurora background (static — soft radial gradients) */
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
@@ -51,22 +112,31 @@ body::before {
 
 .anim-in { animation: fadeInUp .45s cubic-bezier(.2,.7,.3,1) both; }
 
+/* v3 micro-animation keyframes (spring; see STYLE.md "Design language v3") */
+@keyframes pulse2 { 0%,100% { opacity:.45; transform:scale(.85); } 50% { opacity:1; transform:scale(1.15); } }
+@keyframes fade2  { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+
 /* ---------- glass cards ---------- */
+/* v4: shared card surface evolved toward the v3/v4 card system (gradient depth + spring), so EVERY
+   screen (Dashboard, HQ, Competition, Journal, Watchlist, Learning Hub, News, Screeners) inherits the
+   same polish without per-screen markup changes. The .card2 suggestion card stays the richer variant. */
 .card {
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)), var(--panel);
+  background: linear-gradient(180deg, #151c2e, #0f1422);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.04);
-  transition: transform .22s cubic-bezier(.2,.7,.3,1), border-color .22s, box-shadow .22s;
+  border-radius: 18px;
+  box-shadow: 0 16px 38px -24px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform .22s var(--ease), border-color .22s ease, box-shadow .22s ease;
 }
-.card-hover:hover {
-  transform: translateY(-3px);
-  border-color: rgba(106,141,255,.5);
-  box-shadow: 0 20px 44px -22px rgba(0,0,0,.9), 0 0 26px -6px rgba(106,141,255,.35);
+@media (hover: hover) {
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: var(--line2);
+    box-shadow: 0 28px 56px -26px rgba(0,0,0,.92), 0 0 0 1px rgba(106,141,255,.14), 0 0 26px -8px rgba(106,141,255,.3);
+  }
 }
 .card-head {
   padding: 15px 20px; border-bottom: 1px solid var(--line);
-  font-weight: 700; font-size: .92rem;
+  font-weight: 700; font-size: .95rem;
 }
 
 /* ---------- stat tiles ---------- */
@@ -75,25 +145,25 @@ body::before {
   background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)), var(--panel);
   border: 1px solid var(--line);
   box-shadow: 0 10px 30px -20px rgba(0,0,0,.8);
-  transition: transform .22s, border-color .22s, box-shadow .22s;
+  transition: transform .22s var(--ease), border-color .22s ease, box-shadow .22s ease;
 }
 .stat::after {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
   background: linear-gradient(90deg, var(--indigo), var(--violet), var(--cyan));
 }
-.stat:hover { transform: translateY(-3px); border-color: rgba(106,141,255,.45); box-shadow: 0 18px 40px -22px rgba(0,0,0,.9); }
-.stat-label { font-size: .64rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+@media (hover: hover) { .stat:hover { transform: translateY(-3px); border-color: rgba(106,141,255,.45); box-shadow: 0 18px 40px -22px rgba(0,0,0,.9); } }
+.stat-label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
 .stat-val { font-size: 1.8rem; font-weight: 800; margin-top: 6px; letter-spacing: -.02em; }
 
 /* level chips */
 .lvl { background: rgba(7,10,18,.6); border: 1px solid var(--line); border-radius: 11px; padding: 9px 6px; transition: border-color .2s; }
 .lvl:hover { border-color: rgba(106,141,255,.4); }
-.lvl-l { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.lvl-l { font-size: .64rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
 
 /* inputs */
 .input {
   background: rgba(7,10,18,.7); border: 1px solid var(--line); border-radius: 11px;
-  padding: 9px 12px; font-size: .82rem; color: var(--text); outline: none;
+  padding: 9px 12px; font-size: .86rem; color: var(--text); outline: none;
   transition: border-color .15s, box-shadow .15s, background .15s;
 }
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(106,141,255,.18); background: rgba(7,10,18,.95); }
@@ -127,7 +197,7 @@ body::before {
 
 /* badges */
 .badge {
-  display: inline-flex; align-items: center; gap: 4px; font-size: .6rem; padding: 3px 9px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px; font-size: .64rem; padding: 3px 9px; border-radius: 999px;
   font-weight: 700; letter-spacing: .02em; background: rgba(255,255,255,.06); color: var(--muted); border: 1px solid var(--line);
 }
 .badge-pullback { background: rgba(34,224,161,.16); color: #7dffd0; border-color: rgba(34,224,161,.4); }
@@ -136,18 +206,159 @@ body::before {
 .badge-ep       { background: rgba(255,181,61,.16); color: #ffd591; border-color: rgba(255,181,61,.4); }
 .badge-hot { background: linear-gradient(110deg, rgba(255,95,162,.25), rgba(255,181,61,.25)); color: #ffd0a8; border-color: rgba(255,140,90,.5); }
 .badge-hot .fire { display: inline-block; }
+@media (hover: hover) { .badge-hot:hover { transform: translateY(-1px) scale(1.04); border-color: rgba(255,140,90,.75); } }
 
-/* filter chips — toggle/select pills for the Suggestions filter bar (scalable, consistent) */
-.fchip {
-  display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; font-weight: 700;
-  padding: 5px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap;
-  background: var(--panel2); color: var(--muted); border: 1px solid var(--line); transition: .14s;
+/* ===================================================================== */
+/* ===============  DESIGN LANGUAGE v3 — the card system  ============== */
+/* Approved card design (direction C). Reference: mockups/cards.html.     */
+/* Component classes used by the suggestion cards + reused site-wide.     */
+/* See web/STYLE.md "Design language v3" for the full recipe.             */
+/* ===================================================================== */
+:root { --line2: rgba(255,255,255,.12); }
+
+/* ---- the card surface ---- */
+.card2 {
+  background: linear-gradient(180deg, #151c2e, #0f1422);
+  border: 1px solid var(--line); border-radius: 20px; padding: 20px;
+  box-shadow: 0 24px 50px -30px rgba(0,0,0,.9);
+  transition: transform .22s var(--ease), border-color .22s ease, box-shadow .22s ease;
 }
-.fchip:hover { color: var(--text); border-color: rgba(106,141,255,.45); }
-.fchip.on { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 4px 14px -6px rgba(106,141,255,.7); }
-.fchip-grp { display: inline-flex; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); }
+@media (hover: hover) {
+  .card2:hover {
+    transform: translateY(-3px); border-color: var(--line2);
+    box-shadow: 0 30px 60px -28px rgba(0,0,0,.95), 0 0 0 1px rgba(106,141,255,.14);
+  }
+  .card2:hover .grade2 { transform: scale(1.06); }
+}
+
+/* ---- header (v4: bigger type — ticker 28px, price 18px @22px base) ---- */
+.sec2  { font-size: .57rem; color: var(--faint); font-weight: 600; letter-spacing: .01em; }
+.tk2   { font-size: 1.27rem; font-weight: 800; letter-spacing: -.02em; margin-top: 1px; line-height: 1.05; }
+.grade2 {
+  width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  font-size: 1.14rem; font-weight: 800; color: var(--accent);
+  background: rgba(106,141,255,.13); border: 1px solid rgba(106,141,255,.32);
+  transition: transform .2s var(--ease);
+}
+.armed2 {
+  font-size: .55rem; color: var(--warn); font-weight: 600; background: rgba(255,181,61,.1);
+  border: 1px solid rgba(255,181,61,.24); padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+
+/* ---- chips + expander (v4: ~12.5px, key=gold pinned chips) ---- */
+.chips2 { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chip2 {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .57rem; font-weight: 600; color: #d3dbf0; background: rgba(255,255,255,.05);
+  padding: 5px 12px; border-radius: 999px; border: 1px solid transparent;
+  transition: background .15s ease, transform .15s var(--ease);
+}
+@media (hover: hover) { .chip2:hover { background: rgba(255,255,255,.1); transform: translateY(-1px); } }
+.chip2.lead   { color: #d7ddf6; background: rgba(106,141,255,.14); border-color: rgba(106,141,255,.28); }
+/* KEY chips — the two most important (🏆 Leader · 🚀 Rising sector), gold, pinned first */
+.chip2.key    { color: #0c1020; background: linear-gradient(180deg,#f8d27a,#f0b945); border-color: transparent; font-weight: 700; }
+@media (hover: hover) { .chip2.key:hover { background: linear-gradient(180deg,#fbdc8f,#f4c25a); } }
+.chip2.toggle { cursor: pointer; color: var(--accent); background: rgba(106,141,255,.08); border: 1px dashed rgba(106,141,255,.35); user-select: none; }
+
+/* ---- setup block (BOTH setups use this identical treatment) ---- */
+.pill2 { font-size: .57rem; font-weight: 700; padding: 4px 11px; border-radius: 8px; white-space: nowrap; }
+.pill2.pb  { color: var(--up);   background: rgba(34,224,161,.13); }
+.pill2.brk { color: var(--warn); background: rgba(255,181,61,.13); }
+.stats2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.stat2 {
+  background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px;
+  transition: background .18s ease, border-color .18s ease;
+}
+@media (hover: hover) { .stat2:hover { background: rgba(255,255,255,.055); border-color: var(--line2); } }
+.sl2 { font-size: .52rem; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 700; }
+.sv2 { font-size: 1rem; font-weight: 800; margin-top: 5px; letter-spacing: -.01em; }
+.sv2.grn { color: var(--up); } .sv2.red { color: var(--down); }
+
+/* ---- STATUS PANEL — its own left-accent amber box (state + condition + lexicon confirms-on) ---- */
+.statusbox {
+  background: rgba(255,181,61,.07); border: 1px solid rgba(255,181,61,.2);
+  border-left: 3px solid var(--warn); border-radius: 12px; padding: 12px 15px;
+}
+.statusbox.grn { background: rgba(34,224,161,.08); border-color: rgba(34,224,161,.28); border-left-color: var(--up); }
+.statusbox.red { background: rgba(255,93,115,.08); border-color: rgba(255,93,115,.3);  border-left-color: var(--down); }
+.st-state { display: flex; align-items: center; gap: 8px; font-size: .66rem; font-weight: 700; color: var(--warn); }
+.statusbox.grn .st-state { color: var(--up); }
+.statusbox.red .st-state { color: var(--down); }
+.st-state .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse2 1.8s ease-in-out infinite; flex-shrink: 0; }
+.st-cond { font-size: .61rem; color: #e7d6ad; margin-top: 5px; line-height: 1.5; }
+.st-cond b { color: #fff; font-weight: 700; }
+.statusbox.grn .st-cond { color: #b7ecd2; }
+.statusbox.red .st-cond { color: #f4c0c8; }
+.st-confirm {
+  font-size: .57rem; color: var(--faint); margin-top: 9px; padding-top: 9px;
+  border-top: 1px dashed rgba(255,255,255,.08); display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.st-confirm .lab { color: var(--cyan); font-weight: 600; }
+.trg {
+  font-size: .55rem; font-weight: 600; color: #bfe9ef; background: rgba(34,211,238,.1);
+  border: 1px solid rgba(34,211,238,.25); padding: 2px 9px; border-radius: 7px;
+}
+
+/* ---- divider between the two setups ---- */
+.split { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent); margin: 4px 0; }
+
+/* ---- legacy status pill (kept for card-level warnings) ---- */
+.status2 {
+  background: rgba(255,181,61,.1); border: 1px solid rgba(255,181,61,.22); border-radius: 11px;
+  padding: 10px 14px; font-size: .64rem; color: var(--warn); font-weight: 600; display: flex; align-items: center; gap: 7px;
+}
+.status2.grn { background: rgba(34,224,161,.16); border-color: rgba(34,224,161,.5); color: var(--up); }
+.status2 .dot2 { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse2 1.8s ease-in-out infinite; flex-shrink: 0; }
+.warn2 { font-size: .52rem; color: var(--down); font-weight: 600; }
+
+/* ---- Details collapse (v4: ~13.5px) ---- */
+.det2-summary { cursor: pointer; font-size: .61rem; font-weight: 600; color: var(--accent); display: flex; align-items: center; gap: 7px; user-select: none; }
+.ch2 { transition: transform .18s var(--ease); display: inline-block; }
+.det2-open .ch2 { transform: rotate(90deg); }
+.det2-body { animation: fade2 .25s ease; font-size: .61rem; line-height: 1.65; }
+
+/* ---- buttons (v4: ~14.5px) ---- */
+.btn2 {
+  flex: 1; font-size: .66rem; font-weight: 700; padding: 13px; border-radius: 13px; border: none; cursor: pointer;
+  transition: transform .14s var(--ease), filter .14s ease, background .14s ease;
+}
+@media (hover: hover) { .btn2:hover { transform: scale(1.045); filter: brightness(1.12); } }
+.btn2:active { transform: scale(.97); }
+.btn2.chart { background: rgba(255,255,255,.06); color: #cdd6ec; }
+.btn2.took  { background: rgba(106,141,255,.16); color: #cdd6ec; }
+.btn2.pass  { background: rgba(255,93,115,.12); color: #f5a8a8; }
+
+/* honour reduced-motion for the v3 system */
+@media (prefers-reduced-motion: reduce) {
+  .card2, .grade2, .chip2, .stat2, .alt2, .btn2, .ch2, .status2 .dot2, .st-state .dot { transition: none !important; animation: none !important; }
+}
+
+/* ---- site-wide polish: spring + grow on the existing component set ---- */
+.btn      { transition: transform .16s var(--ease), box-shadow .2s, background-position .4s; }
+.btn-sm, .btn-ghost, .fchip { transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s var(--ease); }
+@media (hover: hover) {
+  .btn:hover    { transform: translateY(-2px) scale(1.02); }
+  .btn-sm:hover { transform: translateY(-1px) scale(1.03); }
+}
+.btn:active, .btn-sm:active, .fchip:active { transform: scale(.97); }
+.scale-btn { transition: background .15s ease, border-color .15s ease, transform .15s var(--ease); }
+.badge { transition: transform .15s var(--ease), background .15s ease; }
+@media (hover: hover) { .card-hover:hover { transition-timing-function: var(--ease); } }
+
+/* filter chips — toggle/select pills for the Suggestions filter bar (v4: consistent chip language,
+   spring hover-grow, active = accent). The grow/active transforms come from the .fchip rules above. */
+.fchip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; font-weight: 700;
+  padding: 6px 13px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
+}
+@media (hover: hover) { .fchip:hover { color: var(--text); border-color: rgba(106,141,255,.5); background: rgba(106,141,255,.08); transform: translateY(-1px) scale(1.03); } }
+.fchip.on { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 4px 16px -6px rgba(106,141,255,.75); }
+@media (hover: hover) { .fchip.on:hover { background: var(--accent); filter: brightness(1.08); } }
+.fchip-grp { display: inline-flex; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
 .fchip-grp .fchip { border: none; border-radius: 0; box-shadow: none; }
-.fgroup-label { font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+@media (hover: hover) { .fchip-grp .fchip:hover { transform: none; } }
+.fgroup-label { font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
 /* nav */
 .nav-item { position: relative; transition: color .15s, background .15s; }
@@ -213,7 +424,7 @@ body::before {
 }
 .hq-ticker-tag {
   display: flex; align-items: center; gap: 6px;
-  padding: 0 14px; font-weight: 900; font-size: 12px; letter-spacing: .12em;
+  padding: 0 14px; font-weight: 900; font-size: 13px; letter-spacing: .12em;
   color: #06121a; background: var(--cyan);
   text-shadow: none; white-space: nowrap;
 }
@@ -228,19 +439,19 @@ body::before {
 .hq-ticker-run { display: inline-flex; align-items: center; }
 .hq-ticker-item {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px; font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  padding: 9px 18px; font-size: 13.5px; color: var(--muted); white-space: nowrap;
   border-right: 1px solid rgba(120,140,180,.08);
 }
 .hq-ticker-item b { color: var(--text); font-weight: 700; }
-.hq-ticker-sep { color: #56627d; font-size: 11px; }
+.hq-ticker-sep { color: #6a7a96; font-size: 12px; }
 .hq-ticker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .hq-ticker-dot.on  { background: var(--up);   box-shadow: 0 0 8px var(--up);   animation: hqDotPulse 1.6s ease-in-out infinite; }
 .hq-ticker-dot.off { background: #46506a; }
 .hq-ticker-prio b { color: var(--up); }
 .hq-ticker-prio-text { color: #cfe; max-width: 60ch; overflow: hidden; text-overflow: ellipsis; }
 .hq-ticker-end {
-  display: flex; align-items: center; padding: 0 12px; font-size: 10px; font-weight: 700;
-  letter-spacing: .08em; text-transform: uppercase; color: #56627d;
+  display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: #6a7a96;
   border-left: 1px solid rgba(120,140,180,.12); white-space: nowrap;
 }
 
@@ -438,17 +649,17 @@ body::before {
 .hq-modal-status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; margin-top: 6px; text-transform: capitalize; }
 .hq-model-chip { font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 5px; text-transform: lowercase; }
 .hq-chief-badge { font-size: 9px; font-weight: 900; letter-spacing: .08em; padding: 2px 6px; border-radius: 5px; color: var(--warn); background: rgba(245,166,35,.16); border: 1px solid rgba(245,166,35,.4); }
-.hq-modal-tagline { font-size: 13px; color: #c7d2e6; line-height: 1.5; margin-top: 14px; }
+.hq-modal-tagline { font-size: 14px; color: #c7d2e6; line-height: 1.55; margin-top: 14px; }
 .hq-modal-now {
   margin-top: 12px; padding: 10px 12px; border-radius: 11px;
-  font-size: 12.5px; color: #d6e0f0; line-height: 1.45;
+  font-size: 13.5px; color: #d6e0f0; line-height: 1.5;
   background: color-mix(in srgb, var(--room) 9%, rgba(0,0,0,.3));
   border: 1px solid color-mix(in srgb, var(--room) 25%, transparent);
 }
-.hq-modal-now-l { display: inline-block; font-size: 9px; font-weight: 900; letter-spacing: .1em; margin-right: 7px; color: color-mix(in srgb, var(--room) 85%, #fff); }
+.hq-modal-now-l { display: inline-block; font-size: 10px; font-weight: 900; letter-spacing: .1em; margin-right: 7px; color: color-mix(in srgb, var(--room) 85%, #fff); }
 .hq-modal-props { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
-.hq-modal-props-l { font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: #56627d; }
-.hq-modal-desc { font-size: 11px; color: #7c8aa6; line-height: 1.55; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.hq-modal-props-l { font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: #6a7a96; }
+.hq-modal-desc { font-size: 12px; color: #8c9ab8; line-height: 1.6; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 
 /* proposal item (reused in modal) */
 .hq-proposal {
@@ -457,8 +668,8 @@ body::before {
   transition: border-color .18s, background .18s;
 }
 .hq-proposal:hover { border-color: color-mix(in srgb, var(--room) 45%, transparent); background: color-mix(in srgb, var(--room) 7%, rgba(0,0,0,.28)); }
-.hq-proposal-t { font-size: 12.5px; font-weight: 700; color: #e7edf8; line-height: 1.35; }
-.hq-proposal-d { font-size: 11px; color: #8794aa; line-height: 1.45; margin-top: 3px; }
+.hq-proposal-t { font-size: 13.5px; font-weight: 700; color: #e7edf8; line-height: 1.4; }
+.hq-proposal-d { font-size: 12px; color: #9aa7bf; line-height: 1.5; margin-top: 3px; }
 
 /* model chips (reused) */
 .hq-model-opus   { background: rgba(245,158,11,.2);  color: #fcd34d; }
@@ -489,8 +700,8 @@ body::before {
 
 /* ===== HQ - Agent Crew: animated office + plain-English cards ===== */
 .hqx{padding-bottom:50px}
-.hqx-h1{font-size:22px;font-weight:800;margin:0 0 3px;display:flex;align-items:center;gap:9px}
-.hqx-sub{color:#98a2b8;font-size:13px;margin-bottom:15px}
+.hqx-h1{font-size:24px;font-weight:800;margin:0 0 3px;display:flex;align-items:center;gap:9px}
+.hqx-sub{color:#b0bdd4;font-size:14px;margin-bottom:15px}
 .hqx-office{position:relative;height:230px;border-radius:18px;overflow:hidden;margin-bottom:14px;background:linear-gradient(180deg,#141b2e 0%,#101524 55%,#0c1120 100%);border:1px solid #243049;box-shadow:inset 0 0 60px rgba(0,0,0,.5)}
 .hqx-win{position:absolute;top:24px;left:50%;transform:translateX(-50%);display:flex;gap:14px}
 .hqx-win i{width:62px;height:44px;border-radius:6px;background:linear-gradient(160deg,#1f3a63,#16243f);border:1px solid #2c4366;box-shadow:0 0 16px rgba(80,160,255,.10)}
@@ -516,8 +727,8 @@ body::before {
 .hqx-wog .hqx-ey i{width:9px;height:10px}
 .hqx-wog .hqx-ey i::after{width:4px;height:4px}
 .hqx-priority{display:flex;gap:11px;align-items:center;background:linear-gradient(90deg,rgba(34,224,161,.13),rgba(34,211,238,.05));border:1px solid rgba(34,224,161,.4);border-radius:12px;padding:12px 15px;margin-bottom:16px}
-.hqx-pt{font-size:11px;font-weight:800;letter-spacing:1px;color:#22e0a1;white-space:nowrap}
-.hqx-px{font-size:14px;color:#d6f3e8;line-height:1.4}
+.hqx-pt{font-size:12px;font-weight:800;letter-spacing:1px;color:#22e0a1;white-space:nowrap}
+.hqx-px{font-size:15px;color:#d6f3e8;line-height:1.5}
 .hqx-roster{display:grid;grid-template-columns:1fr 1fr;gap:13px}
 @media(max-width:720px){.hqx-roster{grid-template-columns:1fr}}
 .hqx-card{display:flex;gap:14px;background:#121726;border:1px solid #232b40;border-radius:14px;padding:15px}
@@ -531,21 +742,131 @@ body::before {
 .hqx-card.idle .hqx-av .hqx-ey i::after{display:none}
 .hqx-cbody{min-width:0;flex:1}
 .hqx-nameline{display:flex;align-items:center;gap:8px}
-.hqx-nameline h3{margin:0;font-size:17px;font-weight:800}
-.hqx-role{font-size:12px;color:#8a93a8;text-transform:capitalize}
+.hqx-nameline h3{margin:0;font-size:18px;font-weight:800}
+.hqx-role{font-size:13px;color:#9aa7bf;text-transform:capitalize}
 .hqx-star{color:#ffcf5a}
 .hqx-dot{width:9px;height:9px;border-radius:50%;margin-left:auto}
 .hqx-dot.on{background:#22e0a1;box-shadow:0 0 8px #22e0a1}
 .hqx-dot.off{background:#3a4459}
-.hqx-does{font-size:13.5px;color:#aeb8cc;margin:4px 0 9px}
+.hqx-does{font-size:14.5px;color:#bcc8de;margin:4px 0 9px}
 .hqx-props{display:flex;flex-direction:column;gap:6px}
-.hqx-prop{font-size:13.5px;line-height:1.4;color:#e7ecf6}
+.hqx-prop{font-size:14px;line-height:1.5;color:#e7ecf6}
 .hqx-prop b{font-weight:700}
-.hqx-d{color:#8f99ad;font-size:12.5px}
+.hqx-d{color:#9aa7bf;font-size:13px}
 .hqx-pi{color:var(--c);font-weight:800;margin-right:5px}
-.hqx-foot{margin-top:16px;font-size:12px;color:#8a93a8}
+.hqx-foot{margin-top:16px;font-size:13px;color:#9aa7bf}
 .hqx-kbd{background:#0e1320;border:1px solid #232b40;border-radius:6px;padding:1px 6px;color:#c4ccdd}
 @media(prefers-reduced-motion:reduce){.hqx *{animation:none!important}}
+
+/* ===================================================================== */
+/* ===  v4 SHARED HELPERS — bring bespoke per-screen markup to v4  ====== */
+/* These reach the parts the base .card/.stat/.lvl classes don't: list    */
+/* rows, sub-panels, pill-tabs, section micro-labels, tables, banners,    */
+/* mini-stat tiles. Apply on Dashboard/News/Journal/Watchlist/Screeners/  */
+/* Learning/Strategy + the chart modal. See STYLE.md "Design language v4".*/
+/* ===================================================================== */
+
+/* --- sub-panel: a recessed grouped block INSIDE a card (positions list,
+   gameplan sections, avoid/remember, today's-armed) --- */
+.v4-sub {
+  background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+  border: 1px solid var(--line); border-radius: 14px; padding: 14px;
+}
+
+/* --- section micro-label (uppercase eyebrow above a sub-block) --- */
+.v4-eyebrow {
+  font-size: .62rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* --- list row: the workhorse for every "table-ish" line (top-suggestions,
+   catalysts, suspicious, headlines, sector members, armed log). Soft
+   separators, spring-tinted hover, rounded so it reads as a v4 surface. --- */
+.v4-row {
+  border-radius: 12px; transition: background .16s ease, transform .16s var(--ease), border-color .16s ease;
+  border: 1px solid transparent;
+}
+@media (hover: hover) {
+  .v4-row:hover { background: rgba(255,255,255,.05); border-color: var(--line2); }
+  .v4-row.v4-row-tap:hover { transform: translateX(2px); }
+}
+/* divider variant — rows separated by a hairline instead of being islands */
+.v4-divrow { border-top: 1px solid var(--line); transition: background .16s ease; }
+.v4-divrow:first-of-type { border-top: none; }
+@media (hover: hover) { .v4-divrow:hover { background: rgba(255,255,255,.035); } }
+
+/* --- v4 table: readable rows, aligned numerics, lifted header --- */
+.v4-table { width: 100%; border-collapse: collapse; }
+.v4-table thead th {
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 800;
+  color: var(--faint); text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line2);
+}
+.v4-table tbody td { padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: .72rem; }
+.v4-table tbody tr { transition: background .14s ease; }
+@media (hover: hover) { .v4-table tbody tr:hover { background: rgba(255,255,255,.04); } }
+.v4-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- pill-tab: the segmented top-of-screen tab buttons (News/Screeners/
+   Learning/Stats sub-nav). A real pill with spring hover + accent active. --- */
+.tabpill {
+  font-size: .8rem; font-weight: 700; padding: 8px 16px; border-radius: 11px; cursor: pointer;
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--line); white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s var(--ease);
+}
+@media (hover: hover) { .tabpill:hover { color: var(--text); border-color: rgba(106,141,255,.5); background: rgba(106,141,255,.08); transform: translateY(-1px) scale(1.02); } }
+.tabpill:active { transform: scale(.97); }
+.tabpill.on { background: linear-gradient(110deg, var(--indigo), #5b7cff 45%, var(--violet)); color: #fff; border-color: transparent; box-shadow: 0 6px 18px -7px rgba(99,102,241,.8); }
+
+/* --- mini-stat tile: small KPI cell (gameplan exposure, forward aggregate,
+   learning execution-gap). Like .lvl but with the v4 value treatment. --- */
+.v4-tile {
+  background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+  transition: background .16s ease, border-color .16s ease;
+}
+@media (hover: hover) { .v4-tile:hover { background: rgba(255,255,255,.055); border-color: var(--line2); } }
+.v4-tile-l { font-size: .56rem; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 700; }
+.v4-tile-v { font-size: 1.25rem; font-weight: 800; margin-top: 4px; letter-spacing: -.01em; }
+
+/* --- left-accent banner (defend / major-news / stance hero) — gradient
+   surface + accent left bar, the v4 statusbox idiom scaled up --- */
+.v4-banner {
+  border-radius: 14px; padding: 13px 16px; border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(100deg, rgba(255,255,255,.04), rgba(255,255,255,.012));
+}
+
+/* --- segmented control (chart-modal toggles, frozen/live, sort) --- */
+.v4-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel2); }
+.v4-seg > button { font-size: .72rem; font-weight: 700; padding: 6px 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; transition: background .14s ease, color .14s ease; white-space: nowrap; }
+@media (hover: hover) { .v4-seg > button:hover { color: var(--text); background: rgba(255,255,255,.05); } }
+.v4-seg > button.on { background: var(--accent); color: #fff; }
+
+/* --- v4 modal surface (chart / trade / calc modals) --- */
+.v4-modal {
+  background: linear-gradient(180deg, #161d30, #0f1422); border: 1px solid var(--line2);
+  border-radius: 20px; box-shadow: 0 30px 70px -24px rgba(0,0,0,.92), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.v4-modal-x {
+  width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.04); color: var(--muted); font-size: .9rem; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s var(--ease);
+}
+@media (hover: hover) { .v4-modal-x:hover { color: #fff; border-color: var(--accent); background: rgba(106,141,255,.16); transform: scale(1.06); } }
+
+/* --- chart-modal toggle button (EMAs / Vol / AVWAP / Log / Pattern) --- */
+.ctrl-btn {
+  font-size: .72rem; font-weight: 700; padding: 6px 12px; border-radius: 10px; cursor: pointer;
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--line); white-space: nowrap;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, transform .14s var(--ease);
+}
+@media (hover: hover) { .ctrl-btn:hover { color: var(--text); border-color: rgba(106,141,255,.5); background: rgba(106,141,255,.08); transform: translateY(-1px); } }
+.ctrl-btn:active { transform: scale(.96); }
+.ctrl-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 5px 16px -7px rgba(106,141,255,.8); }
+
+@media (prefers-reduced-motion: reduce) {
+  .v4-row, .v4-tile, .tabpill, .v4-modal-x, .v4-table tbody tr { transition: none !important; }
+}
 
 /* ===== 🏆 Competition ===== */
 .cmp-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px;background:#121726;border:1px solid #232b40;cursor:pointer;position:relative;transition:border-color .2s,transform .15s}
@@ -558,6 +879,60 @@ body::before {
 @media(max-width:640px){.vix-spark{width:56px;height:22px}}
 .cmp-detail{border:1px solid var(--line);border-left:3px solid var(--c);border-top:none;border-radius:0 0 14px 14px;background:#0e1422;margin:-2px 4px 0}
 .cmp-chart{width:100%;border-radius:10px;overflow:hidden;background:rgba(7,10,18,.4)}
-.cmp-regime{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--rc) 16%,transparent);color:var(--rc)}
+.cmp-regime{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--rc) 16%,transparent);color:var(--rc)}
 .no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
 @media(prefers-reduced-motion:reduce){.cmp *,.cmp-row::after{animation:none!important}}
+
+/* ===== PLAN VIEW v5 (2026-06-08) — the redesigned expanded plan =====
+   Spec: mockups/plan.html. BUY hero + 4-cell levels strip + WHY metric grid + one
+   thesis line + full-width chart button. Rendered by planHtml() in app.js and by the
+   armed/plan cards in autopilot.html. Uses Space Grotesk labels, JetBrains-Mono numbers.
+   Sizes are fixed px (NOT rem) to stay compact under the 22px base. */
+.plan5 { margin-top: 4px; }
+
+/* BUY = hero, tight */
+.plan5 .buy { background: linear-gradient(180deg, rgba(34,224,161,.12), rgba(34,224,161,.04));
+  border: 1px solid rgba(34,224,161,.28); border-radius: 11px; padding: 11px 13px; }
+.plan5 .buy-l { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--up);
+  text-transform: uppercase; display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.plan5 .buy-t { font-size: 13.5px; line-height: 1.5; color: #d7f3e7; }
+.plan5 .buy-t b { color: #fff; font-weight: 700; }
+
+/* levels strip — tight cells, key values only (NOT sentences) */
+.plan5 .levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.plan5 .lvl5 { background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 10px; padding: 8px 9px; min-width: 0; }
+.plan5 .lvl-l { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+.plan5 .lvl-v { font-size: 13px; font-weight: 700; margin-top: 3px; overflow-wrap: anywhere; }
+.plan5 .lvl5.stop  .lvl-v { color: var(--down); }
+.plan5 .lvl5.size  .lvl-v { color: var(--text); }
+.plan5 .lvl5.tgt   .lvl-v { color: var(--cyan); }
+.plan5 .lvl5.inval .lvl-v { color: #fb923c; }
+
+/* WHY THIS SETUP — labeled metric cells + one plain line */
+.plan5 .why { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+.plan5 .why-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+.plan5 .why-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.plan5 .m { background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 10px; padding: 8px 9px; min-width: 0; }
+.plan5 .m-l { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+.plan5 .m-v { font-size: 14px; font-weight: 800; margin-top: 2px; overflow-wrap: anywhere; }
+.plan5 .m-v.up  { color: var(--up); }
+.plan5 .m-v.amb { color: var(--warn); }
+.plan5 .m-s { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+.plan5 .thesis { margin-top: 10px; font-size: 13px; line-height: 1.55; color: var(--content); }
+.plan5 .thesis b { color: #fff; font-weight: 700; }
+
+/* chart button — full width */
+.plan5 .chart-btn { margin-top: 13px; width: 100%; display: flex; align-items: center; justify-content: center;
+  gap: 8px; font-size: 14px; font-weight: 600; padding: 12px; border-radius: 12px; cursor: pointer;
+  color: #cdd6ec; background: rgba(124,140,255,.13); border: 1px solid rgba(124,140,255,.28);
+  transition: transform .14s var(--ease), filter .14s, background .14s; }
+@media (hover: hover) {
+  .plan5 .chart-btn:hover { transform: scale(1.02); filter: brightness(1.15); background: rgba(124,140,255,.2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan5 .chart-btn { transition: none !important; }
+}
+/* mobile (~375px): 4-cell grids shrink to 2 cols cleanly, no overflow */
+@media (max-width: 420px) {
+  .plan5 .levels, .plan5 .why-grid { grid-template-columns: repeat(2, 1fr); }
+}
