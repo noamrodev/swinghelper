@@ -435,6 +435,41 @@ def _pullback_leg_pivot(h, l, close, adr):
     return min(cands)                            # the NEAREST overhead pivot
 
 
+def _breakout_pivot(o, h, l, c, adr_px, lookback=10, min_base=4):
+    """The breakout TRIGGER = the high of the CURRENT contraction, de-wicked (user 2026-06-09, INTC).
+
+    The old `max(high[-10:])` had two failure modes (INTC: pivot 126.64, ~15% above price, from a
+    May-29 distribution bar that closed −12 below its high):
+      1. a single REJECTION/distribution bar's spike (or its body, on a gap-up-and-fade) became the
+         pivot — a stale level price already FAILED at, not the edge of the base it's coiling in now;
+      2. a fixed 10-bar window reached back INTO the prior leg's distribution after the stock re-based
+         lower, so the trigger sat far above the real, recent base (INTC's June base topped ~113).
+
+    Fix — "de-wick + recent base":
+      * RECENT BASE: start the window AFTER the most recent SHARP leg-down close (> ~1.3× ADR down day
+        = the move that ended the prior shelf), so we measure the coil the stock is in NOW. Bounded to
+        [min_base, lookback] bars so a brand-new break still leaves a real base to read.
+      * DE-WICK: a bar that closed in the bottom third of its range FAILED at the highs — it
+        contributes its CLOSE, not its spike high. A clean bar contributes its real high.
+    Returns the de-wicked recent-base high (the actionable breakout trigger)."""
+    n = len(h)
+    if n == 0:
+        return 0.0
+    lb = min(lookback, n)
+    start = n - lb
+    for i in range(n - 1, n - lb, -1):                  # walk back; stop at the last sharp down-close
+        if (c[i - 1] - c[i]) > 1.3 * adr_px:
+            start = i
+            break
+    start = max(0, min(start, n - min_base))            # always keep ≥ min_base bars of base
+    eff = []
+    for i in range(start, n):
+        rng = h[i] - l[i]
+        rejected = rng > 0 and (c[i] - l[i]) < 0.34 * rng   # closed in the bottom third = failed at highs
+        eff.append(c[i] if rejected else h[i])
+    return max(eff) if eff else h[-1]
+
+
 # --------------------------------------------------------------------------- #
 # Entry-plan builders. A suggestion can carry up to two entry options (a buy-stop
 # BREAKOUT above a pivot, and/or a buy-the-dip PULLBACK to support below price).
@@ -778,7 +813,12 @@ def detect_pattern(bars, lookback=45, min_cons=6):
 # --------------------------------------------------------------------------- #
 # Analysis
 # --------------------------------------------------------------------------- #
-def analyze(sym, bars, settings=None, forming_last=False):
+def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
+    # force_no_deep=True disables the "Deep Pullback" classification path entirely, so the name falls
+    # through to whatever it naturally classifies as (plain Pullback / Breakout / etc.). The post-loop
+    # (scan -> _attach_rs ranking) sets this and RE-CALLS analyze for any provisional Deep Pullback that
+    # FAILS the leadership bar (rs_pct>=70 OR trend_template), once the true cross-universe percentile
+    # exists. Default False => single-pass behavior is byte-for-byte unchanged. (2026-06-09 leader gate.)
     # forming_last=True means bars[-1] is TODAY'S STILL-FORMING daily bar (its close = the live price,
     # not a settled close). The caller sets it only during a live session (see _session_today_if_open).
     # It changes ONE thing: the respected-bounce gate below evaluates SETTLED structure (drops the
@@ -903,7 +943,7 @@ def analyze(sym, bars, settings=None, forming_last=False):
     # ADR 15%) at +13% (up near the 9/21) isn't mislabeled a deep-at-the-50 pullback (user 2026-06-05).
     _dp_band = min(max(0.06, 0.8 * adr / 100), 0.09)
     near_50 = bool(e50) and (e50 * (1 - _dp_band) <= close <= e50 * (1 + _dp_band))
-    is_deep_pullback = (strong_leader and close < e10 and close < e20
+    is_deep_pullback = (not force_no_deep and strong_leader and close < e10 and close < e20
                         and pull_from_high >= 5 and near_50)
     # Consolidation: a strong stock going SIDEWAYS in a tight base while riding the 50 EMA
     # (the SNDK base — buy the dips to the 50 while it "waits"). A patient, worth-waiting setup.
@@ -1122,9 +1162,15 @@ def analyze(sym, bars, settings=None, forming_last=False):
         stop = round(min(raw, tight_cap), 2)
         inval = round(recent_low, 2)
     else:
-        entry = round(base_h, 2)                           # buy-stop above the consolidation high
-        # PART A: anchor the stop under the pivot (base high), clamped <=1x ADR — not the day low.
-        stop, stop_basis = _breakout_stop(entry, l[-1], adr, pivot=base_h)
+        # buy-stop above the RECENT, de-wicked consolidation high — not a stale spike/distribution wick
+        # from the prior leg (user 2026-06-09, the INTC case: old max(high[-10:]) = 126.64 from a May-29
+        # fade; the real June base tops ~113).
+        bo_piv = _breakout_pivot(o, h, l, c, close * adr / 100)
+        if bo_piv <= close:                                # already at the top of the de-wicked base →
+            bo_piv = max(h[-1], close)                     # the real upside trigger is today's high
+        entry = round(bo_piv, 2)
+        # PART A: anchor the stop under the pivot, clamped <=1x ADR — not the day low.
+        stop, stop_basis = _breakout_stop(entry, l[-1], adr, pivot=bo_piv)
         inval = round(base_l, 2)
         entry_type = "stop"
         entry_note = "buy-stop above the consolidation high"
@@ -1292,9 +1338,12 @@ def analyze(sym, bars, settings=None, forming_last=False):
     elif setup_type == "AVWAP reclaim (earnings)":
         why.append(f"holding AVWAP from earnings gap (+{earn_gap:.0f}%)")
     elif setup_type == "Breakout":
-        why.append(f"base {tight / adr_safe:.1f}x ADR, {dist_hi:.1f}% to trigger")
+        # distance to the ACTUAL (de-wicked, recent-base) trigger, not the stale base-high dist_hi
+        _trig = (entry / close - 1) * 100 if close > 0 else 0
+        why.append(f"base {tight / adr_safe:.1f}x ADR, {_trig:.1f}% to trigger")
     else:
-        why.append(f"gap {max_day:.0f}%, {dist_hi:.1f}% to trigger")
+        _trig = (entry / close - 1) * 100 if close > 0 else 0
+        why.append(f"gap {max_day:.0f}%, {_trig:.1f}% to trigger")
     if volc and volc < 0.85:
         why.append(f"vol drying {volc:.2f}")
     if vol_note:
@@ -2105,11 +2154,40 @@ def _benchmark_returns(market="us"):
     return (st.mean(r1) if r1 else 0.0), (st.mean(r3) if r3 else 0.0)
 
 
-def _attach_rs(results, market="us", benchmark=None):
+# Fields carried over from a force_no_deep RE-ANALYZE (the leadership-gate reclassification, 2026-06-09).
+# We re-run analyze() so the new setup_type's OWN entry/stop/score logic produces these — no duplication.
+# Sizing fields (shares/risk) are re-derived too; if the caller passes settings they match live, else the
+# re-analyze uses {} (sizing differs but setup_type/score/levels — what the gate is about — are correct).
+_RECLASS_FIELDS = (
+    "setup_type", "score", "entry", "stop", "inval", "risk_ps", "target", "shares",
+    "shares_per_10k", "dollar_risk", "entry_type", "entry_note", "stop_basis",
+    "entry_quality", "worth_waiting", "zone_top", "zone_bottom", "buyable_now",
+    "extended", "why", "entries",
+)
+
+
+def _rs_score_term(rs_pct, trend_template):
+    """FIX 2 (2026-06-09): structural credit the raw `score` was MISSING — it had ZERO relative-strength
+    or trend-template term, so a clean RS-97/TT-pass leader (CIFR) got no credit while a deep-pullback
+    non-leader collected +4/proximity/perf bonuses. Quality was inverted.
+      RS leg: top-decile RS scaled, (rs_pct-50)/15 capped at +3 (50th pct -> 0, ~95th -> +3).
+      TT leg: +1.5 for a full Trend-Template pass (the 7 price/MA criteria + RS>=70).
+    CIFR (RS97/TT) gains ~+3.1 + 1.5 = +4.6; NXT (RS53/TT-fail) gains ~+0.2 + 0 = ~0. Cross-universe
+    percentile is the trader's intended 'RS', so this lives in the post-loop where rs_pct is final."""
+    rs_leg = max(0.0, min(3.0, (rs_pct - 50.0) / 15.0))
+    tt_leg = 1.5 if trend_template else 0.0
+    return rs_leg + tt_leg
+
+
+def _attach_rs(results, market="us", benchmark=None, bars_map=None, settings=None):
     """Relative strength = 0.5 * percentile-in-universe + 0.5 * outperformance-vs-index.
     `benchmark=(b1,b3)` overrides the index 1m/3m returns with AS-OF values — the blind backtest MUST
     pass this (computed from index bars sliced to date D), else the outperformance leg subtracts today's
-    index return from a past date (a lookahead that mis-scores RS / grade). Live callers pass None."""
+    index return from a past date (a lookahead that mis-scores RS / grade). Live callers pass None.
+    `bars_map` = {ticker: bars} enables the 2026-06-09 LEADERSHIP GATE: a provisional 'Deep Pullback'
+    that fails (rs_pct>=70 OR trend_template) is RE-ANALYZED with force_no_deep=True so it falls to its
+    natural classification (losing the +4 / patient-A path it didn't earn). Without bars_map the gate is
+    SKIPPED (RS score term still applies) — pass it from live/scan so the reclassification takes effect."""
     if not results:
         return
     b1, b3 = benchmark if benchmark is not None else _benchmark_returns(market)
@@ -2130,6 +2208,40 @@ def _attach_rs(results, market="us", benchmark=None):
         r["trend_template"] = bool(r.get("tt_pass_price")) and rs_ok
         r["tt_count"] = r.get("tt_count_price", 0) + (1 if rs_ok else 0)   # out of 8
         r["tt_rs_ok"] = rs_ok
+
+    # ---- FIX 1: leadership gate on Deep Pullback (2026-06-09, trader-approved) ----
+    # The in-analyze `strong_leader` gate keys on ABSOLUTE gain only (p6m/p3m>=30) — no relative
+    # strength, no trend-template. So choppy non-leaders (NXT RS60, MRNA RS9, SATS RS41...) collected
+    # the deep-pullback +4 and patient A-path they hadn't earned. Require a REAL leader IN ADDITION:
+    # rs_pct>=70 OR trend_template. Failers are re-analyzed with force_no_deep so the SAME code path
+    # produces their natural setup_type + matching entry/stop/score (no duplicated logic).
+    if bars_map:
+        for r in results:
+            if r.get("setup_type") != "Deep Pullback":
+                continue
+            if (r.get("rs_pct", 0) >= 70) or r.get("trend_template"):
+                continue                                   # a genuine leader — keep Deep Pullback
+            bars = bars_map.get(r["ticker"])
+            if not bars:
+                continue                                   # can't re-derive cleanly — leave as-is (caveat)
+            try:
+                re_a = analyze(r["ticker"], bars, settings or {}, force_no_deep=True)
+            except Exception:
+                continue
+            r["reclassified_from"] = "Deep Pullback"        # audit trail of the deliberate move
+            for k in _RECLASS_FIELDS:
+                if k in re_a:
+                    r[k] = re_a[k]
+
+    # ---- FIX 2: add the RS + trend-template credit to the raw score (post-loop: rs_pct is final) ----
+    # IDEMPOTENT (Burry 2026-06-09): stash the pre-credit base ONCE and always recompute from it, so a
+    # second pass through _attach_rs (re-grade / retry / test) can't stack the term (+4.5) twice.
+    for r in results:
+        base = r.get("score_base")
+        if base is None:
+            base = r.get("score", 0)
+            r["score_base"] = base
+        r["score"] = round(base + _rs_score_term(r.get("rs_pct", 0), r.get("trend_template")), 1)
 
 
 def detect_groups(tickers, lookback=15, min_move=8.0, corr_thr=0.86, max_cand=120, progress=None):
@@ -2200,6 +2312,7 @@ def scan(tickers, settings=None, progress=None, max_age=12, market="us", forming
     # respected-bounce gate on settled structure only (see analyze's forming_last). Per-ticker so a
     # stale/halted name (last bar != today) is unaffected. None ⇒ all bars treated as settled (EOD).
     results, fails = [], []
+    bars_map = {}                   # ticker -> bars, so the leadership-gate reclassification can re-analyze
     total = len(tickers)
     for i, t in enumerate(tickers, 1):
         bars = get_bars(t, max_age_hours=max_age)
@@ -2214,11 +2327,12 @@ def scan(tickers, settings=None, progress=None, max_age=12, market="us", forming
         try:
             _forming = bool(forming_date and bars[-1].get("time") == forming_date)
             results.append(analyze(t, bars, settings, forming_last=_forming))
+            bars_map[t.upper()] = bars
         except Exception:
             fails.append(t)
         if fetched:                 # only throttle when we actually hit Yahoo (cache miss)
             time.sleep(0.05)
-    _attach_rs(results, market)
+    _attach_rs(results, market, bars_map=bars_map, settings=settings)
     results.sort(key=lambda r: r["score"], reverse=True)
     return {"results": results, "failed": fails,
             "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}

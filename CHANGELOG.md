@@ -1,5 +1,161 @@
 # Changelog
 
+## 2026-06-09 — AVWAP overhead-EMA fire gate (the IREN "clear the 9-EMA" case)
+
+**What was done.** Trader: IREN (Pullback @ AVWAP) — the 9-EMA ($60.64) sits just above the AVWAP support
+($58.95), so the plain reclaim+spin fires ~2.5% UNDER the 9-EMA, buying into overhead. Wanted: for AVWAP
+setups, fire on a 5-min CLOSE above the overhead 9-EMA ("no retest"), stop STILL under the AVWAP. Quant added
+`_avwap_overhead_gate` + a gated branch in `compute_now`'s is_avwap path: when an overhead daily 9/21 EMA sits
+within ~0.5×ADR above the AVWAP support, the buy fires on a completed 5-min close above that EMA (buyers_confirm
+kept; AVWAP retest/spin bypassed), entry at the clear, stop just under the AVWAP, ≤1×ADR guard. is_deep + the
+ungated AVWAP reclaim path byte-for-byte unchanged. New trigger tag CLEAR_9EMA.
+
+**Burry CRITICAL FAIL → fixed.** Quant anchored `oh_ema` to the LIVE price — so the instant price closed above
+the EMA and kept rising (the trader's exact "straight up, no retest" case), the gate de-qualified BEFORE the
+first fire could freeze, and the name fell through to the reclaim path at a WORSE entry above the EMA. Fix
+(Burry's prescription): anchor `oh_ema` to the AVWAP SUPPORT (a stable daily level), not the live price. Now
+the gate holds through the close-above and fires correctly. Rewrote the test that pinned the bug
+(`test_gate_stays_on_when_price_runs_above_ema`) + added `test_fires_straight_up_no_retest`.
+
+**Result.** IREN: armed below the 9-EMA → fires on a completed 5-min close ≥ ~$60.82 (60.64×1.003), entry at
+the clear, stop ~$58.66 (under the AVWAP), risk ~0.4×ADR. Corrected blast radius: **58 AVWAP-family names** have
+a near-overhead EMA → new clear-the-EMA mechanic (the buggy live-price anchor under-counted to 17); 56 unchanged
+(EMA far / none above support). Suite **45/45** (10 new gate tests). Goldens unaffected (live-path, firewalled
+from grades). Backup backups/2026-06-09_avwap-overhead-ema/. Needs restart+rescan + live session to fire.
+
+**Edge-case fix (trader, same day): no chasing a gap.** With the support-anchored gate, a high-ADR name
+gapping +5% pre-market above the 9-EMA would still pass the stop-≤1×ADR guard (ADR 9%) and FIRE a chase at the
+gap. Added a `reached_ema` gate: a FRESH fire now requires the day-low to have TAGGED the 9-EMA today (ADR-scaled
+buffer, same as reached_av/reached_50) — a genuine cross-from-below OR a pullback that RETESTS the EMA, NOT a
+gap-and-go. Gap-and-go -> `too_extended`, "waiting for a retest of the 9-EMA"; gap-then-retest-and-bounce ->
+fires near the EMA. Strictly TIGHTENING (can only prevent a chase). Tests `test_gap_and_go_does_not_fire` +
+`test_gap_then_retest_the_ema_fires`. Suite 47/47.
+
+**Risk/honesty.** Confirmation-engine change (entry timing), not a backtested R-edge — can't be A/B'd in the
+daily-bar blind harness. Faithful to the trader's explicit rule, verified mechanically.
+
+## 2026-06-09 — Confirmation WATCH widened to B AVWAP-family setups (the IREN case)
+
+**What was done.** Trader asked why IREN (Pullback @ AVWAP, RS 88, grade B) never fires a buy notification.
+Root cause: the live confirmation WATCH gate (`compute_now`, ~line 3330) admitted a B leg only when
+`worth_waiting` (= Deep Pullback / Consolidation). AVWAP-family pullbacks aren't worth_waiting, so a B AVWAP
+leader was never even armed → no beep. Fix: extended the strong-B exception to the full PATIENT family —
+`_patient_b = worth_waiting OR "AVWAP" in setup_type` (mirrors grading's `patient_quality`). Breakouts/EPs +
+plain "Pullback" keep the strict A/A+ gate.
+
+**Result.** IREN now admitted to WATCH (was excluded). Blast radius: 18 AVWAP-family names newly watchable,
+zero non-patient leakage. 13 are C-HEADLINE names with a B AVWAP *leg* (breakout leg drags the avg) — admitted
+on the B leg, consistent with the worth_waiting precedent (keys on leg grade). Surface self-bounded by the
+existing `cands[:18]` shortlist cap. **Only widens WATCH, not BUY** — the reclaim + buyers_confirm + stop-≤1×ADR
+FIRE gates are untouched; AVWAP routes to the is_avwap reclaim branch as before. Suite 35/35 (watch gate is
+live-path, not golden-covered). Backup in backups/2026-06-09_watch-avwap-b/.
+
+**For the trader: IREN's actual buy trigger** = a RECLAIM of the earnings-AVWAP (~$58.95), NOT a breakout:
+price tags the line → a 5-min candle CLOSES ≥~$59.13 (0.3% above) → turning up off the lows → buyers_confirm
+(≥2 green 5-min closes over a rising 5-min 9-EMA) → stop ~$56 (≤1×ADR under the AVWAP). Beeps once, locks price.
+NOTE: IREN grades B; the watch widening is what lets a B AVWAP arm at all. Needs restart+rescan + the live
+session to fire.
+
+## 2026-06-09 — Setup score: leadership gate + RS/TT credit (the CIFR-low / NXT-high case)
+
+**What was done.** Trader caught the engine grading a clean leader (CIFR: RS94, TT-pass, riding the 10-EMA)
+a C while a choppy non-leader (NXT: RS60, TT-fail, knifed 9% below its 10-EMA) was a B. Two root causes,
+both fixed (quant-built, Burry-verified):
+1. **`strong_leader` gate was absolute-gain only** (`above_200 and (p6m>=30 or p3m>=30)`) — no relative
+   strength, no trend-template. 27–61 of ~45–97 "Deep Pullback" names were non-leaders (MRNA RS9, SATS 41,
+   NXT 60…) collecting the +4 deep bonus + the patient A-path. FIX 1: a provisional Deep Pullback now must
+   pass **rs_pct≥70 OR trend_template**, else it's re-analyzed `force_no_deep=True` and falls to its natural
+   type (loses the premium). Implemented in `scanner._attach_rs` (the post-loop where the cross-universe
+   rs_pct is final — the only place both gate inputs are real), via a new `analyze(force_no_deep=…)` param +
+   re-call (no logic duplication). `_RECLASS_FIELDS` copies the fallback fields; `reclassified_from` audit tag.
+2. **Raw `score` had ZERO RS/TT term** (they only entered at the 14%-weight grade layer). FIX 2:
+   `_rs_score_term(rs_pct, tt)` = `(rs_pct-50)/15` capped +3, plus +1.5 for a TT pass. CIFR +4.6; NXT ~0.
+
+**Result.** CIFR: Pullback (correctly not deep), score 10.9 → **15.3, grade C → B** (the trader's call).
+NXT: **Deep Pullback → Breakout**, score → ~6, **grade B → D**. Deep Pullback count 45 → 18 (live ~97 → 36);
+every kept name is a genuine leader (TSEM 96, AXTI 93, LUNR 92), zero leakage. Grade blast radius: **65
+upgrades (all RS 89–99 leaders), ~19–61 downgrades (all reclassified non-leaders) — zero leader downgraded,
+zero non-leader upgraded.**
+
+**Burry verdict: CONDITIONAL PASS → both items closed.** (a) Firewall byte-for-byte (analyze default path
+unchanged → goldens still valid, NO regen). (b) No stale fields after reclass (worth_waiting/chase_exempt/
+why/entries all flip correctly; app.py:1432 double-checks worth_waiting). (c) No lookahead (forward-test +
+backtest re-analyze use as-of slices). FIXED: **BUG B (idempotency)** — `_attach_rs` now stashes `score_base`
+once and recomputes, so a 2nd pass can't stack the +4.5. CLOSED: **coverage gap** — new `tests/test_leader_
+gate.py` (4 tests: RS-term bounds, idempotency, reclass-on-fail, keep-on-pass). Suite **35/35**.
+
+**What's next.** Restart + rescan to go live (suggestions.json is pre-fix). Forward-test the new leader gate.
+Open (trader call): NXT/FN landed B→**D** (two grades), not C — defensible (non-leader knifed below 10-EMA →
+plain Breakout far from trigger) but the softer lever is the Breakout score path if wanted. rs_pct boundary
+names (HBM RS69) sit one point under the gate — live rescan is ground truth.
+
+## 2026-06-09 — Breakout pivot: de-wick + recent base (the INTC case)
+
+**What was done.** Trader flagged INTC's breakout trigger sitting ~15% away ($126.64) when the actionable
+base tops ~$113. Root cause: `base_h = max(high[-10:])` in scanner.analyze used the raw intraday high over a
+fixed 10-bar window, so (1) a single rejection/distribution bar's spike set the pivot — INTC's May-29 bar
+opened 123.8 and CLOSED 114.7 (a fade), yet its 126.64 high became the "consolidation high"; and (2) the
+fixed window reached back into the prior leg's distribution after the stock re-based lower.
+New `_breakout_pivot(o,h,l,c,adr_px)` helper — "de-wick + recent base" (user's choice):
+  * RECENT BASE — start the window AFTER the most recent sharp leg-down close (>1.3× ADR down day), bounded
+    [4,10] bars, so it measures the coil the stock is in NOW.
+  * DE-WICK — a bar that closed in the bottom third of its range contributes its CLOSE, not its spike high.
+Wired into the breakout primary entry only (line ~1160); stop already pivot-anchored (LUNR fix) so risk
+stays ≤1× ADR. Guard added: if the de-wicked base high ≤ close, trigger = today's high. "% to trigger" in
+the why now reflects the actual entry, not the stale `dist_hi`. Classification inputs (base_h/tight/dist_hi/
+rng15/EP gate) deliberately UNTOUCHED → setup types stay byte-for-byte.
+
+**Result.** INTC $126.64 → $113.14 (2.6% to trigger, zone 113–115, on the EMAs — matches the trader's read).
+Blast radius across 479 breakout/EP names: **309 entries moved, ALL nearer (downward)**, 170 unchanged. Big
+movers (ZS 191→151, MSTR 167→136, RKLB 151→123) are post-crash names whose old pivots were pre-crash spikes —
+new pivots are real recent swing highs. 0 entries below close (3 at-close edge cases fixed by the guard).
+
+**Decisions made.** Scoped to the breakout PIVOT only — left base_h/classification/scoring alone so setup
+types don't shift (firewall). Did not touch the patient-setup `_pullback_leg_pivot` (already nearest-overhead).
+
+**Burry (qa) verdict: PASS (both changes).** Firewall confirmed: 792/792 cached names — setup_type byte-for-
+byte unchanged; 309 breakout entries all moved DOWN (nearer), 0 up, 0 below close. Edge-case audit of
+`_breakout_pivot` clean (empty/single/flat/no-sharp-down/min_base clamp all safe). Grader change provably
+MONOTONE (0 downgrades) when theme state is held fixed — a naive backup-vs-now diff showed phantom downgrades
+only because themes.json was updated today (206 new assignments); not a code effect.
+
+**Golden snapshots REGENERATED** (`make_golden.py` + `make_grade_snapshot.py`, both re-baseline on fresh bars
+by design) after the PASS — full suite now **31/31 green**. Backups of the old goldens in the backup dir.
+
+**What's next.** (1) ONE residual Burry flagged: TCGL (halted stock — zero volume, flat bars, ADR 0) yields
+entry==stop / risk_ps=0 in the analyze breakout path; harmless (sizing guarded, won't arm) but degenerate —
+spawned as a follow-up task (add `if risk_ps<=0: skip breakout entry`, mirroring `_breakout_plan`). (2) Forward-
+test the nearer triggers. (3) Live grade-letter impact lands on the next full scan (grade_suggestions runs on
+stored items).
+
+## 2026-06-09 — Grade: broad-correction de-bias widened + plain-pullback C-cap relaxed (the CIFR case)
+
+**What was done.** Trader flagged CIFR (RS 94, clean Stage-2 leader, shallow pullback) graded C and traced it
+to its sector (theme HPC) tagged "Falling" while the WHOLE tape was pulling back (posture 45). Two real
+defects + one intentional loosening, all in `grade_suggestions` (app.py):
+1. **broad_correction trigger** now counts **Falling + Slowing**, not Falling-only. Today's tape was 61%
+   Falling (under the 65% trip) but 82% Falling+Slowing, only 2/38 sectors Rising — obviously broad, but the
+   de-bias never fired. Slowing is the same market-wide cooling.
+2. **de-bias scope** extended from patient-at-support setups only → patient setups **OR** a top-decile-RS
+   leader (rs_pct ≥ 90). A plain pullback on an RS-94 leader no longer eats the −10pt Falling penalty when
+   the tape is the thing falling.
+3. **plain-pullback C-cap relaxed**: a top-decile leader (rs_pct ≥ 90) on a plain pullback in a MILD tape
+   (posture 40-49) now caps at **B** (was forced to C / CAP_PLAIN_WEAK 52). Real corrections (<40) and
+   weaker names still cap at C. Deep-pulls/AVWAP keep their own A-path untouched.
+
+**Result.** CIFR 52 → 61 (still C, now on composite merit — its shallow-pullback *setup-structure* score
+43/100 is the only thing under B, NOT force-capped). Blast radius across 795 graded names: **20 upgrades,
+0 downgrades** (firewall: a de-bias only lifts). 5 C→B (NXT/FN/CRWV/FLY/SATS), 15 D→C. Burry-verified the
+code is provably MONOTONE (0 downgrades) with theme state fixed — see the breakout entry above for the full
+qa verdict; SATS/FLY's C→B is partly driven by new themes.json assignments, not the rubric edit alone.
+
+**Decisions made.** Did NOT inflate the setup-score mapping to push CIFR to B — that's curve-fitting one
+name (methodology lock). CIFR earning a 61 high-C on a shallow pullback is correct.
+
+**What's next.** OPEN: 3 of the 5 C→B upgrades are weak-RS patient deep-pulls (NXT 60, SATS 41, FN 65) lifted
+by the wider broad_correction trigger — decide whether the broad-correction patient path needs an RS floor.
+Burry (qa) re-verify the intended deltas. Forward-test the relaxed plain-pullback B in live tape.
+
 ## 2026-06-09 — Competition bots: real-time intraday exits (live-exit lag fix)
 
 **What was done.** Fixed the live-path exit lag the trader flagged (ROADMAP item). `run_bots_live` (bots.py)

@@ -1417,8 +1417,11 @@ def grade_suggestions(items, settings, posture=None, heat=None):
     # consolidations / AVWAP — the backtest-validated any-tape workhorses). FIREWALL: when NOT broad
     # (<65% of sectors Falling) `broad_correction` is False and every grade is byte-for-byte unchanged.
     _htr = [h.get("trend") for h in heat.values() if h.get("trend")]
+    # COOLING = Falling OR Slowing (user 2026-06-09, the CIFR case): "Falling-only" missed obvious
+    # broad pullbacks where most sectors had merely rolled to "Slowing" (today: 61% Falling but 82%
+    # Falling+Slowing, only 2/38 Rising, posture 45). Slowing is the same market-wide cooling — count it.
     broad_correction = (len(_htr) >= rubric.BROAD_CORR_MIN_SECTORS
-                        and sum(1 for t in _htr if t == "Falling") / len(_htr) >= 0.65)
+                        and sum(1 for t in _htr if t in ("Falling", "Slowing")) / len(_htr) >= 0.65)
     news_data = read_json(news_f(), {})
     news_map = news_data.get("ticker_news", {})
     theme_news = news_data.get("theme_news", {})
@@ -1524,8 +1527,10 @@ def grade_suggestions(items, settings, posture=None, heat=None):
         sector = 100 if tr == "Rising" else (85 if tier == "Hot" else 25 if tr == "Slowing"
                                              else 12 if tr == "Falling" else 55)
         # broad-correction de-bias: a Falling sector during a market-wide pull carries no stock-specific
-        # signal for a leader bought AT support — lift it off the floor to neutral (patient setups only).
-        if broad_correction and tr == "Falling" and patient_quality:
+        # signal — lift it off the floor to neutral. Scope (user 2026-06-09, the CIFR case): patient
+        # at-support setups OR a top-decile-RS leader (rs_pct ≥ 90). A plain pullback on an RS-94 leader
+        # shouldn't eat the −10pt Falling penalty when the WHOLE tape is the thing that's falling.
+        if broad_correction and tr == "Falling" and (patient_quality or (it.get("rs_pct", 0) or 0) >= 90):
             sector = max(sector, rubric.NEUTRAL)
         # timing rewards WAITING (backtest: not-buyable +0.36R beat buyable-now +0.17R): the in-zone
         # bonus only goes to patient setups OR a non-extended name — never an extended in-zone chase.
@@ -1590,7 +1595,14 @@ def grade_suggestions(items, settings, posture=None, heat=None):
             # posture >= REGIME_WEAK (50): no cap -> A+ reachable (healthy tape only)
         else:                                               # plain pullbacks & everything else
             if posture < rubric.REGIME_WEAK:
-                r = min(r, rubric.CAP_PLAIN_WEAK)
+                # Don't force a top-decile leader into C just for being a plain (shallow) pullback in a
+                # MILD tape (user 2026-06-09, the CIFR case). RS≥90 in a 40-49 pullback tape -> max B;
+                # real corrections (<40) and weaker names still cap at C. Deep-pulls/AVWAP keep their
+                # own A-path above; this only lifts the *plain* pullback's ceiling from C to B.
+                if posture >= 40 and (it.get("rs_pct", 0) or 0) >= 90:
+                    r = min(r, rubric.CAP_PATIENT_WEAK)     # strong leader, mild plain pullback -> max B
+                else:
+                    r = min(r, rubric.CAP_PLAIN_WEAK)       # max C
             elif posture < rubric.REGIME_MIXED:
                 r = min(r, rubric.CAP_PLAIN_MIXED)          # allow A, not A+
         # LEADERSHIP GATE (user 2026-06-05, the TER case): A/A+ is for LEADERS only. A name that is neither a
@@ -1957,19 +1969,21 @@ def backfill_forward(max_days=10, throttle=True):
     for D, label in todo:
         posture = _posture_asof_local(D)
         items = []
+        bars_map = {}                  # ticker -> as-of slice, for the leadership-gate reclassification
         for i, (t, b) in enumerate(bars_by.items()):
             sl = [x for x in b if x["time"] <= D]
             if len(sl) < 200:
                 continue
             try:
                 items.append(scanner.analyze(t, sl, {}))
+                bars_map[t.upper()] = sl
             except Exception:
                 pass
             if throttle and i % 120 == 0:
                 time.sleep(0.03)                               # yield the CPU — never peg it
         if not items:
             continue
-        scanner._attach_rs(items)
+        scanner._attach_rs(items, bars_map=bars_map)
         graded = grade_suggestions(items, settings, posture=posture, heat={})   # sector neutral (not stored)
         graded = [s for s in graded if s.get("grade") in ("A+", "A", "B", "C")]
         graded = sorted(graded, key=lambda s: (s.get("rating", 0), s.get("score", 0)),
@@ -3108,6 +3122,31 @@ def _resistance_entry(price, s, entry_buf):
     return entry, stop, f"the {n} overhead EMA{'s' if n > 1 else ''}"
 
 
+def _avwap_overhead_gate(cur_px, avwap_sup, ema9, ema21, adr_pct):
+    """OVERHEAD-EMA fire gate for AVWAP-family setups (user 2026-06-09, the IREN case). Pure decision helper
+    so it's unit-testable. When the AVWAP support sits within ~0.5x ADR UNDER an overhead daily EMA (9/21),
+    the plain reclaim+spin can fire ~2.5% BELOW that EMA = straight into overhead resistance. Returns
+    (oh_gate, oh_ema): oh_gate=True means route through the EMA-clear path (fire on a 5-min close above
+    oh_ema, stop under the AVWAP); oh_gate=False means the proximity gate does NOT apply -> use the
+    unchanged reclaim+spin path.
+
+    oh_ema = the HIGHEST of the daily 9/21 EMA sitting ABOVE the AVWAP SUPPORT (NOT the live price — Burry
+    2026-06-09). Anchoring to the live price was a CRITICAL bug: the instant price closed above the EMA and
+    kept rising (the trader's "straight up, no retest" case), oh_ema flipped to None, the gate de-qualified
+    BEFORE the first fire could freeze, and the name fell through to the reclaim path at a WORSE entry above
+    the EMA — the exact anti-pattern this gate exists to prevent. The AVWAP support is a stable daily level,
+    so the gate question "is a 9/21 EMA within ~0.5x ADR above the support I buy at?" doesn't jitter with
+    every 5-min tick. If no EMA sits above the support, oh_ema=None -> normal reclaim. PROXIMITY: a
+    far-overhead EMA (> 0.5x ADR above the support = the deep-pullback shape) leaves the gate OFF ->
+    unchanged reclaim+spin. cur_px is unused now (kept in the signature for caller compatibility)."""
+    above = [v for v in (ema9, ema21) if v and avwap_sup and v > avwap_sup]
+    oh_ema = max(above) if above else None
+    adr_px = (avwap_sup * adr_pct / 100) if (avwap_sup and adr_pct) else None
+    oh_gate = bool(oh_ema is not None and adr_px
+                   and (oh_ema - avwap_sup) <= 0.5 * adr_px)
+    return oh_gate, oh_ema
+
+
 def compute_now(shared=False):
     # shared=True → the POSITION-AGNOSTIC view for Auto Pilot: ignore the owner's open positions and
     # ✗-rejections entirely, so the armed/confirmed list is IDENTICAL for everyone (the owner's local
@@ -3313,10 +3352,17 @@ def compute_now(shared=False):
             # WATCH to strong-B patient dip-buys does NOT loosen the BUY. Breakouts/EPs keep the strict A/A+
             # gate (a B breakout in a mixed tape is not a watch candidate). best-leg sort still prefers the
             # higher-rated (dip-buy) leg, so a deep pullback arms on its 50-reclaim leg, not its breakout alt.
+            # strong-B WATCH exception extended to the full PATIENT family (user 2026-06-09, the IREN case):
+            # AVWAP-reclaim setups are patient dip-buys bought on a RECLAIM of their line — same as a
+            # worth_waiting deep pullback — so an RS-leader B AVWAP (IREN: RS 88) should arm + beep on the
+            # reclaim too, not be dropped for being one notch under A. Matches grading's `patient_quality`
+            # (worth_waiting OR "AVWAP" in setup_type). The reclaim + buyers_confirm + stop-≤1×ADR gates still
+            # govern the FIRE (this only widens WATCH, not BUY); breakouts/EPs + plain Pullbacks keep A/A+.
+            _patient_b = bool(s.get("worth_waiting") or ("AVWAP" in (s.get("setup_type") or "")))
             legs = [e for e in (s.get("entries") or [])
                     if e.get("entry") and e.get("stop") and not e.get("stale")
                     and (e.get("grade") in ("A+", "A")
-                         or (s.get("worth_waiting") and e.get("grade") == "B"))]
+                         or (_patient_b and e.get("grade") == "B"))]
             if not legs:
                 continue
             best = sorted(legs, key=lambda e: e.get("rating", 0), reverse=True)[0]
@@ -3517,6 +3563,105 @@ def compute_now(shared=False):
             continue
         if is_avwap:                                          # AVWAP RECLAIM + spin — sibling of the 50-reclaim, on the AVWAP line
             cur_px = b5[-1]["close"] if b5 else (s.get("close") or leg_entry)
+            # ── OVERHEAD-EMA FIRE GATE (user 2026-06-09, the IREN case) ───────────────────────────────────
+            # When an AVWAP-family setup's AVWAP support sits JUST UNDER an overhead daily EMA (9/21), the
+            # plain reclaim+spin can fire ~2.5% below that EMA — i.e. buy straight INTO overhead resistance
+            # (IREN: reclaim ~$59.1 while the 9-EMA wall is $60.64). The fix for THIS case: don't buy the
+            # AVWAP reclaim — wait for a COMPLETED 5-min CLOSE above the overhead EMA (the wall IS the
+            # trigger; no retest, no spin required), entry at the clear, stop STILL just under the AVWAP.
+            # oh_ema = the HIGHEST of the daily 9/21 EMA sitting ABOVE the AVWAP SUPPORT (Burry fix 2026-06-09 —
+            # NOT the live price; the live-price anchor de-qualified the gate the instant price closed above
+            # the EMA in the trader's "straight up, no retest" case, dropping it to the reclaim path at a worse
+            # entry. The support is a stable daily level → the gate holds through the close-above).
+            _e9 = s.get("ema9") or s.get("ema10")
+            _e21 = s.get("ema21") or s.get("ema20")
+            # PROXIMITY GATE (pure helper, unit-tested): only when an overhead EMA sits within ~0.5× ADR above
+            # the AVWAP support. Far-overhead 9 (deep/shallow) → gate off → reclaim+spin. PERSISTENCE: once this
+            # name FIRED earlier today it's frozen with CLEAR_9EMA — the frozen entry/stop govern the standing
+            # call for the rest of the day (locks the buy price even as it runs).
+            oh_gate, oh_ema = _avwap_overhead_gate(cur_px, _avwap_sup, _e9, _e21, adr_pct)
+            _frz = _frz_day.get(fkey)
+            _frz_cleared = bool(_frz and _frz.get("stop_lab") == "AVWAP" and _frz.get("trig") == "CLEAR_9EMA")
+            if _frz_cleared and not oh_gate:                      # frozen but support/EMA shifted → keep oh_ema for the message
+                oh_ema = oh_ema or _e9 or _e21
+            if oh_gate or _frz_cleared:
+                # FIRE = a COMPLETED 5-min candle CLOSES above the overhead EMA (~0.3% buffer, same as the
+                # held_above logic). NO AVWAP retest/bounce ("no retest, no nothing") — the close above the
+                # EMA IS the trigger. Keep buyers_confirm (a single 5-min close can be a fakeout; this is the
+                # established anti-knife gate, NOT a retest). ENTRY = the clear level (oh_ema * (1+ebuf/100))
+                # or the live close if it gapped through; STOP = JUST UNDER the AVWAP (not the EMA); stop-≤1×ADR.
+                _oh_buf = (oh_ema * (1 + 0.003)) if oh_ema else None   # 5-min close must clear the EMA by ~0.3%
+                _closed = b5[-2]["close"] if (b5 and len(b5) >= 2) else None
+                # FIRED already (frozen) stays fired; else needs a COMPLETED 5-min close above the EMA buffer.
+                cleared_oh = bool(_frz_cleared or (_oh_buf and _closed is not None and _closed >= _oh_buf))
+                # REACHED the EMA = price actually TESTED the 9-EMA today (user 2026-06-09): a genuine cross
+                # from below OR a pullback that RETESTS it — NOT a gap-and-go that opened far above and never
+                # came back (e.g. +5% in the pre). Without this, a high-ADR name gapping above the EMA would
+                # fire a CHASE (the stop-under-AVWAP can still be <1×ADR on a 9%-ADR name). Same ADR-scaled
+                # "tagged the line" buffer as reached_av/reached_50. Frozen (already fired) bypasses it.
+                _dlo = min(b["low"] for b in b5) if b5 else None
+                _reach_buf = max(0.005, 0.0015 * (adr_pct or 0))
+                reached_ema = bool(_dlo is not None and oh_ema and _dlo <= oh_ema * (1 + _reach_buf))
+                _ema_lbl = "9-EMA" if (oh_ema == _e9) else ("21-EMA" if (oh_ema == _e21) else "EMA")
+                if not cleared_oh:
+                    deep_wait = True
+                    cmsg = (f"Armed — fires on a 5-min CLOSE above the {_ema_lbl} (${_f(oh_ema)}); "
+                            f"stop under the AVWAP (${_f(round(_avwap_sup * (1 - (sbuf or 0) / 100), 2))}). "
+                            f"(AVWAP support ${_f(_avwap_sup)} sits just under the {_ema_lbl} — wait to clear it, not the reclaim.)")
+                elif not (_frz_cleared or reached_ema):
+                    too_extended = True                              # gapped/ran above the EMA WITHOUT testing it → a chase
+                    cmsg = (f"Closed above the {_ema_lbl} (${_f(oh_ema)}) but it RAN there without testing it "
+                            f"(gapped/ran far above — day low ${_f(_dlo)} never tagged the {_ema_lbl}). No chase — "
+                            f"waiting for a pullback that RETESTS the {_ema_lbl} and bounces.")
+                else:
+                    frozen = _frz_day.get(fkey)
+                    if frozen:                                       # standing call → reuse the locked buy/stop
+                        cand_entry, cand_stop, stop_lab = frozen["entry"], frozen["stop"], frozen.get("stop_lab")
+                    else:
+                        clear_lv = round(oh_ema * (1 + (ebuf or 0) / 100), 2)
+                        cand_entry = max(_closed or clear_lv, clear_lv)   # the clear level, or the gap-through close
+                        cand_stop = round(_avwap_sup * (1 - (sbuf or 0) / 100), 2)   # stop JUST UNDER the AVWAP
+                        stop_lab = "AVWAP"
+                    buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
+                    adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
+                    raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
+                    if not frozen and adr_px and raw_risk and raw_risk > 1.0 * adr_px:
+                        too_extended = True                      # clear too far above the AVWAP → stop > 1× ADR
+                        cmsg = (f"Closed above the {_ema_lbl} (${_f(oh_ema)}) but the stop ${_f(cand_stop)} (under the AVWAP) "
+                                f"is already wider than 1x ADR from here — too extended. No call (don't widen the stop).")
+                    elif not frozen and not buyers_ok:
+                        buyers_wait = True
+                        cmsg = (f"Closed above the {_ema_lbl} (${_f(oh_ema)}) but {buyers_why} — no call yet "
+                                f"(a single 5-min close can be a fakeout; waiting for buyers stepping in).")
+                    else:
+                        triggered = True
+                        confirm_trigger = "CLEAR_9EMA"
+                        entry, stop = cand_entry, cand_stop
+                        _confirmed_fkeys.add(fkey)
+                        if not frozen:                           # first confirm → LOCK the buy price + stop for the day
+                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab,
+                                              "trig": "CLEAR_9EMA"}
+                        cmsg = (f"CONFIRMED — closed above the {_ema_lbl} (${_f(oh_ema)}). "
+                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP).")
+                sized = _size_leg(entry, stop)
+                plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
+                                    sized, triggered, too_extended), "why": s.get("why")}
+                rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                       "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
+                       "kind": e.get("kind"), "trigger": oh_ema, "break_level": oh_ema,
+                       "orh": None, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
+                       "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
+                       "buyable_now": bool(e.get("buyable_now")),
+                       "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
+                       "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
+                       "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
+                       "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+                       "p1m": s.get("p1m"), "p6m": s.get("p6m"),
+                       "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
+                       "confirm_menu": cmenu, "confirm_trigger": confirm_trigger,
+                       "overhead": overhead}
+                (buys if triggered else armed).append(rec)
+                continue
             if not _avwap_sup or cur_px is None:
                 deep_wait = True
                 cmsg = "AVWAP reclaim — armed at the AVWAP. Waiting for it to bounce off the AVWAP + a spin (buyers stepping in)."

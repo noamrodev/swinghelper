@@ -5,6 +5,21 @@ my real trades via `/log-trade` and `/review-trades`. Keep it tight — only dur
 lessons, newest insights merged in (not an endless list of duplicates).
 
 ## Active lessons
+- **AVWAP reclaim into a near-overhead EMA = clear the EMA, never reclaim under it (2026-06-09, IREN).**
+  If an AVWAP-family setup's AVWAP support sits within ~0.5× ADR *under* the daily 9/21 EMA, buying the AVWAP
+  reclaim means buying straight into the EMA wall a few % overhead (IREN: reclaim ~$59.1 with the 9-EMA at
+  $60.64). The buy now waits for a **completed 5-min close above the EMA** (no AVWAP retest — the EMA close IS
+  the trigger), stop still just under the AVWAP, risk ≤1× ADR. A far-overhead EMA (deep-pullback shape) keeps
+  the normal reclaim+spin; the 50-reclaim deep-pullback path is unchanged. Needs a server restart + rescan to
+  see it live (engine: `app.compute_now`, trigger tag `CLEAR_9EMA`).
+- **A "Deep Pullback" must be a real LEADER, not just a big-gainer that fell apart.** Absolute gain
+  (p6m/p3m ≥30) is NOT leadership — choppy laggards (NXT RS59, MRNA RS9, SATS RS41) also "ran 30%" then
+  knifed below their EMAs, and the old gate handed them the deep-pullback +4 and the patient A-grade path.
+  Rule (engine, 2026-06-09): a Deep Pullback ALSO needs **rs_pct ≥ 70 OR trend_template**. The edge is a
+  *strong stock at SUPPORT*, never a weak stock that merely had a number. Also: setup `score` now carries an
+  explicit RS+TT credit (was zero before) so a clean RS-97/TT leader (CIFR) outranks a deep-pullback
+  non-leader — quality was literally inverted before (NXT 15.6 > CIFR 10.9; now CIFR B, NXT D). Needs a
+  server restart + rescan to take effect live. (2026-06-09 leader/score calibration fix)
 - **Record the REAL initial stop the moment you log a trade — and never let a breakeven raise erase
   it.** The day-1 logs showed stop = entry (placeholders), which hid the actual risk: MSFT's true stop
   was the breakout-candle low $432 (0.44% risk), DOCN's was $146.1 (0.64%) — both fine, just not
