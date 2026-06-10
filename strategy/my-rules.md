@@ -49,6 +49,14 @@ here to match how you actually trade.
   **New entries are unaffected** â€” I still trade daily;
   the rule is purely "don't carry momentum overnight." The app **alerts** me to flatten (it never sells
   for me), firing in the last ~30 min (after 15:30 ET); a normal extended-but-GREEN tape does NOT arm it.
+- **OVER-STRETCH SHIELD (added 2026-06-09) â€” an INDEPENDENT defend arm.** Separate from the "extended AND
+  weak" path above: when **â‰¥2 of SPX/QQQ/IWM are rubber-banded above their 50-MA** past a per-index line
+  (`atr_mult_50` â‰¥ **SPX 7 / QQQ 7 / IWM 5**, engine ADR units, calibrated on 4yr of bars â€” the rarest ~6%
+  of days, where real tops cluster), shield arms **on its own â€” green tape is not a pass** (a froth top
+  reverts the same way a correction bleeds). Same action: flatten momentum into the close, Deep-Pullback
+  50-EMA holds exempt. NB: these lines are in the engine's H/L-ADR units, which run ~20% ABOVE TradingView's
+  true-ATR readout (so a TV "8" â‰ˆ engine ~9.6). Distinct from the flat 4.5 `stretched_50` chase flag, which
+  only nudges posture â€” this never touches a grade.
 
 ## Hard "don'ts" (seed list â€” `/review-trades` will add to this)
 - Don't chase: no entries more than ~1Ã— ADR above the trigger.

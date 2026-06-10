@@ -1,5 +1,193 @@
 # Changelog
 
+## 2026-06-10 — SESSION HANDOFF (everything below this date is LIVE; read this first)
+
+**Current state.** Server running (last PID 30524, port 8765), alerts ON (`notify_mode` removed), all of today's
+work DEPLOYED via restart + a fresh `market-leaders` rescan. Grader 7/7 byte-for-byte throughout; full suite 106.
+NOT committed (git is the trader's) and NOT synced to swinghelper.
+
+**What shipped today (all live, all Burry-verified except the last refinement which is self-verified 106 tests):**
+- 3 intraday tape defenses: **over-stretch shield** (regime_signal risk_off, per-index 5/7/7), **Tape Guard**
+  (reject+rollover → stand down + move to break-even), **Tape Turn** (flush+spin-back → all-clear), one-banner display.
+- Pullback/confirmation engine: **NBIS** pullback-to-21, **LUNR** deep-pullback knife guard, **AXTI** horizontal
+  CLEAR_WALL, **descending-trendline gate** (the trendline GOVERNS the confirmation; strict unbroken-line detector;
+  card "confirms on" names the downtrend line + clears at the line level).
+- Bug fixes: after-close buy-alert spam (compute_now demotes to armed when closed + watcher RTH gate), **scan
+  stuck-flag** (run_scan try/finally + 10-min staleness auto-clear), banner double-render, bull-flag overlay
+  removed, stance-label doubling, 5 data/risk guards (B3 market-stale / B4 stop-above-price / B5 result_r-None /
+  B6 stale-cache fallback / overnight-exposure cap warning).
+
+**Open / what's next (carry forward):**
+1. **Forward-test the new defenses live** (the trader's rule: validate with forward data, not backtests): the
+   over-stretch 5/7/7 lines, Tape Guard/Turn arm rates, the trendline gate.
+2. **Optional Burry re-verify** of the final trendline-GOVERNS change (self-verified: 106 tests + grader 7/7).
+3. **Minor:** 25% soft-warn exposure level is computed but only the 30% cap surfaces a stance line (wire it).
+4. **Parity gap:** the LIVE `now` item lacks `res_trendline`, so the Live-Coach PANEL's "confirms on" may still
+   say the generic label (the DASHBOARD card works — it reads the suggestion's res_trendline). Attach res_trendline
+   (or a wall_kind) to the armed rec for full parity.
+5. Spawned task chip still open: **unit tests for the pullback/confirmation features** (task_90f15324).
+6. Earlier pending (pre-today): grade-rubric v6 forward-test, the NXT/FN/SATS/TCGL items, swinghelper build/push.
+7. **A `build` (sync to swinghelper) was NOT done** — none of today's work is on the hosted site.
+
+**Today's trades logged** (data/trades.json + lessons.md): FLNC +71.40 (win, profit-protect), AXTI/INTC/TER −1R
+each (tilt — entered into a rejecting tape), plus the trader's separate green day-trades (QQQ short + the turn).
+Net of the logged momentum trades ≈ −$108 (−0.5%); sizing was disciplined, the leak was ENTERING in a bad tape.
+
+## 2026-06-10 — Trendline gate (clear the highest wall) + detector strictness (SEDG) + scan stuck-flag fix
+
+**What was done.** Three fixes, Burry-verified SHIP (7/7 grader, 105/105 suite, zero grade regressions), deployed (restart + rescan).
+- **Trendline gate — clear the HIGHEST in-band wall** (quant): DOCN (Pullback @ AVWAP) fired UNDER its descending resistance because the AVWAP `CLEAR_9EMA` branch never consulted the trendline/horizontal walls. New `_highest_overhead_wall` unifies the EMA / horizontal / descending-trendline walls within `WALL_NEAR_ADR` (0.6×ADR) and gates on the **highest** of them (you're not above resistance until all of it is cleared). Wired into the AVWAP + 50-reclaim branches; single-wall cases (AXTI) unchanged. The after-hours armed preview surfaces the line (the gate arms without 5-min bars; only firing needs them). Confirmation-side, firewalled. NB: with DOCN's real 8.2% ADR the highest in-band wall is the **$174.74 prior-day high** (above the $172.75 trendline) — both in-band, so it correctly gates the higher.
+- **Detector strictness — reject BROKEN lines** (the SEDG case): `_descending_resistance` used the generous TOUCH tolerance (0.5×ADR) for the "high pokes above" check, so candles up to half an ADR above still passed → pierced/broken lines drew. Split it: new `rubric.TREND_BREAK_TOL_ADR=0.12` — a high more than 0.12×ADR above the line = BROKEN → reject. Only a tiny wick may poke; a close above invalidates it. "Perfect resistance that hasn't been broken." Golden re-baselined for the additive `res_trendline` field ONLY (MSFT/GOOGL/META shifted to different valid anchors; grades byte-for-byte).
+- **Scan stuck-flag fix** (trader-found): `run_scan` had no `try/finally`, so an error mid-scan (Yahoo hiccup, bad bar) left `SCAN['running']=True` STUCK → "scan already running" forever, needing a restart / the New-Day button. Wrapped in `try/finally` (always resets the flag; `finished_at` only on success) + a `started_at` stamp + a route **staleness auto-clear** (`SCAN_STALE_SEC=600` — a scan claiming to run with no completion >10 min is treated as hung and the new scan takes over). Self-healing.
+
+**Verified.** Burry SHIP; restart (PID 51628) + rescan. Backups: `backups/2026-06-10_trendline-gate/`, `backups/2026-06-10_detector-scanflag/`. Not synced to swinghelper / not committed.
+
+**Refinement (same night) — the descending TRENDLINE GOVERNS, not the highest wall.** Trader: DOCN's confirmation should be the downtrend line ($172.75 = today's high = the last lower-high of the 3-day down-leg), but the "highest wall" rule gated on yesterday's high ($174.74) just above it. `_highest_overhead_wall` now: a descending trendline in-band GOVERNS (it's the drawn resistance the trader watches; a prior-day high above it is part of the same down-leg, not a distinct higher wall); only with NO trendline does it fall back to the highest in-band horizontal/EMA wall (AXTI). Card display fixed: the header "confirms on" line (index.html:539) used the stale `confirmMenuText` (Lynch's earlier fix only touched the expanded body) — now `wallConfirmText(a)`; and `wallConfirmText`/panel mirror name "the downtrend line" when `res_trendline` is present, not "prior-day high." Verified live: DOCN break_level 174.74→**172.75**, confirm names "the descending resistance line." +1 test (line governs over a higher prior-day high) → suite **106**; grader 7/7 firewalled. Restart (PID 30524) + rescan. Web = hard-refresh.
+
+## 2026-06-09 — End-of-day cleanup batch + full deploy (after-close buy spam, draw-filter, bull-flag removal, banner/stance, data bugs)
+
+**What was done.** Final batch of the 2026-06-09 session, all verified and DEPLOYED (server restarted, alerts re-enabled).
+- **After-close buy spam (the DOCN bug):** the trader kept getting Telegram BUY signals after the close. Root cause: a buy that confirmed/froze during the session lingered in `compute_now`'s `buys` via the frozen-price reuse, and the `_now_watcher` BUY-alert loop had NO regular-session gate (unlike the EXIT/stop alerts). Two fixes: (1) compute_now demotes any standing buy to `armed` once `not active` (market closed) — "after the close everything shows as armed, not a live call"; (2) the watcher BUY loop now gated `if _us_regular_open()`. Stop-gap during the session = muted alerts via `notify_mode:off` (now removed). Verified post-deploy: after-hours `buys=0`.
+- **Resistance-line draw proximity-filter:** the relaxed (v2) descending-trendline detector drew a line on ~58% of charts (only 6.6% gate). `/api/chart` now draws the line only when it's a real overhead wall (above price, within 1.5×ADR). The GATE is unaffected (separate path, own 0.6×ADR check).
+- **Bull-flag/pattern overlay REMOVED:** trader found the flag/pennant/wedge + channel overlay noisy and unactionable — removed the chart toolbar button + the render; the descending-resistance line is kept (decoupled from the old toggle).
+- **Banner precedence:** Tape Guard + Tape Turn no longer render as two competing banners — one at a time (confirmed Turn hides Guard; a forming Turn folds into the Guard as a sub-line). All 3 surfaces.
+- **Stance-label doubling:** "Caution — correction (Caution - correction)" → uses posture, not the redundant label.
+- **5 data/risk bugs (data-steward):** B6 get_bars serves stale cache on a fetch failure; B5 degenerate-stop `result_r`→None+`r_unmeasurable` (no fake-0.0R); B4 `_chat_move_stop` refuses a stop ≥ live price; B3 market.json staleness flag (`_market_stale`, computed_at stamp, /api/market flag, gameplan warning); overnight-exposure cap warning (`OVERNIGHT_EXPOSURE_*`, fires >30%).
+
+**Verified.** Combined Burry pass: **SHIP** — test_grader 7/7 byte-for-byte, full suite **93/93**, no grade regression (only the additive `res_trendline`), no after-hours buy leakage, no-lookahead, no JS syntax errors. Deployed: server restarted (PID 29180), `/api/now` healthy, alerts re-enabled. Backups: `backups/2026-06-09_final-cleanup/` (+ open-bugs, trendline-wall, trendline-wall-v2, tape-turn).
+
+**Open / next.** (1) RESCAN needed to populate suggestion-level changes (the NBIS/LUNR/AXTI pullback fixes, over-stretch shield, `res_trendline` in suggestions.json) — the EOD auto-scan or a manual Scan. (2) Minor: wire the 25% soft-warn exposure level into the stance (only the 30% cap warns today) — Burry-flagged, non-blocking. (3) Not synced to swinghelper / not committed.
+
+## 2026-06-09 — Tape Turn (intraday "market spinning back up" all-clear — inverse of Tape Guard)
+
+**What was done.** Trader's idea after watching QQQ flush to ~$282.8 and reclaim its 5-min 9/21 EMAs ("the
+market spins back up just like our spinning stocks"). Built the **Tape Turn** — the counterpart to Tape Guard.
+`tape_turn_state` + `_index_spin`: arms STANDALONE when ≥TAPE_TURN_N(2) of SPX/QQQ/IWM each flushed off the
+session high (≥FLUSH_PCT), bounced off the low (≥BOUNCE_PCT), reclaimed BOTH the 5-min 9 & 21 EMA, and made a
+higher low. Two phases by the slowest spinning index's held-bar count: **forming** (<CONFIRM_BARS=3 ≈ 15 min →
+green "watch" note, Guard still wins) and **confirmed** (held ≥3 completed bars → `lifts_guard`, so
+`_tg_on = guard.on AND NOT tape_turn.lifts_guard` re-enables new buy confirmations even if still red). Stateless
+per poll off COMPLETED 5-min bars, so a whippy up-down-up day re-arms Guard / resets Turn cleanly. Break-even
+stops STAY (Turn re-enables buys, never un-raises a stop). Thresholds in `rubric.TAPE_TURN_*`; toggle
+`tape_turn_enabled`. Green styling on all surfaces (Telegram confirmed-only + 30-min cooldown, desktop, index/
+panel/liveCoach/Auto Pilot). ALERT-ONLY, LOCAL-ONLY.
+
+**Decisions made (trader).** Standalone trigger (not only after a Guard); confirm-delayed re-engage (lift only
+after the reclaim HOLDS ~15 min — avoids a 1-bar V-spike bull trap).
+
+**Verified.** Quant + 16 tests; **Burry: SHIP** (grades 7/7, no-lookahead/forming-bar excluded, Guard↔Turn
+precedence correct, stateless re-arm, HOSTED suppression, alert-only); **risk-auditor: COMPLIANT** on all 6 rules
+(alert-only / local-only / break-even integrity / re-engage still passes every entry gate / longs-only / Guard-
+Turn coherence). Burry flagged a cosmetic wording bug — a standalone confirmed Turn (today's case: Turn on, Guard
+never armed) said "stand-down lifted" when there was none; **fixed** (reworded to "(any tape-guard stand-down is
+lifted)" in both stance + Auto Pilot). Also removed a dead duplicate `_ema_series`. Full suite **79/79**.
+
+**Deployed.** Server force-restarted (killed the PID on 8765, relaunched `pythonw app.py --background` — coach_app
+has no watchdog so it was relaunched explicitly; tray still tracks it by port). Verified live via `/api/now`: the
+Tape Guard message is now the phase-aware "sold off hard — down day" wording (no more "were up" on a red tape),
+and Tape Turn is live (was `forming` on the choppy afternoon — lifts the Guard once the reclaim holds). Fixed one
+cosmetic glitch found in the live stance — the forming-turn note printed its "Tape Turn forming —" label twice
+(stance prepended it AND the reason led with it); now appends just "⚡ " + reason. NOT synced to swinghelper /
+not committed. Backups: `backups/2026-06-09_tape-turn/`.
+
+## 2026-06-09 — Tape Guard (intraday "market rejected & rolling over" defense)
+
+**What was done.** After a live tilt session where every buy taken into a rejecting tape failed identically
+(AXTI/INTC/TER −1R each + an AMKR alert into the down tape), built the trader's ask: an intraday **Tape Guard**.
+LOCAL-ONLY, ALERT-ONLY. Arms during the cash session when **≥2 of SPX/QQQ/IWM are red AND have rolled over**
+(were up intraday / made a session high, now faded ≥TAPE_GUARD_FADE_PCT off it — a rejection, not a slow-red
+drift). When armed: (1) new BUY confirmations → **watch-only** (removed from `buys`, no beep, "armed — don't
+initiate"); (2) **RAISE_BE** alert tells EVERY open position (stop<entry) to move its stop to break-even; (3)
+alerts to all local surfaces — Telegram (30-min cooldown), desktop `_now_watcher`, index.html / panel.html /
+liveCoach banners, and the **Auto Pilot** warning the trader named. Thresholds single-sourced in
+`rubric.TAPE_GUARD_*`; toggle `tape_guard_enabled` (default true). Distinct from EOD defend (flatten-into-close)
+and can run alongside it; precedence EXIT > FLATTEN > RAISE_BE.
+
+**Decisions made (trader).** Trigger = rejection+rollover (not any-red); break-even applies to ALL open
+positions (no deep-pullback exemption, unlike defend-flatten); new buys go watch-only (not hard-suppressed).
+
+**Verified.** Quant built + 14 new behavioral tests; **Burry (qa): SHIP** (grades 7/7 byte-for-byte, no
+lookahead, HOSTED/shared suppression on every surface, defend + over-stretch arm untouched, alert-only confirmed);
+**risk-auditor: COMPLIANT** on all 5 locked rules (alert-only / local-only / BE-soundness / defend-coherence /
+no sizing regression). Burry caught one non-blocking bug — Auto Pilot used `compute_now(shared=True)` so the
+owner's tab could show "BUY confirmed" next to the stand-down banner; **fixed** (downgrade buys + tape-guard
+verdict in `compute_autopilot`). Full suite **61/61** after the fix.
+
+**Refinement (same session).** Trader flagged the alert said "were up and have sold off their highs" while QQQ
+was already −2%. Diagnosed: NOT a false fire — the indexes genuinely rallied (SPX +1.05% / QQQ +1.34% / IWM
++2.38% intraday highs) then reversed hard, so the arm was correct. Made the message **phase-aware**
+(`TAPE_GUARD_DEEP_PCT=−1.0`, single source via a new `headline`): "rejected & rolling over" while still up-ish
+near the highs → "sold off hard — down day" once the avg armed index is ≤ −1%. The ARM + protection (stand-down
++ break-even) are UNCHANGED the whole way down — only the wording changes, so it never claims "were up" on a deep-
+red tape. All 4 surfaces reuse the one headline. +2 phase tests (suite 63/63).
+
+**What's next.** RESTART server to activate (app.py changed; no rescan — reads live quotes). NOT synced to
+swinghelper / not committed. Backup: `backups/2026-06-09_tape-guard/` + `backups/2026-06-09_tape-guard-msg/`.
+
+## 2026-06-09 — Pullback/confirmation engine fixes (NBIS / LUNR / AXTI) + Burry catch
+
+**What was done.** Three related setup-detection/confirmation bugs surfaced from live trader cases, fixed by
+the quant, adversarially verified by Burry. (1) **NBIS** — a medium pullback HOLDING the rising 21-EMA fell
+through the SMA-based `uptrend` gate (`above>=2`, 10/20/50 SMA) and got mislabeled Breakout with a chase entry
+at the prior high. Added a new setup **"Pullback to 21-EMA"** (rising 9>21>50 fan, ≥1×ADR above a rising 50,
+holding the 9/21, higher lows), entry anchored to the 9/21 line, trails the 9 (NOT a long-hold). New rubric
+consts PB21_MIN_EXT50_ADR/PB21_NEAR_ADR/PB21_PREF. Placed after deep/consol/pullback/avwap, before EP/Breakout
+→ can only ever capture a former Breakout/EP. (2) **LUNR** — Deep Pullback bought a falling knife (collapsed
+~57% off the peak into the 50, 6 lower highs). Added a knife guard: a deep pullback in a confirmed downtrend
+(≥KNIFE_LOWER_HIGHS=3 successive lower highs AND below DECLINING 9/21) stays worth_waiting but not buyable_now
+until it RESPECTS the 50. No pull-% cap (would break AXTI-style legit deep pulls), no 50-slope gate (it lags).
+(3) **AXTI** — live confirmation fired UNDER the prior-day-high wall ($96.56). Generalized the IREN CLEAR_9EMA
+gate to horizontal resistance: `_horizontal_wall_gate` (rubric WALL_NEAR_ADR=0.6) arms (CLEAR_WALL_ARMED) and
+fires only on a completed 5-min close above the wall (CLEAR_WALL) when a prior/recent high sits within 0.6×ADR
+above a deep-pullback 50-reclaim entry.
+
+**Burry caught a regression (this is why we run him).** The knife guard lacked a `close < e50` check, so it
+wrongly suppressed deep-pull names ALREADY ABOVE the 50 (SCOP.TA flipped buyable True→False). A Deep Pullback
+entry IS a 50-reclaim — above the 50 there's no knife. Fixed (one conjunct added). Also closed a parity gap
+Burry flagged: added "Pullback to 21-EMA" to `_PATIENT_OK` so PB21 names are watched in caution tape like other
+pullbacks.
+
+**Decisions made.** Knife discriminator = downtrend STRUCTURE (lower highs + declining short EMAs), explicitly
+NOT depth and NOT 50-slope (lags). New PB21 setup trails the 9, debuts conservative.
+
+**Verified.** test_grader 7/7 byte-for-byte; firewall proof (Burry: 1137 names identical setup_type+score, 10
+reclassified Breakout→PB21, zero existing pullback/deep/consol/avwap moved); post-fix behavior: SCOP.TA buyable
+True (restored), LUNR/AXTI False (knives caught), RIO True (legit deep-pull-that-bounced preserved). Backup:
+`backups/2026-06-09_pullback-confirmation-fixes/`.
+
+**What's next.** RESTART server + rescan to go live (scanner.py + app.py changed). NOT synced to swinghelper.
+Follow-ups (non-blocking, Burry-flagged): add unit tests for the 3 new features (PB21 classifier, knife guard,
+wall gate); `_successive_lower_highs` reads the forming bar (safe direction, minor). lessons.md + swing-system.md
+already updated by the quant.
+
+## 2026-06-09 — Over-stretch shield (independent defend arm, per-index ATR-from-50 lines)
+
+**What was done.** Trader spotted on TradingView that "ATR% multiple from the 50-MA" marks index tops — eyeballed
+IWM ~5 / SPX ~8 / QQQ ~9.5 as cash-raise warnings, wanted it as a shield arm "like extended". Engine already
+computes this exact metric (`_regime_one.atr_mult_50`) but flagged it with ONE flat 4.5 cutoff feeding the
+"extended" half of defend. **Measured first** (`dev/atrstretch/measure5y.py`, 4yr daily bars): (1) because
+`atr_mult_50` already divides by ADR, the three indexes top at SIMILAR extension (median ~5.5, extreme ~8) — NOT
+5/8/9.5; (2) the trader's TV numbers are in true-ATR units that run ~20% below the engine's H/L-ADR, so literal
+hard-coding would make SPX/QQQ never fire. His RELATIVE instinct (IWM lower, mega-caps higher) holds; the spread
+didn't. **Decisions (asked):** independent trigger · ≥2 of 3 · data-matched thresholds.
+
+**Built.** `rubric.OVERSTRETCH_50 = {SPX 7, QQQ 7, IWM 5}` (engine units, ≈ rarest 6% of days), `OVERSTRETCH_N=2`.
+`_regime_one` emits NEW key `overstretched_50` per index (separate from the untouched 4.5 `stretched_50`/posture
+haircut). `regime_signal.risk_off` gains a 4th independent arm: ≥2 indexes over their line → risk_off (arms on
+green tape too; froth top reverts like a correction). Flows to `defend_state`/stance/all surfaces via the existing
+risk_off path — no per-surface wiring. **Firewall-clean:** band/light/posture/grades untouched.
+
+**Decisions made.** Data-matched 5/7/7 over the trader's TV-eyeballed 5/8/9.5 (units + 4yr evidence). Kept it a
+SEPARATE signal from `stretched_50` so no grade moves. Independent arm (no weak-tape required).
+
+**Verified.** `py_compile` clean; `test_grader` 7/7 (grades byte-for-byte); functional: 1 idx → no arm, ≥2 →
+risk_off + reason "X, Y rubber-banded above the 50-MA"; current live (SPX 3.7/QQQ 4.8/IWM 2.2) all below lines → no
+false fire.
+
+**What's next.** RESTART server + refresh regime (rescan) to populate `overstretched_50` into market.json — until
+then the arm reads None and can't fire. NOT yet built/synced to swinghelper. Burry re-verify the firewall. Forward-
+test the 5/7/7 lines live and tune. (Backup: `backups/2026-06-09_idx-overstretch-shield/`.)
+
 ## 2026-06-09 — AVWAP overhead-EMA fire gate (the IREN "clear the 9-EMA" case)
 
 **What was done.** Trader: IREN (Pullback @ AVWAP) — the 9-EMA ($60.64) sits just above the AVWAP support

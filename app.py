@@ -206,7 +206,8 @@ def set_workspace(handler):
 
 PORT = int(os.environ.get("PORT", "8765"))
 SCAN = {"running": False, "done": 0, "total": 0, "current": "",
-        "screener_id": None, "finished_at": None}
+        "screener_id": None, "finished_at": None, "started_at": None}
+SCAN_STALE_SEC = 600   # a "running" scan with no completion after this long = hung/orphaned → a new scan may take over
 SECTORH = {"running": False, "done": 0, "total": 0, "current": ""}
 REFRESH = {"running": False, "stage": "", "done": 0, "total": 4}
 UNIVERSE = {"running": False, "stage": "", "done": 0, "total": 0,
@@ -735,6 +736,14 @@ def run_detect_groups():
     GROUPS.update(running=False, current="")
 
 
+def _market_stale(mk):
+    """B3: True when the market dict has no freshness stamp or is older than MARKET_STALE_SEC."""
+    ts = mk.get("computed_at_ts")
+    if not ts:
+        return True
+    return (time.time() - ts) > rubric.MARKET_STALE_SEC
+
+
 def run_market_regime():
     """Classify the market's benchmark indexes into a blended posture; store for dashboard + grade.
     Passes the universe so the Fear & Greed gauge can compute breadth + 52wk highs/lows."""
@@ -742,6 +751,10 @@ def run_market_regime():
         tickers = read_json(universe_f(), {}).get("tickers", [])
         reg = scanner.market_regime(market(), tickers=tickers)
         if reg:
+            # B3: stamp freshness so consumers can detect a stale prior-session regime dict
+            if not reg.get("computed_at_ts"):
+                reg["computed_at"] = time.strftime("%Y-%m-%d %H:%M")
+                reg["computed_at_ts"] = time.time()
             write_json(market_f(), reg)
     except Exception:
         pass
@@ -1498,7 +1511,7 @@ def grade_suggestions(items, settings, posture=None, heat=None):
     # regime factor cut 40% in any sub-soft tape (posture<55), dropping them from A to C in pullback regimes.
     pullback_setups = ("Pullback", "Pullback @ AVWAP",
                        "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)",
-                       "Deep Pullback", "Consolidation")
+                       "Deep Pullback", "Consolidation", "Pullback to 21-EMA")
 
     def _rating(it, unit=None):
         # `unit` = a single entry option's per-entry inputs (setup_type / ext50_adr / entry_quality /
@@ -1665,16 +1678,6 @@ def grade_suggestions(items, settings, posture=None, heat=None):
 # mature. This is the honest out-of-sample check: the REAL current universe, no
 # survivorship bias, and it seeds the learning loop. Shared market data (owner settings).
 # --------------------------------------------------------------------------- #
-def _ema_series(closes, n):
-    k = 2 / (n + 1)
-    e = closes[0]
-    out = [e]
-    for x in closes[1:]:
-        e = x * k + e * (1 - k)
-        out.append(e)
-    return out
-
-
 FORWARD_MAX_N = 400                     # safety cap: log ALL real setups (grade C+) each day, up to this
                                        # many (user wants the full daily set to learn from — not a top-N).
                                        # 400 is a sane ceiling so one snapshot can't blow up the log.
@@ -2546,48 +2549,57 @@ def run_scan(screener_id, max_age=12):
     tickers = sc["tickers"]
     settings = read_json(settings_owner_f(), {})
     SCAN.update(running=True, done=0, total=len(tickers), current="",
-                screener_id=screener_id, finished_at=None)
+                screener_id=screener_id, finished_at=None, started_at=time.time())
 
     def prog(done, total, t):
         SCAN.update(done=done, total=total, current=t)
 
-    out = scanner.scan(tickers, settings, prog, max_age=max_age, market=market(),
-                       forming_date=_session_today_if_open())
-    prev = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
-    items = []
-    for r in out["results"]:
-        old = prev.get(r["ticker"], {})
-        r["status"] = old.get("status", "pending")
-        r["catalyst"] = old.get("catalyst", "")
-        items.append(r)
-    attach_sectors(items)
-    hot = compute_hot_sectors(items)
-    for it in items:
-        it["sector_hot"] = it["sector"] in hot
-        if it["sector_hot"]:
-            it["score"] = round(it["score"] + 1.5, 1)
-    items.sort(key=lambda r: r["score"], reverse=True)
-    # earnings dates for the most actionable names (top of the list). Cached daily, so
-    # repeat scans are cheap; we cap the count to keep the scan fast and Yahoo-friendly.
-    SCAN.update(current="earnings dates…")
-    for it in items[:70]:
-        try:
-            e = scanner.get_earnings(it["ticker"])
-        except Exception:
-            e = None
-        if e:
-            it["earnings_date"] = e["date"]
-            it["earnings_estimate"] = e.get("estimate", False)
-    write_json(suggest_f(), {"scanned_at": out["scanned_at"], "screener_id": screener_id,
-                           "screener_name": sc["name"], "failed": out["failed"],
-                           "hot_sectors": hot, "items": items})
+    # try/finally so an error mid-scan (a Yahoo hiccup, a bad bar, a write fail) can NEVER leave
+    # SCAN['running'] stuck True — which used to wedge the scanner ("scan already running" forever,
+    # needing a restart / the New-Day button to clear). (user 2026-06-10)
+    _scanned_at = None
     try:
-        if _after_close_today():      # freeze the forward snapshot ONLY from a post-close scan (the
-            log_forward_picks()       # CLOSING picture) — never from a mid-session/pre-market re-scan,
-                                      # which would regenerate the frozen record with intraday data
-    except Exception:
-        pass
-    SCAN.update(running=False, finished_at=out["scanned_at"], current="")
+        out = scanner.scan(tickers, settings, prog, max_age=max_age, market=market(),
+                           forming_date=_session_today_if_open())
+        prev = {i["ticker"]: i for i in read_json(suggest_f(), {}).get("items", [])}
+        items = []
+        for r in out["results"]:
+            old = prev.get(r["ticker"], {})
+            r["status"] = old.get("status", "pending")
+            r["catalyst"] = old.get("catalyst", "")
+            items.append(r)
+        attach_sectors(items)
+        hot = compute_hot_sectors(items)
+        for it in items:
+            it["sector_hot"] = it["sector"] in hot
+            if it["sector_hot"]:
+                it["score"] = round(it["score"] + 1.5, 1)
+        items.sort(key=lambda r: r["score"], reverse=True)
+        # earnings dates for the most actionable names (top of the list). Cached daily, so
+        # repeat scans are cheap; we cap the count to keep the scan fast and Yahoo-friendly.
+        SCAN.update(current="earnings dates…")
+        for it in items[:70]:
+            try:
+                e = scanner.get_earnings(it["ticker"])
+            except Exception:
+                e = None
+            if e:
+                it["earnings_date"] = e["date"]
+                it["earnings_estimate"] = e.get("estimate", False)
+        write_json(suggest_f(), {"scanned_at": out["scanned_at"], "screener_id": screener_id,
+                               "screener_name": sc["name"], "failed": out["failed"],
+                               "hot_sectors": hot, "items": items})
+        _scanned_at = out["scanned_at"]
+        try:
+            if _after_close_today():      # freeze the forward snapshot ONLY from a post-close scan (the
+                log_forward_picks()       # CLOSING picture) — never from a mid-session/pre-market re-scan,
+                                          # which would regenerate the frozen record with intraday data
+        except Exception:
+            pass
+    finally:
+        SCAN.update(running=False, current="")          # ALWAYS clear the flag — success or error
+        if _scanned_at:
+            SCAN.update(finished_at=_scanned_at)
 
 
 def run_intraday_partial(n=220, max_age=0.05):
@@ -2884,12 +2896,18 @@ def compute_gameplan():
         e, stp, sh = t.get("entry"), t.get("stop"), t.get("shares")
         if e and stp and sh and stp < e:
             open_risk += (e - stp) * sh
+    _inv_pct = round(cost / acct * 100, 1) if acct else None
+    _WARN = rubric.OVERNIGHT_EXPOSURE_WARN
+    _CAP  = rubric.OVERNIGHT_EXPOSURE_CAP
     exposure = {"account": acct, "positions": len(open_pos),
                 "invested": round(cost, 2),
-                "invested_pct": round(cost / acct * 100, 1) if acct else None,
+                "invested_pct": _inv_pct,
                 "free_cash": round(acct - cost, 2) if acct else None,
                 "open_risk": round(open_risk, 2),
-                "open_risk_pct": round(open_risk / acct * 100, 2) if acct else None}
+                "open_risk_pct": round(open_risk / acct * 100, 2) if acct else None,
+                "cap_pct": _CAP,
+                "over_cap": (_inv_pct is not None and _inv_pct >= _CAP),
+                "warn": (_inv_pct is not None and _inv_pct >= _WARN)}
 
     # stance from the tape — canonical band (shared with the Now tab + defend, so they can't disagree)
     _gs = regime_signal(market, _frothy)
@@ -2916,6 +2934,14 @@ def compute_gameplan():
             ms = market.get("market_state")
             when = "Pre-market" if ms in ("PRE", "PREPRE") else "After-hours"
             stance += f" · 🌙 {when}: {', '.join(big)} — this regime read uses the live extended-hours prices"
+    # Overnight exposure cap warning (alert-only, no auto-trim)
+    if exposure.get("over_cap"):
+        stance += (f" · ⚠️ Overnight exposure {_inv_pct}% > {_CAP}% cap"
+                   f" — trim to size before the close")
+    # B3: stale regime warning — prepend so it's unmissable
+    if _market_stale(market):
+        _mk_at = market.get("computed_at") or "unknown time"
+        stance = f"⚠️ Regime data is stale (from {_mk_at}) — rescan before trusting the tape. " + stance
     if defend.get("on"):
         stance = "🛡️ DEFEND MODE — " + defend["reason"] + " (new setups still fine; just go to cash overnight) · " + stance
 
@@ -3147,6 +3173,115 @@ def _avwap_overhead_gate(cur_px, avwap_sup, ema9, ema21, adr_pct):
     return oh_gate, oh_ema
 
 
+def _horizontal_wall_gate(entry_level, walls, adr_pct):
+    """HORIZONTAL-RESISTANCE fire gate (user 2026-06-09, the AXTI case). Pure decision helper, unit-testable.
+    Generalizes the AVWAP overhead-EMA gate (IREN/CLEAR_9EMA) to a flat wall — a prior-day high / nearest
+    recent swing high / round level — sitting just ABOVE the live entry. When the NEAREST such wall is within
+    rubric.WALL_NEAR_ADR ABOVE the entry, a reclaim/spin BENEATH it would buy straight into resistance (AXTI:
+    a 50-reclaim near $92 with the prior-day high $96.56 capping it). Returns (wall_gate, wall): wall_gate=True
+    means require a COMPLETED 5-min CLOSE above `wall` before firing; wall_gate=False means no near overhead
+    wall → the normal reclaim/spin path is unchanged. `walls` = iterable of candidate resistance levels (None
+    entries ignored). Anchored to the ENTRY (a stable daily level), NOT the live tick — same lesson as the
+    AVWAP gate (a live-price anchor de-qualifies the instant price closes above the wall)."""
+    adr_px = (entry_level * adr_pct / 100) if (entry_level and adr_pct) else None
+    if not adr_px or not entry_level:
+        return False, None
+    above = [w for w in walls if w and w > entry_level * 1.0015]    # strictly overhead (skip walls at/below entry)
+    if not above:
+        return False, None
+    wall = min(above)                                              # the NEAREST wall above the entry
+    wall_gate = (wall - entry_level) <= rubric.WALL_NEAR_ADR * adr_px
+    return bool(wall_gate), (wall if wall_gate else None)
+
+
+def _closed_above(b5, level, buf=0.003):
+    """Has a COMPLETED 5-min candle CLOSED above `level` (by ~buf, default 0.3%)? Uses the last SETTLED
+    bar (b5[-2]) — never the still-forming tick — so a wick that pokes the level and pulls back doesn't
+    fire. Mirrors the held_above / wall-clear logic used by the other "clear the wall" gates."""
+    if not level or not b5 or len(b5) < 2:
+        return False
+    return bool(b5[-2]["close"] >= level * (1 + buf))
+
+
+def _descending_trend_gate(entry_level, res_trendline, adr_pct):
+    """DESCENDING-trendline fire gate (user 2026-06-09, the DOCN case). The SLOPED sibling of
+    `_horizontal_wall_gate` — same mechanic, a sloped ceiling instead of a flat one. `res_trendline` is
+    scanner.analyze's strict, respected, descending-resistance line (its `today` value is the line level
+    AT today's bar, computed on bars <= today — no lookahead). When that level sits within
+    rubric.WALL_NEAR_ADR ABOVE the live entry, firing the reclaim/spin beneath it buys straight INTO the
+    line (DOCN: ~$169 under a line off the ~$184 peak). Returns (gate, level): gate=True means require a
+    COMPLETED 5-min CLOSE above `level` before firing (CLEAR_TREND); gate=False means no near overhead
+    line → the normal path is unchanged. A FAR-overhead line does NOT gate (not a wall). Anchored to the
+    ENTRY (a stable daily level), NOT the live tick — same lesson as the horizontal/AVWAP gates. Pure
+    decision helper, unit-testable."""
+    if not res_trendline or not entry_level or not adr_pct:
+        return False, None
+    lvl = res_trendline.get("today")
+    if not lvl or lvl <= entry_level * 1.0015:                     # not strictly overhead (already cleared)
+        return False, None
+    adr_px = entry_level * adr_pct / 100
+    if not adr_px:
+        return False, None
+    gate = (lvl - entry_level) <= rubric.WALL_NEAR_ADR * adr_px     # near & overhead → gate; far → unchanged
+    return bool(gate), (round(lvl, 2) if gate else None)
+
+
+def _ema_lbl_for(lvl, e9, e21):
+    """Name the overhead EMA level: '9-EMA' / '21-EMA' / 'EMA'. Extracted so the stacked-wall gate can
+    seed the label before (possibly) swapping it for a higher non-EMA wall."""
+    return "9-EMA" if (lvl == e9) else ("21-EMA" if (lvl == e21) else "EMA")
+
+
+def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_trendline=None):
+    """STACKED-WALL unifier (user 2026-06-10, the DOCN case). Clearing the NEAREST overhead wall isn't
+    enough when several walls stack just above the entry — you are not "above resistance" until ALL of the
+    in-band walls are cleared. Returns the HIGHEST overhead wall that's within rubric.WALL_NEAR_ADR (0.6× ADR)
+    of the level the buy lands at. A wall FARTHER than the band does NOT gate (don't wait for a far line) —
+    proximity discipline is preserved per-wall, then we take the max of whatever's in-band.
+
+    ANCHOR: when an `ema_wall` is supplied (the AVWAP `_avwap_overhead_gate` oh_ema = where the EMA-clear buy
+    lands), the proximity band is measured FROM that EMA-clear level — the question is "once I clear the EMA,
+    is more resistance right above where I buy?" (DOCN: 9-EMA $167.92, descending line $172.75 sits 0.5×ADR
+    over it → still in-band → clear the line). The EMA itself is always a candidate (the gate is at least the
+    EMA). When `ema_wall` is None (the deep/50-reclaim shape), the anchor is `entry_level` (the reclaim entry)
+    and only horizontal/trend walls are considered.
+
+    Candidates:
+      - ema_wall      : the overhead EMA clear level (or None) — the baseline floor + proximity anchor.
+      - walls         : iterable of horizontal resistance levels (prior-day/recent highs); proximity-gated.
+      - res_trendline : scanner's descending-resistance line dict; proximity-gated.
+
+    Returns (gate, level, kind): gate=True with the highest in-band wall `level` and `kind` in
+    {"ema","wall","trend"} naming WHICH wall is the highest (for the cmsg label). gate=False, None, None when
+    nothing sits in-band overhead → the caller's normal path is unchanged. Pure/unit-testable; anchored to a
+    stable DAILY level (EMA-clear or entry), never the live tick — same lesson as the per-wall gates."""
+    anchor = ema_wall if ema_wall else entry_level
+    adr_px = (anchor * adr_pct / 100) if (anchor and adr_pct) else None
+    if not adr_px:
+        return False, None, None
+    band = rubric.WALL_NEAR_ADR * adr_px
+    cands = []   # (level, kind)
+    if ema_wall:
+        cands.append((ema_wall, "ema"))                # the EMA-clear is always the baseline gate floor
+    for w in (walls or []):                            # horizontal walls in-band ABOVE the anchor
+        if w and w > anchor * 1.0015 and (w - anchor) <= band:
+            cands.append((w, "wall"))
+    if res_trendline:                                  # the descending line in-band ABOVE the anchor
+        _lvl = res_trendline.get("today")
+        if _lvl and _lvl > anchor * 1.0015 and (_lvl - anchor) <= band:
+            cands.append((_lvl, "trend"))
+    if not cands:
+        return False, None, None
+    # The DESCENDING TRENDLINE GOVERNS when present (user 2026-06-10, DOCN): it's the drawn resistance the
+    # trader watches = today's last lower-high of the down-leg. A prior-day high sitting just above it is part
+    # of the SAME downtrend, NOT a distinct higher wall — don't override the line with it (that made DOCN wait
+    # for yesterday's $174.74 instead of the $172.75 line). With NO trendline, fall back to the HIGHEST in-band
+    # horizontal/EMA wall — clear all of it (the AXTI stacked-wall case).
+    _trend = next((c for c in cands if c[1] == "trend"), None)
+    level, kind = _trend if _trend else max(cands, key=lambda x: x[0])
+    return True, round(level, 2), kind
+
+
 def compute_now(shared=False):
     # shared=True → the POSITION-AGNOSTIC view for Auto Pilot: ignore the owner's open positions and
     # ✗-rejections entirely, so the armed/confirmed list is IDENTICAL for everyone (the owner's local
@@ -3264,6 +3399,27 @@ def compute_now(shared=False):
     defend = (defend_state(market, frothy)
               if (not HOSTED and not shared and settings.get("defend_mode_enabled", True))
               else {"on": False, "flatten_now": False})
+    # TAPE GUARD — intraday "the market rejected and is rolling over" (see tape_guard_state). LOCAL-ONLY
+    # (never the friends/hosted site) and off when shared (Auto Pilot owner-preview surfaces it separately).
+    # ALERT-ONLY: when armed it downgrades NEW buy confirmations to watch-only, recommends moving ALL open
+    # positions to break-even, and alerts every local surface. Independent of defend (both can be ON).
+    tape_guard = (tape_guard_state()
+                  if (not HOSTED and not shared and settings.get("tape_guard_enabled", True))
+                  else {"on": False, "indices": [], "reason": ""})
+    # TAPE TURN — the inverse all-clear (see tape_turn_state): the market FLUSHED and is SPINNING back up.
+    # STANDALONE (arms without a prior Guard). "forming" = spun but not held → still watch-only (Guard wins);
+    # "confirmed" = held the reclaim → LIFTS the Guard buy-suppression (lifts_guard) even if still red on the
+    # session. LOCAL-ONLY + ALERT-ONLY: it only re-enables NEW buy confirmations to surface/beep again — it
+    # never buys and never un-raises a stop (break-even stays). Same gate as the Guard.
+    tape_turn = (tape_turn_state()
+                 if (not HOSTED and not shared and settings.get("tape_turn_enabled", True))
+                 else {"on": False, "phase": "", "lifts_guard": False, "indices": [], "reason": ""})
+    _tt_lifts = bool(tape_turn.get("lifts_guard"))
+    # PRECEDENCE: Guard's roll-over stands down; a "forming" Turn still stands down (Guard wins); a
+    # "confirmed"+held Turn OVERRIDES Guard's buy-suppression (the all-clear). So the effective buy-block is
+    # Guard-on AND NOT a confirmed Turn. Stateless per poll — a roll-over-again simply re-reads Guard on /
+    # Turn off the next poll (no stuck state).
+    _tg_on = bool(tape_guard.get("on")) and not _tt_lifts
 
     # ---- stance light: should you be adding NEW risk at all? ----
     # Sourced from the canonical regime_signal (ONE band table, shared with defend + gameplan) so the
@@ -3274,9 +3430,9 @@ def compute_now(shared=False):
     light = _rs["light"]
     deep_correction = _rs["band"] == _RB_DEEP
     if deep_correction:
-        stance = f"Stand aside — deep correction ({label}, posture {posture}). Cash is a position; arm nothing until it turns."
+        stance = f"Stand aside — deep correction (posture {posture}). Cash is a position; arm nothing until it turns."
     elif _rs["band"] == _RB_CAUTION:
-        stance = (f"Caution — correction ({label}). Watching only PATIENT A-grade setups bought AT support "
+        stance = (f"Caution — correction (posture {posture}). Watching only PATIENT A-grade setups bought AT support "
                   f"(leaders pulled back to the 50) — no chasing; a buy fires only on a real reclaim + spin.")
     elif light == "yellow":
         stance = ("Selective — extended / greedy tape. Only A-grade setups bought AT support; "
@@ -3288,6 +3444,18 @@ def compute_now(shared=False):
     if defend.get("on"):
         stance = ("🛡️ DEFEND MODE — " + defend["reason"]
                   + " New setups are still fine to take, just don't carry momentum overnight.")
+    # TAPE GUARD leads the stance when armed — it's the most acute "stand down RIGHT NOW" signal (the market
+    # is actively rejecting). Shown ABOVE/instead of the buy-friendly light so a new confirm can't read green.
+    if _tg_on:
+        stance = "⚠️ TAPE GUARD — " + tape_guard["reason"]
+    # TAPE TURN note (green / positive). "confirmed" = the all-clear (LIFTS the stand-down → leads the stance,
+    # buys re-enabled). "forming" = the spin is showing but hasn't held → shown ALONGSIDE the Guard stand-down
+    # (Guard still wins, buys stay watch-only), never replacing it. Only meaningful when the Turn is on.
+    if tape_turn.get("on"):
+        if tape_turn.get("phase") == "confirmed":
+            stance = "✅ TAPE TURN — " + tape_turn["reason"]
+        elif _tg_on:                               # forming + Guard still on → append the green "turning" note
+            stance = stance + "  ⚡ " + tape_turn["reason"]   # reason already leads with "Tape Turn forming —"
 
     # ---- manage open positions: surface only what NEEDS attention (exits/trims/raises/watches) ----
     manage = []
@@ -3302,14 +3470,29 @@ def compute_now(shared=False):
             reason = ("🛡️ Defend mode — extended + weak tape. Sell into the close; don't hold this "
                       "overnight (an extended, fearful market tends to give the gains back). Your call — "
                       "I won't close it for you.")
+        # TAPE GUARD override (user 2026-06-09): the market rejected & is rolling over → recommend moving
+        # ALL open positions to break-even (stop → entry). ALERT-ONLY (the app never moves the stop). Applies
+        # to EVERY open position (no exemption — the trader said "all"). Yields to a stronger sell signal
+        # (EXIT / defend FLATTEN already mean "get out", so don't soften those to a BE raise) and skips a
+        # position already at/above break-even (stop >= entry — nothing to raise). break_even = the entry.
+        guarded = False
+        _be = t.get("entry")
+        if (_tg_on and not defended and act not in ("EXIT", "FLATTEN")
+                and _be is not None and (t.get("stop") is None or t.get("stop") < _be)):
+            act, tone, guarded = "RAISE_BE", "warn", True
+            reason = (f"⚠️ Tape Guard — {tape_guard.get('headline', 'market rolling over')} "
+                      f"({', '.join(tape_guard.get('indices', []))}). "
+                      f"Move the stop → break-even (${_f(_be)}); don't give an open gain back into a falling tape. "
+                      f"Alert-only — your call, I won't move it for you.")
         manage.append({"ticker": t["ticker"], "action": act, "tone": tone, "reason": reason,
                        "pnl_pct": t.get("pnl_pct"), "r_mult": co.get("r_mult"),
                        "stop_hit": co.get("stop_hit"), "stop": t.get("stop"), "last": t.get("last"),
-                       "id": t.get("id"), "defend": defended, "patient": co.get("patient")})
+                       "id": t.get("id"), "defend": defended, "patient": co.get("patient"),
+                       "tape_guard": guarded, "break_even": (_be if guarded else None)})
     # ONLY actions the user must take. WATCH = "I'm monitoring this" (earnings/news) — that's the
     # coach's job to watch, not a to-do for the user, so it folds into the quiet monitoring list, never
     # the action list. (User: "YOU watch the position, not me. Update only on ACTIONS I need to take.")
-    todo = [m for m in manage if m["action"] in ("EXIT", "TRIM", "RAISE STOP", "GUARD STOP", "FLATTEN")]
+    todo = [m for m in manage if m["action"] in ("EXIT", "TRIM", "RAISE STOP", "GUARD STOP", "FLATTEN", "RAISE_BE")]
     holds = [m for m in manage if m["action"] in ("HOLD", "WATCH")]
 
     # ---- the buy: A-grade, tape-appropriate, not held, no earnings — ALERT only once CONFIRMED ----
@@ -3335,7 +3518,7 @@ def compute_now(shared=False):
     # GATE: full stand-aside ONLY in a deep correction (<30). In the caution band (30–45, light still red)
     # keep watching the PATIENT support-buys (leaders at the 50) — no aggressive breakouts/EPs. ≥45 = all A/A+.
     _caution = (light == "red") and not deep_correction
-    _PATIENT_OK = ("Deep Pullback", "Consolidation", "Pullback", "Pullback @ AVWAP",
+    _PATIENT_OK = ("Deep Pullback", "Consolidation", "Pullback", "Pullback to 21-EMA", "Pullback @ AVWAP",
                    "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
     if not deep_correction:
         for s in graded:
@@ -3520,6 +3703,49 @@ def compute_now(shared=False):
                     else:
                         cand_stop = round(e50 * (1 - (sbuf or 0) / 100), 2)   # stop JUST UNDER the 50 (its invalidation)
                         stop_lab = "50 EMA"
+                    # ── "CLEAR THE WALL" GATE (user 2026-06-09 AXTI flat-wall + DOCN sloped-line; unified 2026-06-10) ──
+                    # A 50-reclaim near the 50 can fire while resistance sits just overhead — buying straight into
+                    # it (AXTI: reclaim ~$92 with the prior-day high $96.56 capping it; DOCN: ~$169 under a line
+                    # off the ~$184 peak). The overhead resistance can be FLAT (prior-day/recent high) OR a
+                    # DESCENDING trendline (scanner res_trendline). UNIFIED RULE (2026-06-10): clear EVERY overhead
+                    # wall within WALL_NEAR_ADR above the reclaim entry → require a 5-min CLOSE above the HIGHEST
+                    # in-band wall (you're not "above resistance" until all of it is cleared). A far wall does NOT
+                    # gate. Frozen (already fired today) bypasses it. (Replaces the old "take the NEARER wall".)
+                    _walls = [s.get("prior_high"), s.get("prev_high"), s.get("last_high")]
+                    _wall_gate, _wall, _wkind = (False, None, None) if frozen else _highest_overhead_wall(
+                        cand_entry, adr_pct, ema_wall=None, walls=_walls, res_trendline=s.get("res_trendline"))
+                    _is_trend = (_wkind == "trend")
+                    _wlbl = "descending resistance line" if _is_trend else "prior-day high"
+                    if _wall_gate and _wall:
+                        _wbuf = _wall * (1 + 0.003)               # 5-min close must clear the wall by ~0.3%
+                        _wclosed = b5[-2]["close"] if (b5 and len(b5) >= 2) else None
+                        if _wclosed is None or _wclosed < _wbuf:
+                            deep_wait = True
+                            cmsg = (f"Reclaimed the 50 EMA (${_f(e50)}) but the {_wlbl} (${_f(_wall)}) sits just "
+                                    f"overhead — a reclaim under it buys into resistance. Fires on a 5-min CLOSE above "
+                                    f"${_f(_wall)} (clear the wall, no chase beneath it); stop still under the 50.")
+                            sized = _size_leg(entry, stop)
+                            plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
+                                                sized, triggered, too_extended,
+                                                deep_below_50=bool(cur_px is not None and e50 and cur_px < e50)),
+                                    "why": s.get("why")}
+                            rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                                   "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
+                                   "kind": e.get("kind"), "trigger": _wall, "break_level": _wall, "orh": None, "lod": lod,
+                                   "too_extended": too_extended, "vol_wait": vol_wait, "deep_wait": deep_wait,
+                                   "buyers_wait": buyers_wait, "zone": leg_entry, "buyable_now": bool(e.get("buyable_now")),
+                                   "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
+                                   "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
+                                   "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
+                                   "why": s.get("why"), "confirmed": triggered, "confirm": cmsg, "plan": plan,
+                                   "p1m": s.get("p1m"), "p6m": s.get("p6m"), "pull_from_high": s.get("pull_from_high"),
+                                   "volc": s.get("volc"), "confirm_menu": cmenu,
+                                   "confirm_trigger": ("CLEAR_TREND_ARMED" if _is_trend else "CLEAR_WALL_ARMED"),
+                                   "overhead": overhead}
+                            armed.append(rec)
+                            continue
+                        # cleared the wall → fire at the clear level (or the gap-through close), stop still under the 50
+                        cand_entry = max(_wclosed, round(_wall * (1 + (ebuf or 0) / 100), 2))
                     buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
                     adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
                     raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
@@ -3533,13 +3759,19 @@ def compute_now(shared=False):
                                 f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
                     else:
                         triggered = True
-                        confirm_trigger = "RECLAIM_50"
+                        confirm_trigger = (("CLEAR_TREND" if _is_trend else "CLEAR_WALL")
+                                           if (_wall_gate and _wall) else "RECLAIM_50")
                         entry, stop = cand_entry, cand_stop
                         _confirmed_fkeys.add(fkey)
                         if not frozen:                           # first confirm → LOCK the buy price + stop for the day
-                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
-                        cmsg = (f"CONFIRMED — tested the 50 EMA (${_f(e50)}) and turned up with buyers stepping in. "
-                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the 50). 9/21 above = upside room.")
+                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab,
+                                              "trig": confirm_trigger}
+                        if _wall_gate and _wall:
+                            cmsg = (f"CONFIRMED — cleared the {_wlbl} (${_f(_wall)}) on a 5-min close (no chase "
+                                    f"beneath it). Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the 50).")
+                        else:
+                            cmsg = (f"CONFIRMED — tested the 50 EMA (${_f(e50)}) and turned up with buyers stepping in. "
+                                    f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the 50). 9/21 above = upside room.")
             sized = _size_leg(entry, stop)
             plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
                                 sized, triggered, too_extended,
@@ -3584,6 +3816,25 @@ def compute_now(shared=False):
             _frz_cleared = bool(_frz and _frz.get("stop_lab") == "AVWAP" and _frz.get("trig") == "CLEAR_9EMA")
             if _frz_cleared and not oh_gate:                      # frozen but support/EMA shifted → keep oh_ema for the message
                 oh_ema = oh_ema or _e9 or _e21
+            # ── STACKED-WALL GATE (user 2026-06-10, the DOCN case) ────────────────────────────────────────
+            # The AVWAP overhead-EMA gate only knew about the 9/21 EMA. But a DESCENDING resistance line (or a
+            # horizontal prior-day high) can sit ABOVE the EMA, still within the WALL_NEAR_ADR band — so a
+            # CLEAR_9EMA fire lands UNDER the line (DOCN: 9-EMA $167.92 with the descending line $172.75 4 bars
+            # overhead). The rule: clear EVERY in-band overhead wall = require a 5-min CLOSE above the HIGHEST
+            # of {oh_ema, horizontal wall, descending trendline} within the band. A wall FARTHER than the band
+            # does NOT gate (no chasing a far line). Anchored to the EMA-clear level (where the EMA-gate buy
+            # lands) via ema_wall=oh_ema — "once I clear the EMA, is more resistance right above where I buy?".
+            # Stable daily levels, never the live tick — same lesson as the per-wall gates. Frozen → keep lock.
+            _gate_lvl, _gate_lbl, _gate_kind = oh_ema, _ema_lbl_for(oh_ema, _e9, _e21), "ema"
+            if (oh_gate or _frz_cleared) and not _frz_cleared and _avwap_sup:
+                _walls_av = [s.get("prior_high"), s.get("prev_high"), s.get("last_high")]
+                _hw, _hl, _hk = _highest_overhead_wall(_avwap_sup, adr_pct, ema_wall=oh_ema,
+                                                        walls=_walls_av, res_trendline=s.get("res_trendline"))
+                if _hw and _hl and _hl > (oh_ema or 0):           # a higher in-band wall sits above the EMA → clear IT
+                    _gate_lvl, _gate_kind = _hl, _hk
+                    _gate_lbl = ("descending resistance line" if _hk == "trend"
+                                 else "prior-day high" if _hk == "wall" else _gate_lbl)
+            oh_ema = _gate_lvl                                     # the gate level the rest of this branch fires on
             if oh_gate or _frz_cleared:
                 # FIRE = a COMPLETED 5-min candle CLOSES above the overhead EMA (~0.3% buffer, same as the
                 # held_above logic). NO AVWAP retest/bounce ("no retest, no nothing") — the close above the
@@ -3602,12 +3853,17 @@ def compute_now(shared=False):
                 _dlo = min(b["low"] for b in b5) if b5 else None
                 _reach_buf = max(0.005, 0.0015 * (adr_pct or 0))
                 reached_ema = bool(_dlo is not None and oh_ema and _dlo <= oh_ema * (1 + _reach_buf))
-                _ema_lbl = "9-EMA" if (oh_ema == _e9) else ("21-EMA" if (oh_ema == _e21) else "EMA")
+                _ema_lbl = _gate_lbl                              # the HIGHEST in-band wall's label (EMA, or a higher line/wall)
                 if not cleared_oh:
                     deep_wait = True
-                    cmsg = (f"Armed — fires on a 5-min CLOSE above the {_ema_lbl} (${_f(oh_ema)}); "
-                            f"stop under the AVWAP (${_f(round(_avwap_sup * (1 - (sbuf or 0) / 100), 2))}). "
-                            f"(AVWAP support ${_f(_avwap_sup)} sits just under the {_ema_lbl} — wait to clear it, not the reclaim.)")
+                    if _gate_kind in ("trend", "wall"):          # a line/wall sits ABOVE the 9-EMA → clear the line, not the EMA
+                        cmsg = (f"Armed — the {_ema_lbl} (${_f(oh_ema)}) sits just overhead above the 9-EMA — "
+                                f"fires on a 5-min CLOSE above ${_f(oh_ema)} (clear the line, no chase beneath it); "
+                                f"stop under the AVWAP (${_f(round(_avwap_sup * (1 - (sbuf or 0) / 100), 2))}).")
+                    else:
+                        cmsg = (f"Armed — fires on a 5-min CLOSE above the {_ema_lbl} (${_f(oh_ema)}); "
+                                f"stop under the AVWAP (${_f(round(_avwap_sup * (1 - (sbuf or 0) / 100), 2))}). "
+                                f"(AVWAP support ${_f(_avwap_sup)} sits just under the {_ema_lbl} — wait to clear it, not the reclaim.)")
                 elif not (_frz_cleared or reached_ema):
                     too_extended = True                              # gapped/ran above the EMA WITHOUT testing it → a chase
                     cmsg = (f"Closed above the {_ema_lbl} (${_f(oh_ema)}) but it RAN there without testing it "
@@ -3635,14 +3891,21 @@ def compute_now(shared=False):
                                 f"(a single 5-min close can be a fakeout; waiting for buyers stepping in).")
                     else:
                         triggered = True
-                        confirm_trigger = "CLEAR_9EMA"
+                        # surfaced tag names the wall actually cleared; the FROZEN trig stays CLEAR_9EMA so the
+                        # next-cycle _frz_cleared persistence detection (keyed on CLEAR_9EMA) still locks the buy.
+                        confirm_trigger = ("CLEAR_TREND" if _gate_kind == "trend"
+                                           else "CLEAR_WALL" if _gate_kind == "wall" else "CLEAR_9EMA")
                         entry, stop = cand_entry, cand_stop
                         _confirmed_fkeys.add(fkey)
                         if not frozen:                           # first confirm → LOCK the buy price + stop for the day
                             _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab,
                                               "trig": "CLEAR_9EMA"}
-                        cmsg = (f"CONFIRMED — closed above the {_ema_lbl} (${_f(oh_ema)}). "
-                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP).")
+                        if _gate_kind in ("trend", "wall"):
+                            cmsg = (f"CONFIRMED — cleared the {_ema_lbl} (${_f(oh_ema)}) on a 5-min close (no chase "
+                                    f"beneath it). Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP).")
+                        else:
+                            cmsg = (f"CONFIRMED — closed above the {_ema_lbl} (${_f(oh_ema)}). "
+                                    f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP).")
                 sized = _size_leg(entry, stop)
                 plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
                                     sized, triggered, too_extended), "why": s.get("why")}
@@ -3787,6 +4050,12 @@ def compute_now(shared=False):
             zone_drift = bool(setup_type in ("Pullback", "Pullback @ AVWAP", "AVWAP reclaim (ATH)",
                                              "AVWAP reclaim (earnings)", "Consolidation")
                               and not frozen and _zref and adr_px and cand_entry > _zref + 0.5 * adr_px)
+            # DESCENDING-TRENDLINE GATE (the DOCN case) — a near descending resistance line overhead the
+            # breakout/pullback entry, not yet cleared on a COMPLETED 5-min close → stay armed. Frozen
+            # bypasses it (a standing confirm). Mirrors the 50-reclaim CLEAR_TREND gate.
+            _td_gate, _td_lvl = (False, None) if frozen else _descending_trend_gate(
+                cand_entry, s.get("res_trendline"), adr_pct)
+            _td_block = bool(_td_gate and _td_lvl and not _closed_above(b5, _td_lvl))
             if zone_drift:
                 too_extended = True                          # keep it armed (reuses the extended → armed path)
                 _drift_pct = round((cand_entry / _zref - 1) * 100, 1)
@@ -3803,6 +4072,13 @@ def compute_now(shared=False):
             elif not buyers_ok:
                 buyers_wait = True
                 cmsg = f"{trig_desc.capitalize()}, but {buyers_why} — no call yet (waiting for buyers to step in)."
+            elif _td_block:
+                # a breakout/pullback confirm with a NEAR descending resistance line overhead, not yet cleared
+                # on a completed 5-min CLOSE → stay armed (CLEAR_TREND_ARMED). Mirrors the 50-reclaim gate.
+                deep_wait = True
+                confirm_trigger = "CLEAR_TREND_ARMED"
+                cmsg = (f"{trig_desc.capitalize()}, but a descending resistance line (${_f(_td_lvl)}) sits just overhead — "
+                        f"a buy under it runs into the line. Fires on a 5-min CLOSE above ${_f(_td_lvl)} (clear the line).")
             else:
                 # is there STILL a wall RIGHT above the entry (the next EMA / a swing high)? — no clean room.
                 overhead, res_tight = _overhead_res(cand_entry, s, adr_pct)
@@ -3880,6 +4156,39 @@ def compute_now(shared=False):
     buys.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
     armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
 
+    # MARKET CLOSED → no LIVE buy calls (user 2026-06-09, the after-hours DOCN spam). A buy that confirmed/
+    # froze during the session lingers in `buys` after the close via the frozen-price reuse — falsely showing
+    # a live BUY (and the watcher Telegram'd it after hours). Demote every standing buy to ARMED once regular
+    # hours end, per the documented rule: "after the close everything qualifying shows as ARMED, not a live
+    # call." Only fires when NOT active (market closed) → regular-hours live buys are untouched.
+    if not active and buys:
+        for b in buys:
+            b["confirmed"] = False
+            b["after_close"] = True
+            b["confirm"] = ("Confirmed earlier today — market's closed, so this is tomorrow's lineup, not a "
+                            "live buy. " + (b.get("confirm") or "")).strip()
+        armed = buys + armed
+        armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
+        buys = []
+
+    # TAPE GUARD — NEW buy downgrade (user 2026-06-09): when the tape rejected & is rolling over, NO new buy
+    # is a "do this" call ("nothing is confirmed when the market is going down"). Every freshly-confirmed buy
+    # is moved to WATCH-ONLY — it leaves `buys` (so _now_watcher never beeps it and the verdict won't say
+    # BUY; beep = ACT-only), and is appended to `armed` flagged `tape_guard` with a stand-down note. Already-
+    # taken (open) positions are untouched (they're in `manage`, not `buys`); a frozen/standing buy that the
+    # user already acted on this session isn't retro-changed because acting on it OPENS a position (it then
+    # lives in manage, not here). This only gates NEW confirmations surfaced this poll.
+    if _tg_on and buys:
+        for b in buys:
+            b["tape_guard"] = True
+            b["confirmed"] = False
+            b["confirm"] = ("⚠️ armed — tape risk-off, don't initiate. " + (b.get("confirm") or "")
+                            + f" (Tape Guard: {tape_guard.get('headline', 'market rolling over')} — nothing is "
+                              "confirmed when the market is going down; watch-only, no chase.)")
+        armed = buys + armed
+        armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
+        buys = []
+
     # ---- the one-line VERDICT (the decisive bit) ----
     if todo:
         acts = "; ".join(f"{m['ticker']} → {m['action']}" for m in todo)
@@ -3903,6 +4212,7 @@ def compute_now(shared=False):
               "light": light, "stance": stance, "verdict": verdict,
               "todo": todo, "holds": holds, "buys": buys, "armed": armed,
               "posture": posture, "label": label, "fear_greed": fg, "defend": defend,
+              "tape_guard": tape_guard, "tape_turn": tape_turn,
               "market_state": market.get("market_state"),
               "daily_lean": daily.get("lean"), "daily_outlook": daily.get("outlook"),
               "overall_state": overall_state, "positions_count": len(open_pos), "account": account,
@@ -3934,8 +4244,40 @@ def compute_autopilot():
     n = compute_now(shared=True)   # position-agnostic: identical list for the owner's preview AND every friend
     buys = [_autopilot_clean(b) for b in n.get("buys", [])]
     armed = [_autopilot_clean(a) for a in n.get("armed", [])]
+    # TAPE GUARD warning in Auto Pilot (user 2026-06-09 named Telegram + Auto Pilot specifically). LOCAL-ONLY:
+    # compute_now(shared=True) suppresses tape_guard for the friends/hosted feed, so here we recompute it
+    # directly ONLY when local (not HOSTED) and the toggle is on. Friends (HOSTED) never see this key → the
+    # autopilot.html banner stays hidden for them (feature-parity + local-only contract preserved).
+    _ap_settings = read_json(settings_owner_f(), {})
+    tape_guard = (tape_guard_state()
+                  if (not HOSTED and _ap_settings.get("tape_guard_enabled", True))
+                  else {"on": False, "indices": [], "reason": ""})
+    # TAPE TURN in Auto Pilot — recomputed directly (compute_now(shared=True) suppressed it). Same local-only
+    # gate. A CONFIRMED Turn lifts the Guard suppression here too (so the owner's preview doesn't keep buys
+    # downgraded after the all-clear); a "forming" Turn shows alongside but keeps the stand-down. Friends
+    # (HOSTED) never get this key → the autopilot.html banner stays hidden for them.
+    tape_turn = (tape_turn_state()
+                 if (not HOSTED and _ap_settings.get("tape_turn_enabled", True))
+                 else {"on": False, "phase": "", "lifts_guard": False, "indices": [], "reason": ""})
+    _tg_block = bool(tape_guard.get("on")) and not bool(tape_turn.get("lifts_guard"))
+    # When the Guard is blocking (and a confirmed Turn hasn't lifted it), downgrade confirmed buys to
+    # watch-only HERE too — compute_now(shared=True) skipped the downgrade, so without this the owner's Auto
+    # Pilot could show "BUY — confirmed" right next to the stand-down banner (Burry 2026-06-09).
+    if _tg_block and buys:
+        for b in buys:
+            b["confirmed"] = False
+            b["tape_guard"] = True
+        armed = buys + armed
+        buys = []
     # a verdict with NO personal references (compute_now's verdict mentions "your positions")
-    if buys:
+    if tape_turn.get("on") and tape_turn.get("phase") == "confirmed":
+        verdict = (f"✅ Tape Turn — {tape_turn.get('headline', 'market turned back up')}. "
+                   f"Setups can confirm again (any stand-down lifted). Your call.")
+    elif _tg_block:
+        verdict = (f"⚠️ Tape Guard — {tape_guard.get('headline', 'market rolling over')}. "
+                   f"Stand down on new buys; cash is a position."
+                   + (f" (⚡ Tape Turn forming — watch, not confirmed yet.)" if tape_turn.get("on") else ""))
+    elif buys:
         verdict = f"🟢 {len(buys)} confirmed entr{'y' if len(buys) == 1 else 'ies'} — {buys[0]['ticker']} just triggered. Your call."
     elif armed:
         verdict = (f"{len(armed)} setup{'s' if len(armed) != 1 else ''} armed (best: {armed[0]['ticker']}). "
@@ -3945,6 +4287,7 @@ def compute_autopilot():
     return {"computed_at": n.get("computed_at"), "updated_at": time.strftime("%H:%M:%S"),
             "light": n.get("light"), "stance": n.get("stance"), "verdict": verdict,
             "buys": buys, "armed": armed, "posture": n.get("posture"), "label": n.get("label"),
+            "tape_guard": tape_guard, "tape_turn": tape_turn,
             "fear_greed": n.get("fear_greed"), "market_state": n.get("market_state"),
             "disclaimer": ("Not financial advice. Auto Pilot is an experimental work-in-progress that surfaces "
                            "educational momentum-setup ideas from a strategy — nothing is guaranteed and signals "
@@ -4359,7 +4702,13 @@ def _index_session_moves():
         else:
             mv = x.get("change_pct")                          # regular-session move today
         if mv is not None:
-            out.append({"name": name, "pct": round(mv, 2), "ms": ms})
+            # Additive intraday fields for the Tape Guard "rolled over" read (defend ignores these and is
+            # byte-for-byte unchanged): the realized session high (day_high), the live regular-session price,
+            # and the prior close. All <= now, so no lookahead.
+            out.append({"name": name, "pct": round(mv, 2), "ms": ms,
+                        "day_high": x.get("day_high"),
+                        "price": x.get("reg_price") if x.get("reg_price") is not None else x.get("price"),
+                        "prev_close": x.get("prev_close")})
     return out
 
 
@@ -4400,8 +4749,14 @@ def regime_signal(regime, frothy=False):
     n_above_50 = sum(1 for i in idx if (i.get("gain_50") or 0) > 0)   # gain_50>0 ⇒ close above the 50-MA
     has_idx = len(idx) > 0
     vix_spike = _vix_spike(regime)
-    # DATA-BACKED risk-off (don't carry momentum overnight): the three states the blind study flagged.
-    risk_off = (p < 30) or (has_idx and n_above_50 == 0) or vix_spike
+    # INDEPENDENT over-stretch arm (user 2026-06-09): ≥OVERSTRETCH_N of the 3 indexes rubber-banded above
+    # their per-index 50-MA line (rubric.OVERSTRETCH_50, calibrated on 4y of bars). A froth top reverts the
+    # same way a correction bleeds, so it arms shield on its own — no weak-tape required. Reads its own flag
+    # so it never disturbs posture/band/light (grades byte-for-byte).
+    overstretched = [i.get("name") for i in idx if i.get("overstretched_50")]
+    froth_stretch = len(overstretched) >= rubric.OVERSTRETCH_N
+    # DATA-BACKED risk-off (don't carry momentum overnight): the three states the blind study flagged + froth.
+    risk_off = (p < 30) or (has_idx and n_above_50 == 0) or vix_spike or froth_stretch
     reasons = []
     if p < 30:
         reasons.append(f"deep correction (posture {p})")
@@ -4410,6 +4765,8 @@ def regime_signal(regime, frothy=False):
     if vix_spike:
         vt = regime.get("vix_trend") or {}
         reasons.append(f"VIX {vt.get('level', '?')} spiking ({vt.get('change_1d_pct', 0):+.0f}% 1d)")
+    if froth_stretch:
+        reasons.append(f"{', '.join(overstretched)} rubber-banded above the 50-MA")
     # canonical band + stance light (cuts identical to compute_now's pre-existing light, so the
     # armed-candidate gating that reads `light` is byte-for-byte unchanged).
     if p < 30:
@@ -4423,7 +4780,8 @@ def regime_signal(regime, frothy=False):
     else:
         band, light = _RB_GREEN, "green"
     return {"posture": p, "light": light, "band": band, "risk_off": risk_off,
-            "risk_off_reasons": reasons, "n_above_50": n_above_50, "vix_spike": vix_spike}
+            "risk_off_reasons": reasons, "n_above_50": n_above_50, "vix_spike": vix_spike,
+            "overstretched": overstretched, "froth_stretch": froth_stretch}
 
 
 def defend_state(regime, frothy=False):
@@ -4486,8 +4844,196 @@ def defend_state(regime, frothy=False):
     return {"on": on, "extended": bool(extended), "weak": bool(weak), "flatten_now": flatten_now,
             "reason": reason, "red": [m["name"] for m in red], "avg_move": avg,
             "stretched": stretched, "fg": fg, "vix_spike": vix_spike, "risk_off": risk_off,
+            "overstretched": rsig.get("overstretched", []), "froth_stretch": rsig.get("froth_stretch", False),
             "risk_off_reasons": rsig["risk_off_reasons"], "n_above_50": rsig["n_above_50"],
             "flatten_after": f"{int(rubric.DEFEND_FLATTEN_ET)}:{int((rubric.DEFEND_FLATTEN_ET % 1) * 60):02d} ET"}
+
+
+def _index_rolled_over(m):
+    """No-lookahead 'this index rejected and is rolling over' read for ONE benchmark (a dict from
+    _index_session_moves). True when, on THIS session: (a) it is RED (pct <= TAPE_GUARD_RED_PCT), AND
+    (b) it WAS up / made an intraday high — its realized session high (day_high) sat >= TAPE_GUARD_UP_PCT
+    above the prior close — AND (c) the live price has now FADED >= TAPE_GUARD_FADE_PCT below that high.
+    That's a rejection (up, popped, sold off), NOT a quiet gap-down slow-red drift (which never popped, so
+    its high barely clears the prior close and it has little to fade FROM). Every value is <= now (day_high
+    is the realized high so far; price is the live print) — deterministic, no future bars. Missing data →
+    False so it can never mis-arm."""
+    pct = m.get("pct")
+    dh, px, pc = m.get("day_high"), m.get("price"), m.get("prev_close")
+    if pct is None or dh is None or px is None or pc is None or pc <= 0 or dh <= 0:
+        return False
+    if pct > rubric.TAPE_GUARD_RED_PCT:           # not red on the session → not a rejection
+        return False
+    popped = (dh / pc - 1) * 100 >= rubric.TAPE_GUARD_UP_PCT   # it WAS up intraday (made a real high)
+    faded  = (dh - px) / dh * 100 >= rubric.TAPE_GUARD_FADE_PCT  # ...and has rolled OFF that high to here
+    return bool(popped and faded)
+
+
+def tape_guard_state():
+    """TAPE GUARD — the intraday 'the market rejected and is rolling over' defense (user 2026-06-09: the
+    AXTI/INTC/TER + AMKR session, where every buy taken into a rejecting tape failed identically — "nothing
+    is confirmed when the market is going down"). ARMS when >= TAPE_GUARD_RED_N of SPX/QQQ/IWM are RED on
+    the session AND have FADED well off their intraday high (a rejection — they were up and rolled over —
+    NOT a quiet slow-red drift; see _index_rolled_over). REGULAR cash session ONLY (_rth_now) — this is an
+    intraday signal, distinct from EOD defend (which flattens into the close). Tape Guard + defend can be ON
+    together. ALERT-ONLY: when armed the caller (a) downgrades NEW buy confirmations to watch-only (no BUY
+    verb, no beep), (b) recommends moving ALL open positions to break-even, (c) alerts every local surface.
+    The app never moves a stop or sells — every order is the user's. No lookahead (all reads <= now).
+    Returns {on, indices, reason, n_red_faded}."""
+    off = {"on": False, "indices": [], "reason": "", "headline": "", "phase": "", "n_red_faded": 0}
+    if not _rth_now():                            # intraday only — never arms pre/after-hours or weekends
+        return off
+    try:
+        moves = _index_session_moves()
+    except Exception:
+        return off
+    rolled = [m for m in moves if _index_rolled_over(m)]
+    on = len(rolled) >= rubric.TAPE_GUARD_RED_N
+    if not on:
+        return {"on": False, "indices": [m["name"] for m in rolled], "reason": "",
+                "headline": "", "phase": "", "n_red_faded": len(rolled)}
+    names = [m["name"] for m in rolled]
+    detail = ", ".join(f"{m['name']} {m['pct']:+.1f}%" for m in rolled)
+    # PHASE (user 2026-06-09): the ARM is identical either way (protection stays ON the whole way down) —
+    # only the WORDING changes by how deep the selloff is, so it never claims "were up" on a -2% tape.
+    avg = sum(m["pct"] for m in rolled) / len(rolled)
+    if avg <= rubric.TAPE_GUARD_DEEP_PCT:
+        phase = "selloff"
+        headline = "market sold off hard — down day"
+        lead = f"Market sold off hard — {detail}, a down day after rejecting its highs."
+    else:
+        phase = "rollover"
+        headline = "market rejected & rolling over"
+        lead = f"Market rejected & rolling over — {detail}, faded off their intraday highs."
+    reason = (f"{lead} Nothing is confirmed when the market is going down: stand down on NEW buys "
+              f"(watch-only, no chase), and move ALL open stops to break-even. Alert-only — you place every order.")
+    return {"on": True, "indices": names, "reason": reason, "headline": headline, "phase": phase,
+            "n_red_faded": len(rolled)}
+
+
+def _ema_series(vals, period):
+    """A standard EMA over `vals` (oldest→newest), seeded on the first value. Returns the full series
+    (same length). Matches scanner.buyers_confirm's 5-min EMA math (k = 2/(period+1))."""
+    if not vals:
+        return []
+    k = 2 / (period + 1)
+    out = [vals[0]]
+    for x in vals[1:]:
+        out.append(x * k + out[-1] * (1 - k))
+    return out
+
+
+def _index_spin(bars5):
+    """No-lookahead 'this index FLUSHED and is SPINNING back up' read for ONE benchmark, given today's
+    regular-session 5-min bars (scanner.get_5m_today shape: [{open,high,low,close,...}], oldest→newest,
+    the LAST bar still forming). Mirrors the STOCK spin (scanner._respected_bounce / buyers_confirm) on the
+    index: (a) it FLUSHED — made an intraday low >= TAPE_TURN_FLUSH_PCT below the session high (a real
+    selloff off the high), AND (b) it has BOUNCED >= TAPE_TURN_BOUNCE_PCT back up off that low (the spin),
+    AND (c) it has RECLAIMED both the 5-min 9 and 21 EMA — the latest COMPLETED bar closes above both, AND
+    (d) it is making a HIGHER LOW intraday (structure turned: the recent swing low is above the flush low).
+    Returns {spun, held_bars, ...}. `held_bars` = how many of the most-recent COMPLETED bars have closed
+    above BOTH EMAs continuously (the confirm count, ~15 min at 3 bars). NO lookahead: the still-forming last
+    bar is the live print and is EXCLUDED from every 'completed/closed/held' read (only its presence is used
+    to know which bars are done). Missing/too-few data → spun=False so it can never mis-arm."""
+    off = {"spun": False, "held_bars": 0, "flush_pct": 0.0, "bounce_pct": 0.0}
+    if not bars5 or len(bars5) < 8:                       # too early in the session to read a flush+spin
+        return off
+    completed = bars5[:-1]                                # drop the still-forming last bar (no lookahead)
+    if len(completed) < 6:
+        return off
+    closes = [b["close"] for b in completed]
+    highs  = [b["high"] for b in completed]
+    lows   = [b["low"] for b in completed]
+    ema9  = _ema_series(closes, 9)
+    ema21 = _ema_series(closes, 21)
+    session_high = max(highs)
+    low_i = min(range(len(lows)), key=lambda i: lows[i])  # the index of the intraday FLUSH low
+    flush_low = lows[low_i]
+    if flush_low <= 0 or session_high <= 0:
+        return off
+    flush_pct  = (session_high - flush_low) / session_high * 100          # how far it sold off the high
+    last_close = closes[-1]
+    bounce_pct = (last_close - flush_low) / flush_low * 100               # how far it has spun back up
+    flushed = flush_pct >= rubric.TAPE_TURN_FLUSH_PCT
+    bounced = bounce_pct >= rubric.TAPE_TURN_BOUNCE_PCT
+    # the flush low must be in the PAST (we need bars AFTER it to have reclaimed) — a low on the very last
+    # completed bar means it's still falling, not spinning back.
+    spun_after_low = low_i <= len(lows) - 2
+    # HIGHER LOW: the lowest low AFTER the flush low sits above the flush low (structure turned up).
+    after = lows[low_i + 1:]
+    higher_low = bool(after) and min(after) > flush_low
+    # RECLAIM held-count: walk back from the latest COMPLETED bar; count consecutive bars that CLOSED above
+    # BOTH the 5-min 9 and 21 EMA. The current reclaim must be live (latest completed bar is above both).
+    held = 0
+    for i in range(len(closes) - 1, -1, -1):
+        if closes[i] >= ema9[i] and closes[i] >= ema21[i]:
+            held += 1
+        else:
+            break
+    reclaimed = held >= 1
+    spun = bool(flushed and bounced and spun_after_low and higher_low and reclaimed)
+    return {"spun": spun, "held_bars": held if spun else 0,
+            "flush_pct": round(flush_pct, 2), "bounce_pct": round(bounce_pct, 2)}
+
+
+def tape_turn_state(guard_on=None):
+    """TAPE TURN — the intraday 'the market flushed and is spinning back up' all-clear (user 2026-06-09: the
+    inverse of Tape Guard — "you can see QQQ spinning, just like our spinning stocks"; today QQQ bottomed
+    ~$282.8 and reclaimed its 5-min 9/21 EMAs while still red on the session). ARMS — STANDALONE, does NOT
+    require a prior Tape Guard — when >= TAPE_TURN_N of SPX/QQQ/IWM have FLUSHED and SPUN back up (made an
+    intraday low, bounced off it, reclaimed the 5-min 9/21 EMA, and are making a higher low; see _index_spin).
+    REGULAR cash session ONLY (_rth_now). Two phases:
+      • "forming" — the spin just triggered but hasn't HELD: new buys STAY watch-only (Guard wins, do NOT
+        lift the stand-down yet). A green 'turning, not confirmed' note.
+      • "confirmed" — the reclaim has HELD for >= TAPE_TURN_CONFIRM_BARS completed 5-min bars (a higher low):
+        this LIFTS the Tape Guard buy-suppression so new confirmations surface/beep normally again — EVEN if
+        an index is still red on the session (the held reclaim is the all-clear). The caller reads
+        `lifts_guard` to re-enable buys; break-even stops STAY (Tape Turn never un-raises a stop).
+    ALERT-ONLY: the app never buys, sells, or moves a stop. No lookahead — stateless per-poll off COMPLETED
+    5-min bars only (the forming candle is never counted as held), so a whippy up-down-up day resolves cleanly
+    each poll. Returns {on, phase, lifts_guard, indices, reason, headline, n_spun, min_held}."""
+    off = {"on": False, "phase": "", "lifts_guard": False, "indices": [],
+           "reason": "", "headline": "", "n_spun": 0, "min_held": 0}
+    if not _rth_now():                                   # intraday only — never arms pre/after-hours or weekends
+        return off
+    try:
+        indexes = scanner.mcfg(market())["indexes"]
+    except Exception:
+        return off
+    spins = []
+    for name, sym in indexes:
+        try:
+            b5 = scanner.get_5m_today(sym)
+        except Exception:
+            b5 = None
+        sp = _index_spin(b5)
+        if sp["spun"]:
+            spins.append({"name": name, **sp})
+    on = len(spins) >= rubric.TAPE_TURN_N
+    if not on:
+        return {"on": False, "phase": "", "lifts_guard": False,
+                "indices": [s["name"] for s in spins], "reason": "", "headline": "",
+                "n_spun": len(spins), "min_held": 0}
+    names = [s["name"] for s in spins]
+    # CONFIRMED when EVERY spinning index has HELD the reclaim for >= TAPE_TURN_CONFIRM_BARS completed bars
+    # (the min across the armed set — the slowest one gates, so a single 1-bar V-spike can't confirm the group).
+    min_held = min(s["held_bars"] for s in spins)
+    confirmed = min_held >= rubric.TAPE_TURN_CONFIRM_BARS
+    detail = ", ".join(s["name"] for s in spins)
+    if confirmed:
+        phase = "confirmed"
+        headline = "market turned back up and held"
+        reason = (f"Tape Turn — {detail} flushed and spun back up, reclaiming the 5-min 9/21 EMAs and "
+                  f"holding the reclaim with a higher low. The market turned back up and held — setups can "
+                  f"confirm again (any tape-guard stand-down is lifted). Still your call — alert-only, you place every order.")
+    else:
+        phase = "forming"
+        headline = "indices reclaiming off the low"
+        reason = (f"Tape Turn forming — {detail} flushed and are reclaiming the 5-min 9/21 EMAs off the low. "
+                  f"Watch; not confirmed yet (the reclaim hasn't held ~15 min). New buys stay watch-only until "
+                  f"it holds — alert-only, you place every order.")
+    return {"on": True, "phase": phase, "lifts_guard": confirmed, "indices": names,
+            "reason": reason, "headline": headline, "n_spun": len(spins), "min_held": min_held}
 
 
 def live_sector_heat():
@@ -4665,7 +5211,11 @@ class Handler(BaseHTTPRequestHandler):
             s["stale"] = bool(_sd and _sd < _session_date())
             self._json(s)
         elif route == "market":
-            self._json(read_json(market_f(), {}))
+            mk = read_json(market_f(), {})
+            # B3: surface freshness so the UI can badge a stale regime
+            mk["stale"] = _market_stale(mk)
+            mk.setdefault("computed_at", None)
+            self._json(mk)
         elif route == "universe":
             u = read_json(universe_f(), {})
             u["status"] = UNIVERSE
@@ -4750,6 +5300,29 @@ class Handler(BaseHTTPRequestHandler):
                 pattern = scanner.detect_pattern(bars) if bars else None    # flag/pennant/wedge (relevant one)
             except Exception:
                 pattern = None
+            # DESCENDING-trendline resistance (the DOCN "clear the wall" line) — drawn dashed-red on the
+            # chart so the trader SEES the line the buy is waiting to clear. Fit on bars <= today (no
+            # lookahead). None when there's no strict, respected, descending line overhead.
+            res_trendline = None
+            try:
+                if bars and len(bars) >= 60:
+                    _h = [b["high"] for b in bars]; _l = [b["low"] for b in bars]; _c = [b["close"] for b in bars]
+                    _tm = [b["time"] for b in bars]
+                    import statistics as _st
+                    _ar = [(_h[k] / _l[k] - 1) * 100 for k in range(-20, 0) if _l[k] > 0]
+                    _adr = _st.mean(_ar) if _ar else 0
+                    res_trendline = scanner._descending_resistance(_h, _l, _c, _adr, _times=_tm)
+                    # DRAW only the RELEVANT overhead wall (user 2026-06-09 — kill the 58%-of-charts clutter):
+                    # keep the line only when today's level is ABOVE the current price (still resistance) AND
+                    # within ~1.5× ADR of it (the wall you're actually waiting to clear). A far line, or one price
+                    # has already cleared, is noise. The GATE is unaffected — it has its own 0.6× ADR proximity
+                    # check on the suggestion's res_trendline; this filters the chart DRAW only.
+                    if res_trendline and res_trendline.get("today"):
+                        _px = _c[-1]; _lvl = res_trendline["today"]; _adrpx = _px * _adr / 100 if _adr else 0
+                        if not (_adrpx and _px < _lvl <= _px + 1.5 * _adrpx):
+                            res_trendline = None
+            except Exception:
+                res_trendline = None
             earn = None
             try:
                 e = scanner.get_earnings(t)
@@ -4758,7 +5331,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 earn = None
             self._json({"ticker": t, "bars": bars or [], "channel": channel,
-                        "pattern": pattern, "earnings": earn})
+                        "pattern": pattern, "res_trendline": res_trendline, "earnings": earn})
         elif route == "gameplan":
             self._json(compute_gameplan())
         elif route == "now":
@@ -4865,7 +5438,11 @@ class Handler(BaseHTTPRequestHandler):
             fresh = parse_qs(urlparse(self.path).query).get("fresh", ["0"])[0] == "1"
             with _scan_lock:
                 if SCAN["running"]:
-                    self._json({"ok": False, "error": "scan already running"}, 409); return
+                    _st = SCAN.get("started_at")
+                    if _st and (time.time() - _st) > SCAN_STALE_SEC:
+                        SCAN.update(running=False, current="")   # hung/orphaned scan → let the new one take over (self-heal)
+                    else:
+                        self._json({"ok": False, "error": "scan already running"}, 409); return
                 if UNIVERSE["running"]:   # never run a full scan + universe rebuild at once (freeze risk)
                     self._json({"ok": False, "error": "universe build running — try again shortly"}, 409); return
                 _spawn(run_scan, sid, max_age=0 if fresh else 12)
@@ -5160,6 +5737,7 @@ def _shared_refresh_loop():
 _ALERT_COOLDOWN = {"EXIT": 90 * 60, "TRIM": 3 * 3600, "RAISE STOP": 6 * 3600, "BUY": 6 * 3600,
                    "GUARD STOP": 6 * 3600,     # profit-lock raise: remind at most every 6h (re-fires if the level steps up)
                    "FLATTEN": 30 * 60,         # defend-mode flatten: re-remind every 30m through the closing window
+                   "RAISE_BE": 30 * 60,        # tape-guard break-even raise: re-remind every 30m while the tape's rolling over
                    "STOPPED OUT": 4 * 3600}    # stop-hit: fire clearly once, re-remind only every 4h
 
 
@@ -5650,13 +6228,41 @@ def _now_watcher():
                         notify_telegram("🛡️ DEFEND MODE on", d.get("reason", ""))
                         add_notification("🛡️ DEFEND MODE on", d.get("reason", ""), light="yellow", actionable=True)
                         fired[f"defend:{etd}"] = now_t
+                    # TAPE GUARD FLIP heads-up (user 2026-06-09): the market rejected & is rolling over.
+                    # Telegram + desktop + feed — LOCAL-ONLY (notify_telegram is a no-op without local creds).
+                    # Re-reminds on a ~30-min cooldown (intraday, keyed by the alert ledger) so it doesn't spam,
+                    # mirroring defend's FLATTEN cooldown. The per-position RAISE_BE alerts fire separately below.
+                    tg = n.get("tape_guard") or {}
+                    if tg.get("on"):
+                        _tgk = "tapeguard:on"
+                        _last_tg = fired.get(_tgk)
+                        if _last_tg is None or now_t - _last_tg >= 30 * 60:
+                            notify_telegram("⚠️ TAPE GUARD armed", tg.get("reason", ""))
+                            notify_desktop("⚠️ TAPE GUARD armed", tg.get("reason", ""), urgent=True)
+                            add_notification("⚠️ TAPE GUARD armed", tg.get("reason", ""), light="yellow", actionable=True)
+                            fired[_tgk] = now_t
+                    # TAPE TURN FLIP heads-up (user 2026-06-09): the market flushed and spun back up — the
+                    # all-clear (green/positive). Only the CONFIRMED phase pings (the held reclaim = stand-down
+                    # lifted); a "forming" turn is panel-only (not yet actionable). Telegram + desktop + feed,
+                    # LOCAL-ONLY (notify_telegram is a no-op without local creds). ~30-min cooldown like tapeguard.
+                    tt = n.get("tape_turn") or {}
+                    if tt.get("on") and tt.get("phase") == "confirmed":
+                        _ttk = "tapeturn:on"
+                        _last_tt = fired.get(_ttk)
+                        if _last_tt is None or now_t - _last_tt >= 30 * 60:
+                            notify_telegram("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""))
+                            notify_desktop("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""))
+                            add_notification("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""), light="green", actionable=True)
+                            fired[_ttk] = now_t
+                    elif not tt.get("on"):
+                        fired.pop("tapeturn:on", None)   # reset the cooldown when the turn is off (re-arm cleanly)
                 except Exception:
                     pass
                 # ---- the ONLY things that may beep: discrete, actionable alerts ----
                 alerts = []                  # each: (key, action, urgent, title, body, feed_light)
                 for m in n.get("todo", []):
                     act = m.get("action")
-                    if act not in ("EXIT", "TRIM", "RAISE STOP", "GUARD STOP", "FLATTEN"):
+                    if act not in ("EXIT", "TRIM", "RAISE STOP", "GUARD STOP", "FLATTEN", "RAISE_BE"):
                         continue             # WATCH / HOLD are informational — panel only, never a beep
                     if act in ("EXIT", "FLATTEN") and not _rth_now():
                         continue             # exits / defend-flattens are decided in the regular session — never
@@ -5685,12 +6291,17 @@ def _now_watcher():
                                        f"🛑 STOPPED OUT {m['ticker']}", body, "red"))
                         continue
                     urgent = act in ("EXIT", "FLATTEN")
-                    icon = {"EXIT": "🔴", "GUARD STOP": "🛡️", "FLATTEN": "🛡️"}.get(act, "🟠")
+                    icon = {"EXIT": "🔴", "GUARD STOP": "🛡️", "FLATTEN": "🛡️", "RAISE_BE": "⚠️"}.get(act, "🟠")
+                    label = "RAISE → BREAK-EVEN" if act == "RAISE_BE" else act
                     flight = "green" if act == "GUARD STOP" else ("red" if urgent else "yellow")
                     alerts.append((f"{act}:{m['ticker']}", act, urgent,
-                                   f"{icon} {act} {m['ticker']}", m.get("reason") or "", flight))
+                                   f"{icon} {label} {m['ticker']}", m.get("reason") or "", flight))
                 buys = n.get("buys", [])
-                if light != "red":
+                # GATE BUY ALERTS TO REGULAR HOURS (user 2026-06-09): a live BUY is only actionable in the cash
+                # session — never Telegram/beep a buy pre/after-hours (the after-close DOCN spam). compute_now
+                # already demotes standing buys to armed once closed; this is the load-bearing second guard,
+                # mirroring the EXIT/stop RTH gates above.
+                if _us_regular_open() and light != "red":
                     # ALERT EVERY confirmed buy, not just the best one. When ONDS + RKLB + LUNR all take
                     # out their opening-range high in the same window, each is a real call — pushing only
                     # buys[0] silently dropped the rest (the user missed ONDS/RKLB this way). The per-ticker
@@ -5729,7 +6340,7 @@ def _now_watcher():
                                       ("❌ Pass", f"ps:{_atkr}")]]
                         elif act in ("EXIT", "FLATTEN", "STOPPED OUT"):
                             _btns = [[("🔴 Closed it", f"cl:{_atkr}"), ("🛡️ Hold — noted", f"hn:{_atkr}")]]
-                        elif act in ("TRIM", "RAISE STOP", "GUARD STOP"):
+                        elif act in ("TRIM", "RAISE STOP", "GUARD STOP", "RAISE_BE"):
                             _btns = [[("🟡 Raise stop", f"rs:{_atkr}"), ("👍 Noted", f"hn:{_atkr}")]]
                     notify_telegram(title, body, buttons=_btns)
                     add_notification(title, body, light=flight, actionable=True)
@@ -5818,9 +6429,11 @@ def close_trade(tid, body):
     elif isinstance(body.get("result_r"), (int, float)):
         t["result_r"] = body.get("result_r")
     else:
-        # degenerate risk basis (initial_stop missing or >= entry) and no client-supplied R:
-        # default to 0.0 so the trade still counts in stats/learning instead of silently dropping (None)
-        t["result_r"] = 0.0
+        # B5: degenerate risk basis (initial_stop missing or >= entry) and no client-supplied R —
+        # set None + flag so R stats EXCLUDE this trade (0.0 would pollute avg-R as a fake scratch).
+        # realized_pnl is still computed below from shares/prices so P&L is unaffected.
+        t["result_r"] = None
+        t["r_unmeasurable"] = True
     if e and sh and x:
         t["realized_pnl"] = round((x - e) * sh, 2)
     if body.get("notes"):
@@ -6233,6 +6846,18 @@ def _chat_move_stop(raw, low, tkr):
     if cur_stop is not None and newstop < cur_stop:
         return (f"⚠️ That would *lower* {t['ticker']}'s stop from ${_f(cur_stop)} to ${_f(newstop)} — "
                 f"a stop only trails up, never down. If you meant to exit, reply *sold {t['ticker']} at {_f(newstop)}*.")
+    # B4: upper sanity — a stop AT or ABOVE current price is an instant exit, not a stop (fat-finger check).
+    # Fetch live quote defensively; if unavailable, allow the move (never block on a missing quote).
+    try:
+        _q = scanner.fetch_quotes([t["ticker"]])
+        _live = (_q or {}).get(t["ticker"], {})
+        _price = _live.get("price") if isinstance(_live, dict) else None
+        if _price is not None and newstop >= _price:
+            return (f"⚠️ That stop (${_f(newstop)}) is at/above {t['ticker']}'s current price (${_f(_price)}) — "
+                    f"that's an instant exit, not a stop. Fat-finger? "
+                    f"To exit, reply *sold {t['ticker']} at {_f(_price)}*.")
+    except Exception:
+        pass  # quote unavailable — skip the upper-bound check, proceed with move
     t["stop"] = newstop      # live stop only — initial_stop (risk basis) stays frozen so R is unchanged
     write_json(trades_f(), trades)
     regen_trades_md()
@@ -6722,7 +7347,7 @@ def _intraday_rescan_loop():
             if mins > 0 and _us_regular_open() and not other_busy:
                 with _scan_lock:                             # claim quickly so a user's manual scan still 409s fast
                     if not SCAN["running"]:
-                        SCAN.update(running=True, current="intraday refresh")
+                        SCAN.update(running=True, current="intraday refresh", started_at=time.time())
                         claimed = True
             if claimed:
                 try:

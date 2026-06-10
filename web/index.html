@@ -449,6 +449,37 @@
             </div>
           </template>
 
+          <!-- ⚠️ TAPE GUARD banner — intraday: market rejected & rolling over → stand down on new buys, move open stops to break-even (local-only, alert-only) -->
+          <template x-if="now&&now.tape_guard&&now.tape_guard.on&&!(now.tape_turn&&now.tape_turn.phase==='confirmed')">
+            <div class="v4-banner flex items-start gap-3" style="background:linear-gradient(100deg,rgba(255,181,61,.16),rgba(255,181,61,.05));border-color:rgba(255,181,61,.5);border-left-color:#ffb53d">
+              <span class="text-2xl leading-none shrink-0">⚠️</span>
+              <div class="min-w-0">
+                <div class="text-base font-extrabold" style="color:#ffd591">TAPE GUARD
+                  <span class="text-[11px] font-bold align-middle ml-1 px-1.5 py-0.5 rounded" style="background:rgba(255,181,61,.2);color:#ffe1b0">market rejected & rolling over</span>
+                </div>
+                <div class="text-sm text-slate-200 mt-1 leading-snug" x-text="now.tape_guard.reason"></div>
+                <div class="text-[11px] text-slate-400 mt-1">Nothing is confirmed when the market is going down: new buys are downgraded to watch-only (no chase), and every open position should move its stop to break-even. Alert-only — you place every order.</div>
+                <template x-if="now.tape_turn&&now.tape_turn.phase==='forming'">
+                  <div class="text-[11px] mt-1.5 font-semibold" style="color:#7df0c2">⚡ Tape Turn forming — indices reclaiming off the low, but it hasn't held ~15 min. Still stand down until it confirms.</div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- ✅ TAPE TURN banner — intraday: market flushed and spun back up (green/positive). "confirmed" = stand-down lifted, setups can confirm again; "forming" = spinning, not held yet (local-only, alert-only) -->
+          <template x-if="now&&now.tape_turn&&now.tape_turn.phase==='confirmed'">
+            <div class="v4-banner flex items-start gap-3" style="background:linear-gradient(100deg,rgba(34,224,161,.16),rgba(34,224,161,.05));border-color:rgba(34,224,161,.5);border-left-color:#22e0a1">
+              <span class="text-2xl leading-none shrink-0" x-text="now.tape_turn.phase==='confirmed'?'✅':'⚡'"></span>
+              <div class="min-w-0">
+                <div class="text-base font-extrabold" style="color:#7df0c2">TAPE TURN
+                  <span class="text-[11px] font-bold align-middle ml-1 px-1.5 py-0.5 rounded" style="background:rgba(34,224,161,.2);color:#aef5d6" x-text="now.tape_turn.phase==='confirmed'?'turned back up & held':'forming — not confirmed yet'"></span>
+                </div>
+                <div class="text-sm text-slate-200 mt-1 leading-snug" x-text="now.tape_turn.reason"></div>
+                <div class="text-[11px] text-slate-400 mt-1" x-text="now.tape_turn.phase==='confirmed'?'The stand-down is lifted — setups can confirm again. Break-even stops stay (that\'s just good risk). Alert-only — you place every order.':'Watch only — the reclaim hasn\'t held ~15 min. New buys stay watch-only until it holds. Alert-only.'"></div>
+              </div>
+            </div>
+          </template>
+
           <!-- two-column work area: main column + right rail (stacks on mobile) -->
           <div class="grid lg:grid-cols-12 gap-6 items-start">
             <!-- ============ MAIN COLUMN ============ -->
@@ -505,7 +536,7 @@
                             <span class="text-[10px] text-slate-500 shrink-0" x-text="expandedPlan[a.ticker]?'▲':'▼'"></span>
                           </div>
                           <!-- Lexicon Phase 2: what will confirm this setup, in tag vocabulary -->
-                          <div class="text-[11px] px-2.5 pb-1.5 -mt-0.5" style="color:#ffd591" x-show="confirmMenuText(a)" :title="'The confirmation menu for a '+a.setup_type+' — the engine fires the buy on whichever of these triggers first.'">⏳ confirms on: <span x-text="confirmMenuText(a)"></span></div>
+                          <div class="text-[11px] px-2.5 pb-1.5 -mt-0.5" style="color:#ffd591" x-show="wallConfirmText(a) || confirmMenuText(a)" :title="'What the engine waits for before it fires the buy.'">⏳ confirms on: <span x-text="wallConfirmText(a) || confirmMenuText(a)"></span></div>
                           <div x-show="expandedPlan[a.ticker]" x-transition.opacity class="px-3 pb-2.5 pt-1 border-t" style="border-color:rgba(255,181,61,.2)" x-html="planHtml(a)"></div>
                         </div>
                       </template>
@@ -565,7 +596,7 @@
                       <div class="v4-row" style="background:rgba(7,10,18,.4)">
                         <!-- collapsed: live action + ticker + P&L + reason + show-more -->
                         <div class="flex items-center gap-2 px-2 py-1.5 text-sm">
-                          <span class="badge font-extrabold shrink-0 w-[4.6rem] text-center" x-show="(t._liveCoach||t.coach)" :style="actionStyle((t._liveCoach||t.coach||{}).tone)" x-text="(t._liveCoach||t.coach||{}).action"></span>
+                          <span class="badge font-extrabold shrink-0 w-[4.6rem] text-center" x-show="(t._liveCoach||t.coach)" :style="actionStyle((t._liveCoach||t.coach||{}).tone)" x-text="((t._liveCoach||t.coach||{}).action)==='RAISE_BE'?'RAISE BE':(t._liveCoach||t.coach||{}).action"></span>
                           <span class="font-bold shrink-0 w-14" x-text="t.ticker"></span>
                           <span class="shrink-0 text-xs font-bold" x-show="t.pnl!=null" :class="t.pnl>=0?'text-up':'text-down'">
                             <span x-show="t._live" class="text-up text-[8px] align-middle" title="live price">●</span>
@@ -949,10 +980,16 @@
                         <div class="st-cond" x-show="setupState(s,e).cls==='grn'"><span x-text="cur"></span><span x-text="s.close"></span> is in the zone and the trigger is taken out — buyable now.</div>
                         <div class="st-cond" x-show="setupState(s,e).cls!=='grn'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
                         <!-- Lexicon Phase-2 confirmation menu — only on an armed, not-yet-buyable setup -->
-                        <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && confirmMenuText(confRec(s))">
+                        <!-- When an overhead wall gates the setup, show a single "close above $X" chip instead of the redundant generic menu -->
+                        <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && (wallConfirmText(confRec(s)) || confirmMenuText(confRec(s)))">
                           <span class="lab">confirms on</span>
-                          <template x-for="t in ((confRec(s)&&confRec(s).confirm_menu)||[])" :key="t">
-                            <span class="trg" x-text="(_CONFIRM_LABEL[t]||t)"></span>
+                          <template x-if="wallConfirmText(confRec(s))">
+                            <span class="trg" x-text="wallConfirmText(confRec(s))"></span>
+                          </template>
+                          <template x-if="!wallConfirmText(confRec(s))">
+                            <template x-for="t in ((confRec(s)&&confRec(s).confirm_menu)||[])" :key="t">
+                              <span class="trg" x-text="(_CONFIRM_LABEL[t]||t)"></span>
+                            </template>
                           </template>
                         </div>
                       </div>
@@ -2427,9 +2464,6 @@
             @click="chartModal.showAvwap=!chartModal.showAvwap; renderChart()" title="Show/hide the AVWAP lines (ATH & earnings)">AVWAP</button>
           <button class="ctrl-btn" :class="chartModal.logScale?'on':''"
             @click="chartModal.logScale=!chartModal.logScale; renderChart()" title="Logarithmic price scale">Log</button>
-          <button class="ctrl-btn" :class="chartModal.showChannel?'on':''"
-            @click="chartModal.showChannel=!chartModal.showChannel; renderChart()" title="Pattern overlay — the relevant flag / pennant / wedge (falls back to the regression channel)"
-            x-text="chartModal.showChannel && chartModal._patternLabel ? ('🚩 '+chartModal._patternLabel) : '📐 Pattern'"></button>
           <button class="v4-modal-x" @click="closeChart()">✕</button>
         </div>
       </div>

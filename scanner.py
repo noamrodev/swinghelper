@@ -41,6 +41,7 @@ PREF = {
     "Breakout": 1.5,
     "Deep Pullback": 3,
     "Consolidation": 4,
+    "Pullback to 21-EMA": rubric.PB21_PREF,   # the NBIS case — a strong continuation (see rubric.PB21_PREF)
 }
 
 # Benchmarks for market regime + relative strength (equal-blend, per user choice).
@@ -187,6 +188,17 @@ def get_bars(sym, max_age_hours=12):
             if len(_BARS_MEM) > _BARS_MEM_MAX:     # leak backstop across universe changes
                 _BARS_MEM.clear()
             _BARS_MEM[sym] = (f.stat().st_mtime, bars)
+        except Exception:
+            pass
+    elif f.exists():
+        # B6: fetch failed (rate-limit / outage) but a stale cache exists on disk —
+        # serve the stale bars rather than returning None.  A stale read beats no read
+        # at all; the caller (scan) already gates on session-freshness separately.
+        try:
+            obj = json.loads(f.read_text())
+            stale_bars = obj.get("bars")
+            if stale_bars:
+                return stale_bars
         except Exception:
             pass
     return bars
@@ -391,6 +403,59 @@ def _swing_highs(h, left=3, right=3, lookback=60):
         if h[i] == max(h[i - left:i + right + 1]):
             out.append((i, h[i]))
     return out
+
+
+def _swing_lows(l, left=3, right=3, lookback=60):
+    """Pivot lows: bars whose low is the local min within a +/- window (mirror of _swing_highs).
+    Returns [(index, price)] over the last `lookback` bars. Used to confirm higher-lows structure
+    on the daily chart (the pullback-to-the-21 continuation read)."""
+    n = len(l)
+    start = max(left, n - lookback)
+    out = []
+    for i in range(start, n - right):
+        if l[i] == min(l[i - left:i + right + 1]):
+            out.append((i, l[i]))
+    return out
+
+
+def _daily_higher_lows(l, lookback=40, min_pivots=2):
+    """Daily higher-lows structure (uptrend intact): the last two confirmed pivot lows are rising.
+    Used by the pullback-to-the-rising-9/21-EMA classifier (the NBIS case) to confirm the dip is a
+    continuation, not a breakdown. Falls back to a rolling-low check when too few pivots exist."""
+    sl = _swing_lows(l, lookback=lookback)
+    if len(sl) >= min_pivots and sl[-1][1] > sl[-2][1]:
+        return True
+    if len(l) >= 10:                                   # fallback: recent rolling low above the prior one
+        return min(l[-3:]) > min(l[-10:-3])
+    return False
+
+
+def _successive_lower_highs(h, lookback=20):
+    """Count of SUCCESSIVE LOWER DAILY HIGHS in the current down-leg (a confirmed waterfall). Find the
+    highest high in the last `lookback` bars (the leg's local peak), then count how many daily highs
+    AFTER it step strictly DOWN in sequence (allowing one equal/tiny-up blip so a single inside-day
+    doesn't reset the count). Used by the Deep-Pullback knife-catch guard (the LUNR case): a leader
+    waterfalling into the 50 on 6 lower highs is a knife, NOT a leader HOLDING a rising 50. Reads the
+    LIVE staircase directly (no ±right pivot confirmation, no 50-EMA slope — both lag the crash)."""
+    n = len(h)
+    if n < 4:
+        return 0
+    start = max(0, n - lookback)
+    peak_i = max(range(start, n), key=lambda i: h[i])
+    cnt = 0
+    ref = h[peak_i]
+    blips = 0
+    for i in range(peak_i + 1, n):
+        if h[i] < ref:
+            cnt += 1
+            ref = h[i]
+        elif h[i] <= ref * 1.02:     # an inside/equal day — tolerate ONE, don't reset the leg
+            blips += 1
+            if blips > 1:
+                break
+        else:
+            break                    # a genuine higher high → the down-leg is broken
+    return cnt
 
 
 def _pullback_leg_pivot(h, l, close, adr):
@@ -810,6 +875,124 @@ def detect_pattern(bars, lookback=45, min_cons=6):
             "pole_gain": round(pole_gain, 1)}
 
 
+def _descending_resistance(h, l, c, adr_pct, lookback=None, _times=None):
+    """DESCENDING-trendline resistance detector (user 2026-06-09, the DOCN case; relaxed v2 same day).
+    The SLOPED sibling of the horizontal wall + AVWAP-overhead-EMA "clear the wall" gates. Finds a
+    respected, genuinely descending resistance line off a recent peak — the line price is coiling UNDER —
+    so the live confirmation can WAIT for a CLOSE above it instead of firing a buy straight into it (DOCN:
+    ~$169 just under a line drawn off the ~$184 June-4 peak the move topped at).
+
+    INTENT (user clarified): CONFIRMATION-ONLY, NOT a grade signal — it never lowers the grade or hides a
+    setup. So we deliberately detect a YOUNGER line too (a recent peak + >= 2 lower highs over a SHORT leg,
+    like DOCN's 3-day line), because a young line firing a brief WAIT is low-harm. The real NOISE-GUARD is
+    not the line's age — it's PROXIMITY (the gate only fires when today's line sits within WALL_NEAR_ADR
+    above the entry; a far/loose line never gates a clean setup). Both a young 2-anchor line AND a strict
+    multi-week channel (e.g. MRAM) qualify here.
+
+    A valid line (anti-noise, NO arbitrary 2-point line; NO lookahead — every bar used is <= today):
+      1. ANCHOR = the recent PEAK: the highest daily high in the last `TREND_LOOKBACK` bars (the top the
+         move rolled over from). It must be a genuine local high (a left-pivot — higher than the few bars
+         before it) so we don't anchor mid-slope.
+      2. For each later daily high that is genuinely BELOW the peak, draw the candidate line peak->that
+         high and KEEP the line under which EVERY intervening high sits (a real ceiling). Among the valid
+         candidates pick the one giving the MOST touches (the best-supported ceiling), tie-broken to the
+         most recent end-anchor. End-anchor must be a confirmed pivot OR the live tail; leg >=
+         `TREND_MIN_LEG` (3) bars.
+      3. The line must slope DOWN by at least `TREND_MIN_DESC_ADR` ADR/bar (a near-flat line is the
+         horizontal wall's job, not this gate).
+      4. RESPECT: count DISTINCT bars whose HIGH comes within `TREND_TOUCH_TOL_ADR` ADR of the line (>=
+         `TREND_MIN_TOUCHES`, 2), AND require that NO bar's high pokes decisively ABOVE it between the
+         anchor and today (the `_respected_level` discipline on a sloped level).
+      5. LOWER-HIGHS sequence (the noise guard that replaces the old strict leg/touch floors): >=
+         `TREND_MIN_LOWER_HIGHS` (2) distinct local highs that step DOWN after the peak (a real staircase
+         of lower highs, not one stray dip below a flat top).
+      6. Today's line value must sit AT or ABOVE the current price (a genuine OVERHEAD line; once price has
+         closed above it the line is broken → no gate), and have DROPPED >= `TREND_MIN_DROP_ADR` (0.5) ADR
+         peak->today (rejects a near-flat drift, which is the horizontal wall's job).
+
+    Returns {slope, intercept, i0, i1, p0, p1, today: <line value at the last bar>, touches} (+ p0_time/
+    p1_time/today_time when `_times` is provided, for the chart overlay), or None. slope/intercept are in
+    PRICE per BAR-INDEX over the full series (index n-1 = today): today = slope*(n-1)+intercept. (Pure
+    function — unit-testable, no lookahead.)"""
+    n = len(c)
+    lb = lookback or rubric.TREND_LOOKBACK
+    if n < 20 or not adr_pct or c[-1] <= 0:
+        return None
+    adr_px = c[-1] * adr_pct / 100 or 0.01
+    tol = rubric.TREND_TOUCH_TOL_ADR * adr_px        # generous: a high within this BELOW the line = a touch
+    break_tol = rubric.TREND_BREAK_TOL_ADR * adr_px  # tight: a high more than this ABOVE the line = BROKEN (SEDG fix)
+    start = max(2, n - lb)
+    # 1. the peak = highest high in the window; require it to be a genuine local high (a left-pivot)
+    i0 = max(range(start, n), key=lambda i: h[i])
+    if i0 >= n - 2:                                        # peak must be old enough to have a down-leg after it
+        return None
+    if h[i0] < max(h[max(0, i0 - 3):i0] or [0]):          # not higher than the bars just before it = mid-slope
+        return None
+    p0 = h[i0]
+    sh_idx = {i for (i, _p) in _swing_highs(h, lookback=lb)}   # confirmed pivots = valid end-anchors
+    # 2. try every later lower high as the end-anchor; keep lines that are a real ceiling (nothing pokes
+    #    decisively above) with a real leg-length + drop + a genuine lower-highs staircase under it; pick
+    #    the best-supported (most touches), most-recent end-anchor as the tiebreak.
+    best = None
+    for i1 in range(i0 + 1, n):
+        if (i1 - i0) < rubric.TREND_MIN_LEG:              # too short = noise, not a line (relaxed to ~3)
+            continue
+        if i1 not in sh_idx and i1 < n - 3:               # end-anchor must be a CONFIRMED pivot (or the live tail)
+            continue
+        if h[i1] >= p0 - 0.5 * adr_px:                    # end-anchor must be genuinely LOWER than the peak
+            continue
+        slope = (h[i1] - p0) / (i1 - i0)
+        if slope >= -rubric.TREND_MIN_DESC_ADR * adr_px:  # not steep enough downward = a flat wall's job
+            continue
+        intercept = p0 - slope * i0
+        pokes = False
+        touch_idx = []
+        for i in range(i0, n):
+            line_i = slope * i + intercept
+            if h[i] > line_i + break_tol:                 # a high pokes ABOVE (more than a tiny wick) → BROKEN line, reject
+                pokes = True
+                break
+            if abs(h[i] - line_i) <= tol:
+                touch_idx.append(i)
+        if pokes or len(set(touch_idx)) < rubric.TREND_MIN_TOUCHES:
+            continue
+        # NOISE GUARD: a genuine LOWER-HIGHS staircase riding the line — >= TREND_MIN_LOWER_HIGHS bars
+        # AFTER the peak whose high TOUCHES the line AND makes a NEW lower-high (strictly below the running
+        # max-high since the peak by a real step). This is the real "lower highs off a peak" sequence and
+        # rejects "flat top + one stray dip" 2-point artifacts (whose middle highs are flat / far below the
+        # line, so they never both touch and step down). Works for a monotonic descent (DOCN: 180.5, 174.7,
+        # 172.7 each a new lower high on the line) AND a multi-bar channel (MRAM). The peak is not counted.
+        lower_highs, run_max = 0, p0
+        for ti in sorted(set(touch_idx)):
+            if ti <= i0:
+                continue
+            if h[ti] < run_max - 0.15 * adr_px:           # a real step DOWN from the highest high so far
+                lower_highs += 1
+            run_max = max(run_max, h[ti])
+        if lower_highs < rubric.TREND_MIN_LOWER_HIGHS:
+            continue
+        today = slope * (n - 1) + intercept
+        if today <= c[-1] * 0.999:                        # price already at/above the line → not overhead
+            continue
+        if (p0 - today) / adr_px < rubric.TREND_MIN_DROP_ADR:   # near-flat drift, not a real pullback
+            continue
+        cand = (len(touch_idx), i1, slope, intercept, today)
+        if best is None or (cand[0], cand[1]) > (best[0], best[1]):
+            best = cand
+    if best is None:
+        return None
+    touches, i1, slope, intercept, today = best
+    out = {"slope": slope, "intercept": intercept, "i0": i0, "i1": i1,
+           "p0": round(p0, 2), "p1": round(slope * i1 + intercept, 2),
+           "today": round(today, 2), "touches": touches}
+    if _times is not None and len(_times) == n:           # chart-overlay anchor points (peak -> today)
+        out["p0_time"] = _times[i0]
+        out["p1_time"] = _times[n - 1]
+        out["p0_val"] = round(p0, 2)
+        out["p1_val"] = round(today, 2)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Analysis
 # --------------------------------------------------------------------------- #
@@ -959,6 +1142,31 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
                         and net15 <= 0.4 * rng15          # genuinely sideways (not a directional pullback)
                         and -max(8.0, 0.5 * adr) <= ext10 <= 1.5 * adr)   # near the 10, not knifed below it
 
+    # ----- PULLBACK TO THE RISING 9/21 EMA (the NBIS case, 2026-06-09) -------------------------------
+    # The middle ground between a shallow Pullback (still above the short SMAs → caught by is_pullback)
+    # and a Deep Pullback (all the way to the 50 → is_deep_pullback). NBIS at 218 dipped BELOW its short
+    # SMAs onto the rising 21-EMA (217.7) while still ~1.8× ADR ABOVE a rising 50 — the SMA-based uptrend
+    # gate read above=1 and dropped it, so it fell through to a near-prior-high Breakout (entry 264 = a
+    # chase). This classifies it as the bread-and-butter Qull/Luk continuation it is. Gates (all daily,
+    # bars ≤ today, no lookahead):
+    #   * RISING EMA FAN  e9 > e21 > e50  with the 9 AND 21 rising — the trader's stacked, climbing chart
+    #   * RISING 50       (e50 slope up) and price WELL above it (>= PB21_MIN_EXT50_ADR) — a true extended
+    #                     -above-50 leader, not a name basing right on its 50 (GOOGL/NVDA/TSLA ~0.2× ADR)
+    #   * HOLDING the line  within PB21_NEAR_ADR of a rising 9 OR 21 EMA, and NOT extended above the 10
+    #   * HIGHER LOWS     intact daily uptrend structure (continuation, not a breakdown)
+    # _ema_slope(n): EMA now vs ~5 bars ago — the line's recent direction.
+    def _ema_slope(n, back=5):
+        return (_ema(c, n) - _ema(c[:-back], n)) if len(c) > n + back else 0.0
+    e9_up, e21_up, e50_up = _ema_slope(9) > 0, _ema_slope(21) > 0, _ema_slope(50) > 0
+    ema_fan_rising = e9 > e21 > e50 and e9_up and e21_up and e50_up
+    ext50_adr_now = ((close / e50 - 1) * 100 / adr_safe) if e50 else 0.0
+    near_9_or_21 = min(abs(close / e9 - 1), abs(close / e21 - 1)) * 100 / adr_safe <= rubric.PB21_NEAR_ADR \
+        if (e9 and e21) else False
+    is_pullback_21 = (above_200_now and ema_fan_rising
+                      and ext50_adr_now >= rubric.PB21_MIN_EXT50_ADR     # genuinely above a rising 50, not on it
+                      and near_9_or_21 and not_extended
+                      and _daily_higher_lows(l) and pull_from_high >= 3)
+
     if is_consolidation:                                  # tight sideways base takes priority
         setup_type = "Consolidation"
     elif is_pullback and (is_avwap_ath or is_avwap_earn):
@@ -971,6 +1179,8 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
         setup_type = "AVWAP reclaim (earnings)"
     elif is_deep_pullback:
         setup_type = "Deep Pullback"
+    elif is_pullback_21:                                  # pulled to the rising 9/21, well above a rising 50
+        setup_type = "Pullback to 21-EMA"
     elif gap_up >= 8 and dist_hi <= 1.5 * adr:
         # Episodic Pivot = a TRUE open gap on a catalyst (not just any big intraday run into
         # the highs — that's a Breakout). The "+ fresh news" half is confirmed in the app layer
@@ -984,7 +1194,9 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
     consol = setup_type == "Consolidation"
     extended = ext10 > 2.2 * adr
     pullback_like = setup_type in ("Pullback", "Pullback @ AVWAP",
-                                   "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)")
+                                   "AVWAP reclaim (ATH)", "AVWAP reclaim (earnings)",
+                                   "Pullback to 21-EMA")
+    pb21 = setup_type == "Pullback to 21-EMA"
 
     # ----- volume character: who is in control of the recent action? -----
     # Read volume on up-closes vs down-closes over the last ~10 sessions, plus whether the
@@ -1122,6 +1334,8 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
         # further dip). Only if price already reached/undercut support do we use a
         # reclaim (buy-stop above the prior-day high).
         cands = [("10-EMA", e10), ("20-EMA", e20), ("50-MA", s50)]
+        if pb21:                                           # the line it's holding IS the 9/21 EMA (the NBIS read)
+            cands += [("9-EMA", e9), ("21-EMA", e21)]
         if "AVWAP" in setup_type:
             cands.append(("AVWAP (ATH)", avwap_ath))
         if avwap_earn:
@@ -1224,6 +1438,28 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
     # DEEP into the 50 EMA (VRT/AXTI/LITE), or a strong stock CONSOLIDATING sideways on the 50
     # (the SNDK base). NOT shallow pullbacks near the highs that are still moving up.
     worth_waiting = deep or consol
+    # ── DEEP-PULLBACK KNIFE-CATCH GUARD (the LUNR case, 2026-06-09) ──────────────────────────────────
+    # The deep-pullback entry is a 50-RECLAIM (entry_type "stop"), so it SKIPS the _respected_bounce gate
+    # that limit dip-buys get — a leader still WATERFALLING into the 50 (LUNR: −57% off the high, 7 lower
+    # daily highs, price under steeply DECLINING 9/21 EMAs) fired buyable_now=True at the 50 and got bought
+    # as a falling knife. We do NOT add a pull-% cap (breaks AXTI-style legit deep pulls) and do NOT gate on
+    # the 50-EMA slope (it LAGS — LUNR's 50 was still rising +0.28 while price crashed through). Instead:
+    # when the structure is a CONFIRMED DOWNTREND (≥ KNIFE_LOWER_HIGHS successive lower daily highs AND price
+    # below DECLINING 9 AND 21 EMAs), the deep pullback stays worth_waiting (armed) but is NOT buyable_now
+    # until it has RESPECTED the 50 (a real bounce: the same _respected_bounce proxy the limit path uses,
+    # evaluated AT the 50 EMA). A genuine deep pull that HOLDS a rising 50 with higher lows isn't a confirmed
+    # downtrend → unaffected; one that IS slicing the 50 must show the bounce first. (Settled series under a
+    # forming bar — same as the limit gate above — so an intraday pop can't un-break a settled knife.)
+    if deep and not consol:
+        _lh = _successive_lower_highs(h)
+        _e9_dn = _ema(c, 9) < _ema(c[:-5], 9) if len(c) > 14 else False
+        _e21_dn = _ema(c, 21) < _ema(c[:-5], 21) if len(c) > 26 else False
+        # close < e50 REQUIRED (Burry 2026-06-09): a Deep Pullback entry IS a 50-reclaim; if price is already
+        # ABOVE the 50, the reclaim has happened and there's no knife to guard at the 50 (SCOP.TA regression).
+        knife = (_lh >= rubric.KNIFE_LOWER_HIGHS and close < e9 and close < e21
+                 and _e9_dn and _e21_dn and e50 and close < e50)
+        if knife and e50 and not _respected_bounce(_ro, _rh, _rl, _rc, e50, e50 * adr / 100 or 0.01):
+            buyable_now = False
     # CHASE GUARD (the NBIS case): a momentum/breakout name parabolic-extended far above the 50 EMA is
     # NOT "buyable now" even if the close happens to land in the zone — buying here is chasing a
     # vertical move. Measured as distance above the 50 EMA in ADR units. Patient dip-buy setups
@@ -1321,6 +1557,13 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
         dollar_risk = round(shares * risk_ps, 2)
     shares_per_10k = int((10000 * risk_pct / 100) // risk_ps) if risk_ps > 0 else 0
 
+    # ----- descending-trendline resistance (the DOCN case) — for the CLEAR_TREND gate + chart overlay -----
+    # Fit on bars <= today (no lookahead). None when there's no strict, respected, descending line overhead.
+    try:
+        _res_trend = _descending_resistance(h, l, c, adr)
+    except Exception:
+        _res_trend = None
+
     # ----- why -----
     why = ["Above 10/20/50 MA" if above == 3 else f"Above {above}/3 MAs", f"+{p1m:.0f}% 1m"]
     if setup_type == "Deep Pullback":
@@ -1329,6 +1572,9 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
     elif setup_type == "Consolidation":
         why.append(f"tight base ({rng15 / adr_safe:.1f}x ADR) riding the 50 EMA, "
                    f"strong (+{max(p3m, p6m):.0f}%)")
+    elif setup_type == "Pullback to 21-EMA":
+        why.append(f"pulled back {pull_from_high:.0f}% to the rising 9/21 EMA, "
+                   f"{ext50_adr_now:.1f}x ADR above a rising 50 (higher lows intact)")
     elif setup_type == "Pullback":
         why.append(f"pulled back {pull_from_high:.0f}% to {near_line}")
     elif setup_type == "Pullback @ AVWAP":
@@ -1386,6 +1632,10 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
         "recent_gap": recent_gap, "news_move": news_move,
         "vol_signal": vol_signal, "vol_note": vol_note,
         "distribution_today": distribution_today,
+        # DESCENDING-trendline resistance (the DOCN case) — the line value AT TODAY + its two anchor
+        # points, for the "clear the wall" confirmation gate (CLEAR_TREND) AND the chart overlay. None
+        # when there's no strict, respected, descending line overhead. (no lookahead — fit on bars<=today)
+        "res_trendline": _res_trend,
     }
 
 
@@ -1940,7 +2190,11 @@ def _regime_one(name, bars):
     atr_mult_50 = round(gain_50 / adr, 1)
     gain_20 = (close / e20 - 1) * 100                       # shorter-term extension gauge
     atr_mult_20 = round(gain_20 / adr, 1)
-    very_stretched = atr_mult_50 >= 4.5                     # far above the 50 -> chase risk
+    very_stretched = atr_mult_50 >= 4.5                     # far above the 50 -> chase risk (posture/grade flag)
+    # SHIELD-only over-stretch: a per-index, data-calibrated "rubber-banded" line (rubric.OVERSTRETCH_50).
+    # SEPARATE from very_stretched — feeds only the independent shield arm, never posture or a grade.
+    ovr_thr = rubric.OVERSTRETCH_50.get(name, rubric.OVERSTRETCH_50_DEFAULT)
+    overstretched_50 = atr_mult_50 >= ovr_thr
     # Early turn / "bottoming": still BELOW the 50-MA (not a confirmed bull move yet), but the first
     # leg up is CONFIRMED — price reclaimed both short EMAs with the 10 stacked over the 20, AND a
     # higher low is in place (structure broke the downtrend). We do NOT anticipate bottoms: a bear
@@ -1978,7 +2232,8 @@ def _regime_one(name, bars):
             "adr": round(adr, 2), "p1m": round(p1m, 1), "p3m": round(p3m, 1),
             "gain_50": round(gain_50, 1), "atr_mult_50": atr_mult_50,
             "gain_20": round(gain_20, 1), "atr_mult_20": atr_mult_20,
-            "stretched_50": very_stretched}
+            "stretched_50": very_stretched,
+            "overstretched_50": overstretched_50, "overstretch_thr": ovr_thr}
 
 
 def _rsi(closes, n=14):

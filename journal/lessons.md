@@ -5,6 +5,22 @@ my real trades via `/log-trade` and `/review-trades`. Keep it tight — only dur
 lessons, newest insights merged in (not an endless list of duplicates).
 
 ## Active lessons
+- **Nothing is confirmed when the market is going down — Tape Guard (2026-06-09, AXTI/INTC/TER + AMKR).**
+  Every buy taken into a *rejecting* tape that session failed identically. The rule: when ≥2 of SPX/QQQ/IWM
+  were UP / made an intraday high and have **rolled over** (red on the session AND faded well off their high —
+  a rejection, not a quiet slow-red drift), STAND DOWN. New buys become watch-only (no chase), and EVERY open
+  position moves its stop to **break-even** — don't give an open gain back into a falling tape. Intraday +
+  alert-only (the app never moves a stop or sells); distinct from defend mode (which flattens momentum into the
+  close). Implemented as the **Tape Guard** (`app.tape_guard_state`, thresholds in `rubric.TAPE_GUARD_*`).
+- **The market spins back up just like our stocks — Tape Turn (2026-06-09, QQQ ~$282.8 reclaim).** The inverse
+  of Tape Guard, the all-clear. When ≥2 of SPX/QQQ/IWM have **flushed** (made an intraday low off the high) and
+  **spun back up** — bounced off that low, **reclaimed the 5-min 9/21 EMAs**, and are making a **higher low** —
+  the rejection is over. Two phases: **forming** (spun but the reclaim hasn't held ~15 min → still watch-only,
+  Guard wins) and **confirmed** (held ≥3 completed 5-min bars with a higher low → **lifts the Guard stand-down**
+  so setups can confirm again, even if still red on the session). Standalone (arms without a prior Guard);
+  intraday + alert-only; **break-even stops STAY** (Turn re-enables buys, never un-raises a stop). Implemented as
+  the **Tape Turn** (`app.tape_turn_state` / `app._index_spin`, thresholds in `rubric.TAPE_TURN_*`). Stateless
+  per poll off COMPLETED bars only, so a whippy up-down-up day re-arms Guard / resets Turn cleanly each poll.
 - **AVWAP reclaim into a near-overhead EMA = clear the EMA, never reclaim under it (2026-06-09, IREN).**
   If an AVWAP-family setup's AVWAP support sits within ~0.5× ADR *under* the daily 9/21 EMA, buying the AVWAP
   reclaim means buying straight into the EMA wall a few % overhead (IREN: reclaim ~$59.1 with the 9-EMA at
@@ -12,6 +28,37 @@ lessons, newest insights merged in (not an endless list of duplicates).
   the trigger), stop still just under the AVWAP, risk ≤1× ADR. A far-overhead EMA (deep-pullback shape) keeps
   the normal reclaim+spin; the 50-reclaim deep-pullback path is unchanged. Needs a server restart + rescan to
   see it live (engine: `app.compute_now`, trigger tag `CLEAR_9EMA`).
+- **Under a DESCENDING trendline = WAIT for the break, never buy beneath it (2026-06-09, DOCN; relaxed v2).**
+  The sloped sibling of the IREN overhead-EMA + AXTI horizontal-wall "clear the wall" gates. When a genuine
+  descending resistance line (lower highs off a recent peak) sits just overhead the entry, a confirm fired
+  under it buys straight into the line. Rule: if a respected, descending line sits within `WALL_NEAR_ADR`
+  (0.6× ADR) above the entry, the buy ARMS (`CLEAR_TREND_ARMED`) and fires only on a completed 5-min CLOSE
+  above the line (`CLEAR_TREND`). Drawn on the chart as a dashed-red "resistance — wait for the break" line.
+  A far-overhead line does NOT gate; a clear path is unchanged. Engine: `app.compute_now` (50-reclaim +
+  breakout/pullback confirms), `app._descending_trend_gate`; detector `scanner._descending_resistance` →
+  `res_trendline`. Needs a server restart + rescan to see it live.
+  **The gate is CONFIRMATION-ONLY — it never lowers the grade or hides the setup (firewalled; I still SEE the
+  setup).** Because of that, the detector is deliberately tuned to ALSO catch YOUNGER lines: a recent PEAK +
+  ≥2 lower highs over a short (≥3-bar) leg — like the literal DOCN line off the ~$184 June-4 peak (lower highs
+  ~$180.5, $174.7 → today's line ~$172.75). v1 returned None for that (it demanded a strict ≥3-touch / ≥15-bar
+  multi-week channel); v2 relaxes `TREND_MIN_TOUCHES`→2, `TREND_MIN_LEG`→3, `TREND_MIN_DROP_ADR`→0.5 and adds a
+  lower-highs-staircase noise guard (`TREND_MIN_LOWER_HIGHS`=2). A young line firing a brief WAIT is **low-harm**
+  (worst case a false wait — never a loss, never a grade hit), so the trade-off favors seeing it. **The real
+  noise guard is PROXIMITY** (the gate only fires when the line is within 0.6× ADR above the entry), not the
+  line's age — of 924 US names 58% carry a drawn line but only 6.6% actually gate, and only ever to ADD a wait.
+  The strict multi-week channel (MRAM $51.5→$25.1) still qualifies too.
+- **Stacked overhead walls = clear the HIGHEST, not the nearest (2026-06-10, DOCN AVWAP gap).** The AVWAP
+  `CLEAR_9EMA` gate only knew about the 9/21 EMA — so DOCN's confirm fired at the 9-EMA ($168) while a
+  descending line ($172.75) AND yesterday's high ($174.74) sat above it, still within the band. The buy landed
+  UNDER resistance. Rule: when more than one overhead wall (the 9/21-EMA wall, a horizontal prior-day/recent
+  high, and/or the descending trendline) sits within `WALL_NEAR_ADR` (0.6× ADR) of where the buy lands, require
+  a completed 5-min CLOSE above the **HIGHEST** of them — you're not "above resistance" until all of it is
+  cleared. A wall FARTHER than the band does NOT gate (no chasing a far line). Unified into `app._highest_overhead_wall`
+  and wired into the AVWAP `CLEAR_9EMA` branch (was missing the trendline/wall) AND the 50-reclaim branch (was
+  "nearest wall"). For AVWAP setups the support label now says "AVWAP", not "50 EMA". After-hours ARMED cards
+  surface the line requirement too. **Honest note:** with DOCN's real 8.2% ADR the highest in-band wall is
+  $174.74 (yesterday's high), ABOVE the $172.75 trendline — the gate correctly lands there. Confirmation-only,
+  firewalled from grades (test_grader 7/7; all tests green). Needs a server restart + rescan to see it live.
 - **A "Deep Pullback" must be a real LEADER, not just a big-gainer that fell apart.** Absolute gain
   (p6m/p3m ≥30) is NOT leadership — choppy laggards (NXT RS59, MRNA RS9, SATS RS41) also "ran 30%" then
   knifed below their EMAs, and the old gate handed them the deep-pullback +4 and the patient A-grade path.
@@ -141,3 +188,64 @@ Example:
   correlated bet ×7 at **37% > the 30% overnight cap** — that over-concentration is what made it a rollercoaster;
   size to the cap so a choppy tape doesn't whip the whole book. (3) When two app surfaces disagree (risk-off
   alert vs green-light gameplan), trust neither blindly — surface the bug. (from the 2026-06-08 flatten)
+- **A Deep Pullback only counts if the 50 EMA is RISING and the pull was ORDERLY — a leader that
+  COLLAPSED into a rolling-over 50 is a falling knife, not a pullback.** LUNR (2026-06-09): a real
+  +165%/6mo leader (passed the strong-leader + RS gate) then crashed **~57% from the $46 peak in a
+  near-vertical waterfall**, slicing through a now-declining 9/21/50, lower highs, descending trendline.
+  The engine still flagged `buyable_now=True` at the 50 EMA ($29.89) because `near_50` + `strong_leader`
+  were true and the **pull-% cap was deliberately removed** for the AXTI case (see the AXTI lesson above) —
+  so a 57% crash *to* the 50 looks identical to a 50% controlled pull *that holds* the 50. The confirmation
+  fired the buy and it stopped instantly (−1R, −$37). Two faults: (1) ENGINE — proximity-to-the-50 is not
+  enough. The 50 EMA **still slopes UP here** (it lags — +1.7 over 8 days while price crashed through it),
+  so a "rising-50" gate would miss this. The real disqualifier is **confirmed downtrend structure: ≥3
+  successive lower highs (43.4→41.1→38.8→34.7→32.7→30.8) with price under DECLINING 9/21 EMAs** — a knife
+  slicing the 50 on lower highs, not a bounce holding it. Deep Pullback should require a **respected bounce
+  AT the 50** (green reclaim bar), which the deep-pullback path skips today because it uses a day-high
+  trigger, not a limit (so the `_respected_bounce` knife-catch gate never runs). (2) ME — stop $29.74 was
+  only **2.4% vs the 14.4% ADR** = noise-tight, a guaranteed shakeout even if the setup were valid; on a
+  14-ADR name give it real room or cut size. (from LUNR, 2026-06-09)
+- **Never confirm a breakout UNDER a wall — clear the prior-day high / horizontal resistance, don't buy
+  the reclaim beneath it.** AXTI (2026-06-09): the live confirmation (50-reclaim + spin) fired while the
+  prior-day high **$96.56** sat just overhead; price poked $96.67, failed the level, and reversed to $91.82
+  — a textbook false breakout, bought into resistance. This is the SAME family as IREN (fired under an
+  overhead 9/21 EMA) and CRDO/AAOI (fired far above the zone), but the IREN `CLEAR_9EMA` gate is **AVWAP-only**
+  and never extended to a horizontal prior-day high / swing-high resistance. FIX (engine, quant): when a known
+  resistance (prior-day high, recent swing high, round level) sits within ~½–1× ADR above the live trigger,
+  the confirmation must require a completed close **above** that level — not a reclaim/spin underneath it.
+  (from AXTI, 2026-06-09)
+- **Don't take ANY buy confirmation while the market is being REJECTED / rolling over intraday — nothing
+  is confirmed in a falling tape.** 2026-06-09 (the tilt session): the indices rallied ~+1.5%, hit the
+  9-EMA, got rejected and rolled over — and every individual buy taken into that tape failed identically:
+  **AXTI −1R** (a re-entry of a knife we diagnosed that same morning — revenge), **INTC −1R** (low-ADR
+  mega-cap, off-strategy), **TER −1R** (entered while QQQ/IWM/VOO were all red), and **AMKR** got a BUY
+  confirm (a 58–79 two-month CHOP, −4% on the month, fired into the down tape and ~3.5% above its own
+  planned $71.96 entry after a +7% spike). A single-stock breakout/AVWAP-reclaim has **no edge when the
+  index it lives in is reversing down** — the market drags it back. RULES: (1) Before any entry, glance at
+  SPX/QQQ/IWM — if ≥2 are red and rolling over off a rejection, **stand down**; cash is the position. (2)
+  **Never re-enter a name that just stopped you** (AXTI twice). (3) Chop and low-ADR mega-caps (INTC/TER/
+  AMKR) are not this strategy — trade clean RS leaders only. The ONE good call all day: **raising the FLNC
+  stop to bank +$71.40** — protecting green in a hostile tape is correct, never apologize for it. Sizing
+  was disciplined (each loss ≤0.54% → net −$108 ≈ −0.5% of the account); the leak was ENTERING, not size.
+  ENGINE FIX (proposed): the live confirmation must gate on the **intraday index tape** — suppress / drop
+  to watch-only any new BUY when ≥2 indices are red and rolling over off a session rejection (distinct from
+  the EOD defend mode). (from the 2026-06-09 tilt session: AXTI/INTC/TER/AMKR/FLNC)
+- **FIXED (engine, 2026-06-09 — three pullback/confirmation fixes, restart+rescan to go live, Burry to verify).**
+  (1) **NBIS — "Pullback to 21-EMA" classification added.** The SMA-based `uptrend` gate (`above≥2` off the
+  10/20/50 *SMA*) dropped a clean dip to the rising **21-EMA** (NBIS@218 read above=1 → fell through to a
+  prior-high Breakout, entry $264 = a chase). New middle-ground setup between shallow Pullback and Deep
+  Pullback: a rising EMA fan (9>21>50, all rising), price ≥1× ADR above a rising 50, holding within ~1× ADR of
+  the 9/21, higher lows intact. Entry anchors to the 9/21 line (NBIS$218→entry$217.74, eq 90), trails the 9
+  (NOT a 50-EMA long-hold). Branch placed AFTER deep/consol/pullback/avwap in the elif chain → only catches
+  what was Breakout/EP; 9 of 1148 cache names reclassified, ALL Breakout→Pullback-to-21 (ADI/COHR/MX/SIMO/…),
+  ZERO existing pullback names touched. (2) **LUNR knife-catch.** The deep-pullback 50-reclaim (entry_type
+  "stop") skipped the `_respected_bounce` gate, so a leader waterfalling INTO the 50 fired buyable. NEW: a
+  deep pullback in a CONFIRMED DOWNTREND (≥3 successive lower daily highs AND price below DECLINING 9 *and* 21
+  EMAs) stays `worth_waiting` but is NOT `buyable_now` until it RESPECTS the 50 (the same bounce proxy). No
+  pull-% cap (keeps AXTI-style legit deep pulls), no 50-slope gate (it lags). LUNR/AXTI/CNQ/OXY/PLUG/WFRD
+  flipped to not-buyable (knives); RIO stayed buyable (it bounced the 50), LUMN/NXT/RNG stayed (21 not
+  declining = holding). (3) **AXTI wall gate.** Generalized the AVWAP-only `CLEAR_9EMA` to HORIZONTAL
+  resistance: when a prior-day high / recent high sits within `WALL_NEAR_ADR` (0.6× ADR) above the 50-reclaim
+  entry, the confirmation arms (`CLEAR_WALL_ARMED`) and fires only on a completed 5-min CLOSE above the wall
+  (tag `CLEAR_WALL`), never the reclaim beneath it. No overhead wall → normal RECLAIM_50 unchanged. New rubric
+  constants: `PB21_MIN_EXT50_ADR/PB21_NEAR_ADR/PB21_PREF`, `KNIFE_LOWER_HIGHS`, `WALL_NEAR_ADR`. Grader 7/7
+  byte-for-byte (goldens intact — none are deep/pb21).

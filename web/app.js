@@ -426,6 +426,14 @@ function dataCenter() {
         action = 'FLATTEN'; tone = 'warn';
         reason = `🛡️ defend mode — sell into the close; don't hold this overnight (extended + weak tape tends to give the gains back). Your call.`;
       }
+      // ⚠️ TAPE GUARD — intraday: market rejected & rolling over → move ALL open positions to break-even
+      // (stop → entry). ALERT-ONLY. Yields to a stronger sell (EXIT / defend FLATTEN); skips a position
+      // already at/above break-even (stop >= entry). Mirrors the server's RAISE_BE override in compute_now.
+      const tg = this.now && this.now.tape_guard;
+      if (tg && tg.on && action !== 'EXIT' && action !== 'FLATTEN' && e != null && (stop == null || stop < e)) {
+        action = 'RAISE_BE'; tone = 'warn';
+        reason = `⚠️ tape guard — market rejected & rolling over${tg.indices&&tg.indices.length?` (${tg.indices.join(', ')})`:''}. Move the stop → break-even ($${e}); don't give an open gain back into a falling tape. Your call.`;
+      }
       return { action, tone, reason, r_mult: r != null ? +r.toFixed(2) : null, ext9_adr: ext9_adr != null ? +ext9_adr.toFixed(1) : null };
     },
     mergeLive() {
@@ -840,6 +848,25 @@ function dataCenter() {
     confirmMenuText(a) {
       const m = (a && a.confirm_menu) || [];
       return m.map(t => this._CONFIRM_LABEL[t] || t).join(' or ');
+    },
+    // When a descending-resistance / overhead-wall gate is active (break_level set), return a single
+    // human label so the "confirms on" row shows ONE clear requirement instead of the redundant menu.
+    // Returns null when there's no overhead wall — callers fall back to the generic confirm_menu loop.
+    wallConfirmText(rec) {
+      if (!rec || rec.break_level == null) return null;
+      const m = rec.confirm_menu || [];
+      const lvl = '$' + rec.break_level;
+      // A descending resistance line is THE drawn/watched resistance → name it the downtrend line (matches the
+      // chart's "resistance — wait for the break"). Takes priority over the generic menu. (user 2026-06-10)
+      if (rec.res_trendline) return 'close above ' + lvl + ' — clear the downtrend line';
+      // YH_RECLAIM in the menu → the wall IS the prior-day high (most common: AVWAP pullback setups)
+      if (m.includes('YH_RECLAIM')) return 'close above ' + lvl + ' — clear the prior-day high';
+      // Only ORH/HOD in menu → wall is overhead resistance (EMA cluster or consolidation ceiling)
+      if (m.includes('ORH_BREAK') || m.includes('HOD_BREAK')) return 'close above ' + lvl + ' — clear the overhead resistance';
+      // RECLAIM_50 with a break_level (unusual but possible)
+      if (m.includes('RECLAIM_50')) return 'close above ' + lvl + ' — reclaim the 50 EMA';
+      // Fallback — wall exists but no known menu tag
+      return 'close above ' + lvl;
     },
     wl(r) { return this.wlData[r.ticker] || {}; },
     get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected' && s.status !== 'taken').slice(0, 8); },
@@ -1874,22 +1901,15 @@ function dataCenter() {
           if (eg >= 6 && eI > 0) chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(avwap(eI));
         }
       }
-      // PATTERN overlay — the ONE relevant flag/pennant/wedge for this name (green=bullish, red=bearish),
-      // with a faint pole line. Falls back to the regression channel when there's no clean pattern. Same
-      // toggle button. We deliberately draw only the single most-relevant structure, not every line.
-      this.chartModal._patternLabel = null;
-      if (this.chartModal.showChannel && data.pattern) {
-        const p = data.pattern, col = p.bull ? '#22c55e' : '#ef4444';
-        const pLine = (arr, w, style) => chart.addLineSeries({ color: col, lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(arr);
-        pLine(p.upper, 2, 0);
-        pLine(p.lower, 2, 0);
-        if (p.pole) chart.addLineSeries({ color: col, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(p.pole);
-        this.chartModal._patternLabel = p.label;
-      } else if (this.chartModal.showChannel && data.channel) {
-        const chLine = (arr, w, style) => chart.addLineSeries({ color: '#3b82f6', lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(arr);
-        chLine(data.channel.upper, 2, 0);
-        chLine(data.channel.lower, 2, 0);
-        chLine(data.channel.mid, 1, 2);   // dashed midline
+      // (Bull-flag / pennant / wedge + regression-channel pattern overlay REMOVED 2026-06-09 — the trader
+      // found it noisy and unactionable for this strategy. The descending-resistance "wall" line below stays.)
+      // DESCENDING-trendline resistance (the DOCN "clear the wall" line) — a dashed RED line from the peak to
+      // today so the trader SEES the line the buy is waiting to clear. lastValueVisible shows the today level
+      // as a price label on the axis. (Mobile: thin 2px line, no crosshair marker.)
+      if (data.res_trendline && data.res_trendline.p0_time) {
+        const rt = data.res_trendline;
+        chart.addLineSeries({ color: '#ef4444', lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, title: 'resistance — wait for the break' })
+          .setData([{ time: rt.p0_time, value: rt.p0_val }, { time: rt.p1_time, value: rt.p1_val }]);
       }
       // buy-zone band (green) + stop (red) for the SELECTED setup only (toggle switches setups).
       // The pullback option may be a LIVE rotation (reclaim the prior-day high, stop = day low) —

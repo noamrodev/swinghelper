@@ -100,6 +100,20 @@
     <b>⚠️ Not financial advice — experimental, work-in-progress.</b> <span id="discTxt"></span>
   </div>
 
+  <!-- ⚠️ TAPE GUARD (local owner only — absent in the hosted feed, so this stays hidden for friends) -->
+  <div id="tapeGuard" style="margin-top:12px; display:none; background:rgba(255,181,61,.12); border:1px solid rgba(255,181,61,.4); border-left:3px solid var(--warn); border-radius:12px; padding:11px 13px">
+    <div style="font-weight:800; color:#ffd591; font-size:14px; display:flex; align-items:center; gap:8px">⚠️ TAPE GUARD <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; background:rgba(255,181,61,.2); color:#ffe1b0">market rejected & rolling over</span></div>
+    <div id="tgReason" style="font-size:13px; color:#e6ecf7; margin-top:4px; line-height:1.5"></div>
+    <div style="font-size:11px; color:#9aa8c2; margin-top:4px">Stand down on new buys (watch-only, no chase), and move every open stop to break-even. Alert-only — you place every order.</div>
+  </div>
+
+  <!-- ✅ TAPE TURN (local owner only — absent in the hosted feed, so this stays hidden for friends) -->
+  <div id="tapeTurn" style="margin-top:12px; display:none; background:rgba(34,224,161,.12); border:1px solid rgba(34,224,161,.4); border-left:3px solid #22e0a1; border-radius:12px; padding:11px 13px">
+    <div style="font-weight:800; color:#7df0c2; font-size:14px; display:flex; align-items:center; gap:8px"><span id="ttIcon">✅</span> TAPE TURN <span id="ttTag" style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; background:rgba(34,224,161,.2); color:#aef5d6">turned back up & held</span></div>
+    <div id="ttReason" style="font-size:13px; color:#e6ecf7; margin-top:4px; line-height:1.5"></div>
+    <div id="ttSub" style="font-size:11px; color:#9aa8c2; margin-top:4px"></div>
+  </div>
+
   <!-- stance -->
   <div class="card" id="stanceCard" style="margin-top:12px; display:none">
     <div class="row" style="flex-wrap:nowrap; align-items:flex-start">
@@ -248,6 +262,28 @@ const AP = {
     document.getElementById('liveBadge').className = this.marketOpen() ? 'up' : 'dim';
     // disclaimer
     if (d.disclaimer){ document.getElementById('disc').style.display='block'; document.getElementById('discTxt').textContent = d.disclaimer; }
+    // ⚠️ tape guard (local owner only — the key is absent for hosted friends, so this never shows for them)
+    const tgEl = document.getElementById('tapeGuard');
+    if (d.tape_guard && d.tape_guard.on && !(d.tape_turn && d.tape_turn.phase==='confirmed')){
+      tgEl.style.display='block';
+      const forming = d.tape_turn && d.tape_turn.phase==='forming';
+      document.getElementById('tgReason').textContent = (d.tape_guard.reason||'')
+        + (forming?'  ⚡ Tape Turn forming — indices reclaiming off the low, not held ~15 min yet; still stand down until it confirms.':'');
+    }
+    else { tgEl.style.display='none'; }
+    // ✅ tape turn (local owner only — the key is absent for hosted friends, so this never shows for them).
+    // FULL banner only when CONFIRMED (the all-clear); a forming turn shows as the sub-line in the guard above.
+    const ttEl = document.getElementById('tapeTurn');
+    if (d.tape_turn && d.tape_turn.phase==='confirmed'){
+      ttEl.style.display='block';
+      const conf = d.tape_turn.phase==='confirmed';
+      document.getElementById('ttIcon').textContent = conf?'✅':'⚡';
+      document.getElementById('ttTag').textContent = conf?'turned back up & held':'forming — not confirmed yet';
+      document.getElementById('ttReason').textContent = d.tape_turn.reason||'';
+      document.getElementById('ttSub').textContent = conf
+        ? 'Stand-down lifted — setups can confirm again. Break-even stops stay. Alert-only — you place every order.'
+        : 'Watch only — the reclaim hasn\'t held ~15 min. New buys stay watch-only until it holds. Alert-only.';
+    } else { ttEl.style.display='none'; }
     // stance
     const sc=document.getElementById('stanceCard'); sc.style.display='block';
     const col = ({green:'#22e0a1',yellow:'#ffb53d',red:'#ff5a72'})[d.light]||'#7889b4';
