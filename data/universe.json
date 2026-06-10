@@ -801,7 +801,7 @@
     "IONS",
     "CSL"
   ],
-  "universe_total": 5096,
+  "universe_total": 5097,
   "passed_filter": 2157,
   "kept": 800,
   "exchanges": "all",
@@ -811,5 +811,5 @@
     "min_mktcap_m": 300,
     "min_dollar_vol_m": 10
   },
-  "built_at": "2026-06-10 09:17"
+  "built_at": "2026-06-10 15:07"
 }

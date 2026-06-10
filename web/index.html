@@ -110,9 +110,24 @@
             </span>
             <span x-text="liveLabel"></span>
           </button>
-          <div class="text-xs text-slate-500 hidden md:block text-right" x-show="suggestions.scanned_at">
-            Last scan: <span x-text="suggestions.scanned_at"></span>
-          </div>
+          <!-- LOCAL: show raw scanned_at. HOSTED: show LIVE stamp when fresh, nothing when waiting. -->
+          <template x-if="!hosted">
+            <div class="text-xs text-slate-500 hidden md:block text-right" x-show="suggestions.scanned_at">
+              Last scan: <span x-text="suggestions.scanned_at"></span>
+            </div>
+          </template>
+          <template x-if="hosted && hostedScan.state==='live' && hostedLiveStamp">
+            <div class="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border" style="color:#22e0a1;border-color:rgba(34,224,161,.5);background:rgba(34,224,161,.08)">
+              <span class="relative inline-flex rounded-full h-2 w-2" style="background:#22e0a1"></span>
+              <span x-text="hostedLiveStamp"></span>
+            </div>
+          </template>
+          <template x-if="hosted && hostedScan.state==='waiting'">
+            <div class="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border" style="color:#ffb53d;border-color:rgba(255,181,61,.4);background:rgba(255,181,61,.08)">
+              <span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>
+              <span>scanning…</span>
+            </div>
+          </template>
         </div>
       </header>
       <div class="p-4 sm:p-7 overflow-x-hidden">
@@ -491,7 +506,16 @@
               <span>⚡ Live entries
                 <span class="text-xs font-normal text-slate-500">— the best A/A+ setups; I beep only when one CONFIRMS its trigger</span>
               </span>
-              <span class="text-[11px]" :class="marketOpen?'text-up':'text-slate-500'" x-text="marketOpen?'● watching live':'market closed'"></span>
+              <!-- LOCAL: always show watching-live / market-closed. HOSTED: only show green dot once data is genuinely fresh. -->
+              <template x-if="!hosted">
+                <span class="text-[11px]" :class="marketOpen?'text-up':'text-slate-500'" x-text="marketOpen?'● watching live':'market closed'"></span>
+              </template>
+              <template x-if="hosted && hostedScan.state==='live' && hostedLiveStamp">
+                <span class="text-[11px] text-up" x-text="'● '+hostedLiveStamp"></span>
+              </template>
+              <template x-if="hosted && hostedScan.state==='waiting'">
+                <span class="text-[11px] text-warn">scanning…</span>
+              </template>
             </div>
             <template x-if="now">
               <div class="space-y-3">
@@ -811,10 +835,51 @@
 
         <!-- ===== SUGGESTIONS ===== -->
         <section x-show="view==='suggestions'" x-transition.opacity.duration.250ms class="space-y-5">
-          <div x-show="suggestions.stale" class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2" style="background:rgba(255,181,61,.14);color:#ffd591;border:1px solid rgba(255,181,61,.45)">
+
+          <!-- ── HOSTED WAIT PANEL (stale gate) ─────────────────────────────────── -->
+          <!-- Shown only on the hosted build when data is stale. Blocks ALL setup rows. -->
+          <template x-if="hosted && hostedScan.state==='waiting'">
+            <div class="card p-6 space-y-5 text-center anim-in">
+              <!-- Stalled: scan failed / timed out -->
+              <template x-if="hostedScan._stalled">
+                <div class="space-y-4">
+                  <div class="text-2xl">⚠️</div>
+                  <div class="text-base font-bold" style="color:#ffd591">Scan timed out</div>
+                  <div class="text-sm text-slate-400">The scan is taking longer than expected. Tap to retry.</div>
+                  <button class="btn w-full sm:w-auto" @click="hostedRetry()">↺ Retry scan</button>
+                </div>
+              </template>
+              <!-- Normal: scanning in progress -->
+              <template x-if="!hostedScan._stalled">
+                <div class="space-y-4">
+                  <div class="flex justify-center">
+                    <span class="spinner" style="width:32px;height:32px;border-width:3px"></span>
+                  </div>
+                  <div class="font-bold text-slate-200 text-base leading-snug">Getting today's live setups</div>
+                  <div class="text-sm text-slate-400 leading-relaxed max-w-sm mx-auto">Scanning the full market live. This can take a few minutes — keep this tab open.</div>
+                  <!-- progress bar -->
+                  <div class="w-full max-w-xs mx-auto h-2.5 rounded-full overflow-hidden" style="background:rgba(255,255,255,.07)">
+                    <div class="h-full progress-fill rounded-full transition-all"
+                         :style="'width:'+(hostedScan.total ? Math.round(hostedScan.done/hostedScan.total*100) : 0)+'%'"></div>
+                  </div>
+                  <!-- count + current ticker -->
+                  <div class="text-xs text-slate-500 tabular-nums">
+                    <span x-show="hostedScan.total" x-text="hostedScan.done+' / '+hostedScan.total+' stocks'"></span>
+                    <span x-show="!hostedScan.total">Starting scan…</span>
+                    <span x-show="hostedScan.current" class="text-slate-400 ml-2" x-text="'→ '+hostedScan.current"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- ── LOCAL stale amber warning (unchanged) ──────────────────────────── -->
+          <div x-show="!hosted && suggestions.stale" class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2" style="background:rgba(255,181,61,.14);color:#ffd591;border:1px solid rgba(255,181,61,.45)">
             ⚠️ These grades are from a prior session<span x-show="suggestions.scanned_at" class="font-normal text-amber-200/70">&nbsp;(scanned <span x-text="suggestions.scanned_at"></span>)</span> — the market has traded since. Run a fresh scan before acting on them.
           </div>
-          <div class="flex flex-wrap items-center gap-3">
+
+          <!-- ── Scan toolbar: LOCAL only (hosted friends don't need to manually run scans) ── -->
+          <div class="flex flex-wrap items-center gap-3" x-show="!hosted">
             <select x-model="scanScreener" class="input w-full sm:w-52">
               <template x-for="s in screeners" :key="s.id"><option :value="s.id" x-text="s.name"></option></template>
             </select>
@@ -831,6 +896,25 @@
               ⟳ Auto-rescan <span x-text="autoScan?'on':'off'"></span>
             </button>
           </div>
+
+          <!-- ── Hosted live header: freshness stamp + manual Re-scan ─────────── -->
+          <template x-if="hosted && hostedScan.state==='live'">
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center gap-2 text-sm font-bold" style="color:#22e0a1">
+                <span class="relative flex h-2.5 w-2.5 shrink-0">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style="background:#22e0a1"></span>
+                  <span class="relative inline-flex rounded-full h-2.5 w-2.5" style="background:#22e0a1"></span>
+                </span>
+                <span x-text="hostedLiveStamp || 'LIVE'"></span>
+              </div>
+              <button class="btn-sm flex items-center gap-1.5" @click="hostedRescan()" title="Run a fresh full scan now to update all setups">
+                ↺ Re-scan
+              </button>
+            </div>
+          </template>
+
+          <!-- ===== FILTER BAR + CARDS — hidden on hosted until scan is live ===== -->
+          <div x-show="!hosted || hostedScan.state==='live'">
 
           <!-- ===== FILTER BAR (grouped, collapsible, scalable) ===== -->
           <div class="space-y-2">
@@ -981,13 +1065,13 @@
                         <div class="st-cond" x-show="setupState(s,e).cls!=='grn'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
                         <!-- Lexicon Phase-2 confirmation menu — only on an armed, not-yet-buyable setup -->
                         <!-- When an overhead wall gates the setup, show a single "close above $X" chip instead of the redundant generic menu -->
-                        <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && (wallConfirmText(confRec(s)) || confirmMenuText(confRec(s)))">
+                        <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && (wallConfirmText(entryConfirmRec(s,e)) || confirmMenuText(entryConfirmRec(s,e)))">
                           <span class="lab">confirms on</span>
-                          <template x-if="wallConfirmText(confRec(s))">
-                            <span class="trg" x-text="wallConfirmText(confRec(s))"></span>
+                          <template x-if="wallConfirmText(entryConfirmRec(s,e))">
+                            <span class="trg" x-text="wallConfirmText(entryConfirmRec(s,e))"></span>
                           </template>
-                          <template x-if="!wallConfirmText(confRec(s))">
-                            <template x-for="t in ((confRec(s)&&confRec(s).confirm_menu)||[])" :key="t">
+                          <template x-if="!wallConfirmText(entryConfirmRec(s,e))">
+                            <template x-for="t in ((entryConfirmRec(s,e)&&entryConfirmRec(s,e).confirm_menu)||[])" :key="t">
                               <span class="trg" x-text="(_CONFIRM_LABEL[t]||t)"></span>
                             </template>
                           </template>
@@ -1029,6 +1113,8 @@
             Showing the top <b class="text-slate-300">120</b> of <b class="text-slate-300" x-text="filteredSuggestions.length"></b> — <button class="text-accent hover:underline font-semibold" @click="showAllSug=true">show all</button> (or refine the filters)
           </div>
           <div x-show="suggestions.items && suggestions.items.length===0" class="text-sm text-slate-500">No suggestions yet — run a scan.</div>
+
+          </div><!-- /hosted gate: filter bar + cards -->
         </section>
 
         <!-- ===== SCREENERS ===== -->

@@ -122,6 +122,13 @@ TREND_MIN_LEG  = 3         # the end-anchor must be at least this many bars afte
 TREND_MIN_DROP_ADR = 0.5   # the line must have DROPPED at least this many ADR peak->today (relaxed 3.0->0.5 so
                            # a young line off a recent peak qualifies; DOCN dropped ~0.85 ADR in 3 bars). Still
                            # rejects a near-flat mean-revert drift (which is the horizontal wall's job anyway).
+TREND_ENDLOWER_CAP_PCT = 3.0  # the end-anchor must sit genuinely BELOW the peak by min(0.5×ADR, this % of price)
+                           # (user 2026-06-10, the BE third-refinement). The "lower than the peak" margin is
+                           # ADR-scaled (0.5×ADR), but on an EXPLOSIVE name (BE ADR ~8.5%) 0.5×ADR (~$11) over-
+                           # penalizes a real lower-high that steps down ~$9 — so the trader's true June2->June4
+                           # line was rejected. An ABSOLUTE cap (here ~3% of price ≈ $7.6 on BE) admits the real
+                           # step on explosive names while leaving every normal-ADR name at 0.5×ADR (for ADR<6%,
+                           # 0.5×ADR < 3% of price, so the cap never binds). Absolute-cap-over-ADR-scaling rule.
 
 # A "wait for the pullback" limit is STALE once price has run this many ADR above its buy-zone top —
 # a real pullback would have to retrace more than this just to reach the zone, so the limit won't

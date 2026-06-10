@@ -47,6 +47,21 @@ lessons, newest insights merged in (not an endless list of duplicates).
   noise guard is PROXIMITY** (the gate only fires when the line is within 0.6× ADR above the entry), not the
   line's age — of 924 US names 58% carry a drawn line but only 6.6% actually gate, and only ever to ADD a wait.
   The strict multi-week channel (MRAM $51.5→$25.1) still qualifies too.
+- **Anchor the descending line at the START of the CURRENT down-leg, not the stale global max (2026-06-10, BE,
+  3rd refinement).** The detector defaulted its anchor to the GLOBAL MAX of the window and, when the current
+  down-leg's line was too short (< `TREND_MIN_LEG`=3 bars), fell back to a stale line off that old top. On BE
+  it drew off the May-22 $322.83 all-time high → today $293.30, when the trader's real resistance is the
+  **June-2 $305.11 line → today $286.27** (4 touches, slope −4.71) — the start of the current unbroken
+  lower-highs sequence. Three composing fixes: (1) add every fresh **current-down-leg dominant peak** (a
+  right-pivot local high strictly below the running max) as a candidate anchor; (2) admit a **short fresh leg
+  down to 2 bars** when it still carries the full staircase (touches + lower-highs + proximity — leg length
+  was never the real noise guard; a 1-bar/bare-2-point line is still rejected); (3) **anchor-recency explicit**
+  in selection (most-recent anchor wins within the proximate-ceiling eps band). Plus `TREND_ENDLOWER_CAP_PCT`
+  (3% of price): the "end-anchor below the peak" margin is `min(0.5×ADR, 3%·price)` so an **explosive name**
+  (high ADR) doesn't over-penalize a real lower-high step — **absolute cap over pure ADR-scaling** (the AXTI/
+  TSEM/BE lesson). Confirmation-only, grades byte-for-byte (only `res_trendline` moved; TSLA in the golden set
+  shifted to a nearer, more-recent down-leg line — same intended behavior). Needs a server restart + rescan to
+  see it live. Steeper June2→June5/June8 lines are correctly rejected (the real June-4 high pokes above).
 - **Stacked overhead walls = clear the HIGHEST, not the nearest (2026-06-10, DOCN AVWAP gap).** The AVWAP
   `CLEAR_9EMA` gate only knew about the 9/21 EMA — so DOCN's confirm fired at the 9-EMA ($168) while a
   descending line ($172.75) AND yesterday's high ($174.74) sat above it, still within the band. The buy landed

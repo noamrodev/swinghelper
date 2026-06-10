@@ -110,6 +110,192 @@ def _normalize_unit_jumps(bars):
     return bars
 
 
+def _reconstruct_bar_from_meta(meta, day, q_open, bars):
+    """Build a single FINALIZED daily bar dict for `day` from Yahoo's `meta` block, or None if meta
+    lacks the close/high/low it needs (caller then leaves the series as-is). Shared by BOTH backfill
+    paths — the "latest ts present but close=null" path and the "latest closed session OMITTED from
+    the arrays" path — so the field-source, clamp and volume rules stay identical in one place.
+
+    `q_open` is the quote-array open for THIS day when available (the null-close path passes opens[-1],
+    which is usually present & correct even when close is null); the OMITTED path has no array slot for
+    it and passes None. `bars` is the already-built finalized series (for the prior-close open fallback).
+    The returned bar carries a private `_provisional` flag so the cache layer can give a meta-rebuilt bar
+    a short TTL and let it reconverge to Yahoo's finalized aggregate; the key is namespaced + ignored by
+    every downstream consumer (analyze/charts read only time/open/high/low/close/volume).
+    """
+    m_close = meta.get("regularMarketPrice")
+    m_high = meta.get("regularMarketDayHigh")
+    m_low = meta.get("regularMarketDayLow")
+    if m_close is None or m_high is None or m_low is None:
+        return None
+    m_vol = meta.get("regularMarketVolume")
+    if m_vol is None:
+        m_vol = meta.get("regularMarketDayVolume")
+    # OPEN source order: this day's quote-array open (null-close path) → meta open → prior finalized
+    # bar's close → the close itself (last resort so high/low/close are never dropped over a null open).
+    m_open = meta.get("regularMarketOpen")
+    if q_open is not None:
+        o_val = q_open
+    elif m_open is not None:
+        o_val = m_open
+    elif bars:
+        o_val = bars[-1]["close"]
+    else:
+        o_val = m_close
+    lo, hi = round(m_low, 2), round(m_high, 2)
+    o_val = max(lo, min(hi, round(o_val, 2)))            # clamp the open into [low, high]
+    return {
+        "time": day,
+        "open": o_val, "high": hi, "low": lo,
+        "close": round(m_close, 2),
+        "volume": int(m_vol) if m_vol else 0,
+        "_provisional": True,
+    }
+
+
+def _meta_latest_closed_day(meta):
+    """The date (YYYY-MM-DD, exchange/UTC-stamp basis) of the LATEST session that meta says has CLOSED,
+    or None. Used by the OMITTED-bar path: when Yahoo drops the finalized session from the timestamp/
+    quote arrays entirely but still carries it in meta, we read the session date from regularMarketTime
+    (the close-print epoch) and confirm it's closed via _meta_session_closed. Returns None if we can't
+    prove the session is closed (degrade to status quo — never synthesize a forming/future bar)."""
+    if not isinstance(meta, dict):
+        return None
+    try:
+        rmt = meta.get("regularMarketTime")
+        if rmt is None:
+            return None
+        if not _meta_session_closed(meta, rmt):
+            return None
+        return datetime.fromtimestamp(rmt, tz=timezone.utc).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _meta_session_closed(meta, ts_i):
+    """Is the session whose daily bar is at epoch `ts_i` already CLOSED, per Yahoo's meta block?
+
+    Yahoo's v8 chart response ALWAYS lists the latest completed session as a timestamp whose
+    quote-array `close` is null until Yahoo backfills the daily aggregate (hours/overnight). The
+    real close/high/low/volume already live in `meta` (regularMarketPrice etc.). We may only adopt
+    those as a FINALIZED bar once the session has actually ended — never mid-session (that would
+    inject a live tape price as a settled close: the cardinal no-lookahead sin).
+
+    Closed iff the regular trading period for THAT bar's day has ended. The clean signal is
+    currentTradingPeriod.regular: when a day is closed Yahoo points `regular` at the NEXT session,
+    so regular.start lands on a day STRICTLY LATER than the bar's day. (Mid-session, regular.start
+    == the bar's own day and now < regular.end.) We corroborate with regularMarketTime >= the bar
+    day's own session end where available. Returns False on any missing field (degrade to status quo).
+    """
+    if not isinstance(meta, dict):
+        return False
+    try:
+        bar_day = datetime.fromtimestamp(ts_i, tz=timezone.utc).strftime("%Y-%m-%d")
+        ctp = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+        start = ctp.get("start")
+        end = ctp.get("end")
+        if start is not None:
+            start_day = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%Y-%m-%d")
+            if start_day > bar_day:
+                # `regular` already points at a LATER session ⇒ the bar's day has closed.
+                return True
+            if start_day == bar_day and end is not None:
+                # `regular` is still the bar's own day ⇒ closed only once now >= its end.
+                rmt = meta.get("regularMarketTime")
+                if rmt is not None:
+                    return rmt >= end
+                return False
+        # No trading-period info — fall back to regularMarketTime vs. a derived session end is
+        # not reliable, so refuse to backfill (status quo) rather than risk a live bar.
+        return False
+    except Exception:
+        return False
+
+
+def _parse_chart(obj, now_ts=None):
+    """PURE parser: Yahoo v8 chart JSON (interval=1d) -> list of daily bar dicts (oldest→newest),
+    or None if the series is too short / malformed. No network, no I/O — unit-testable with a fixture.
+
+    Bars are {time, open, high, low, close, volume} with prices round(.,2) and volume int.
+
+    META-BACKFILL (the session-stale fix): Yahoo drops the latest session's `close` (and sometimes
+    other OHLC) from the quote array until it backfills the daily aggregate, so the loop's
+    `if None in (o,h,l,c): continue` silently skips today even though the session has CLOSED and the
+    real numbers sit in `meta` (regularMarketPrice/DayHigh/DayLow/Volume). We reconstruct that one
+    bar from meta — but ONLY when the session is closed and the day isn't already present. On any
+    historical/settled day where the array is already populated this is a pure no-op (dates equal),
+    so grades stay byte-for-byte.
+    """
+    try:
+        res = obj["chart"]["result"][0]
+    except Exception:
+        return None
+    ts = res.get("timestamp")
+    inds = (res.get("indicators") or {}).get("quote") or []
+    if not ts or not inds:
+        return None
+    q = inds[0]
+    meta = res.get("meta") or {}
+    opens, highs, lows, closes = q.get("open"), q.get("high"), q.get("low"), q.get("close")
+    vol = q.get("volume") or [None] * len(ts)
+    if not (opens and highs and lows and closes):
+        return None
+
+    bars = []
+    for i in range(len(ts)):
+        o, h, l, c, v = opens[i], highs[i], lows[i], closes[i], vol[i]
+        if None in (o, h, l, c):
+            continue
+        bars.append({
+            "time": datetime.fromtimestamp(ts[i], tz=timezone.utc).strftime("%Y-%m-%d"),
+            "open": round(o, 2), "high": round(h, 2),
+            "low": round(l, 2), "close": round(c, 2),
+            "volume": int(v) if v else 0,
+        })
+
+    # ── META-BACKFILL of the latest CLOSED session ──────────────────────────────────────────────
+    # Yahoo can leave the latest finalized session out of `bars` in TWO ways, each silently sitting
+    # us a full session behind even though the real OHLCV already sits in `meta`:
+    #
+    #   PATH A — NULLED: the day IS the last timestamp, but its quote-array close is null (Yahoo
+    #     hasn't backfilled the daily aggregate yet), so the loop's `if None in (o,h,l,c): continue`
+    #     skipped it. Reconstruct from meta when that session has CLOSED.
+    #   PATH B — OMITTED: the closed session isn't in the timestamp/quote arrays at all (so bars[-1]
+    #     is the PRIOR day), yet meta's currentTradingPeriod/regularMarketTime describe that newer,
+    #     finalized session. Derive its date from meta and append it.
+    #
+    # BOTH paths share _reconstruct_bar_from_meta (one field-source/clamp/volume rule) and BOTH must:
+    #   • only append a session meta proves is CLOSED (no mid-session/forming bar — no lookahead),
+    #   • only append a date STRICTLY NEWER than bars[-1] (never duplicate or overwrite a real bar),
+    #   • never add a future/still-open session, and degrade to the plain series on partial meta.
+    try:
+        if ts:
+            last_present_day = bars[-1]["time"] if bars else None
+            last_ts = ts[-1]
+            last_day = datetime.fromtimestamp(last_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            nulled_skipped = closes[-1] is None and (last_present_day is None or last_present_day < last_day)
+
+            if nulled_skipped and _meta_session_closed(meta, last_ts):
+                # PATH A: the last array slot is the closed-but-null day. Its quote-array open is
+                # usually present even when close is null, so pass opens[-1] as the open source.
+                new_bar = _reconstruct_bar_from_meta(meta, last_day, opens[-1], bars)
+                if new_bar is not None:
+                    bars.append(new_bar)
+            else:
+                # PATH B: nothing null at the tail (or it was already present) — check whether meta
+                # describes a CLOSED session NEWER than bars[-1] that the arrays omitted entirely.
+                meta_day = _meta_latest_closed_day(meta)
+                if meta_day and (last_present_day is None or meta_day > last_present_day):
+                    # No array slot for this day's open → pass None (helper falls back to meta/prior).
+                    new_bar = _reconstruct_bar_from_meta(meta, meta_day, None, bars)
+                    if new_bar is not None:
+                        bars.append(new_bar)
+    except Exception:
+        pass    # any backfill hiccup ⇒ return the plain finalized series (never raise)
+
+    return bars
+
+
 def _fetch_raw(sym):
     sym = sym.strip().upper()
     for host in ("query1", "query2"):
@@ -119,22 +305,8 @@ def _fetch_raw(sym):
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 d = json.load(r)
-            res = d["chart"]["result"][0]
-            ts = res["timestamp"]
-            q = res["indicators"]["quote"][0]
-            vol = q.get("volume") or [None] * len(ts)
-            bars = []
-            for i in range(len(ts)):
-                o, h, l, c, v = q["open"][i], q["high"][i], q["low"][i], q["close"][i], vol[i]
-                if None in (o, h, l, c):
-                    continue
-                bars.append({
-                    "time": datetime.fromtimestamp(ts[i], tz=timezone.utc).strftime("%Y-%m-%d"),
-                    "open": round(o, 2), "high": round(h, 2),
-                    "low": round(l, 2), "close": round(c, 2),
-                    "volume": int(v) if v else 0,
-                })
-            if len(bars) > 60:
+            bars = _parse_chart(d)
+            if bars and len(bars) > 60:
                 if sym.endswith(".TA"):          # TASE: heal any agorot↔shekel unit step
                     bars = _normalize_unit_jumps(bars)
                 return bars
@@ -154,10 +326,30 @@ _FETCH_STATE = threading.local()
 _BARS_MEM = {}
 _BARS_MEM_MAX = 3000
 
+# A meta-reconstructed (provisional) last bar can carry a laggy regularMarketPrice or be revised by
+# Yahoo later (official close vs last print, volume restatement). We don't want it pinned in the 12h
+# cache, so we cap its EFFECTIVE TTL here: once the cache is older than this, the next get_bars for
+# that ticker refetches and converges to Yahoo's finalized aggregate. A ~1h cap means AT MOST one
+# refetch per ticker per hour — an 800-name post-close scan still serves provisional bars from cache
+# within the hour, it does NOT refetch all 800 on every cache hit.
+_PROVISIONAL_TTL_HOURS = 1.0
+
 
 def did_fetch():
     """True if the most recent get_bars() call on THIS thread hit the network."""
     return getattr(_FETCH_STATE, "did_fetch", False)
+
+
+def _effective_max_age(bars, max_age_hours):
+    """Shorten the caller's TTL to _PROVISIONAL_TTL_HOURS when the cached series' LAST bar was
+    meta-reconstructed (bars[-1]._provisional), so a provisional/revisable bar reconverges to Yahoo's
+    finalized values within ~an hour. Otherwise return the caller's TTL unchanged (status quo)."""
+    try:
+        if bars and bars[-1].get("_provisional"):
+            return min(max_age_hours, _PROVISIONAL_TTL_HOURS)
+    except Exception:
+        pass
+    return max_age_hours
 
 
 def get_bars(sym, max_age_hours=12):
@@ -169,13 +361,15 @@ def get_bars(sym, max_age_hours=12):
         try:
             mtime = f.stat().st_mtime
             age = (time.time() - mtime) / 3600
-            if age < max_age_hours:               # fresh enough to use the disk cache
-                hit = _BARS_MEM.get(sym)
-                if hit and hit[0] == mtime:        # in-memory hit — skip the read + JSON parse
-                    return hit[1]
+            # In-memory hit first: it already holds the parsed bars, so we can read the provisional
+            # flag without a disk read and only serve the hit when it's within the effective TTL.
+            hit = _BARS_MEM.get(sym)
+            if hit and hit[0] == mtime and age < _effective_max_age(hit[1], max_age_hours):
+                return hit[1]
+            if age < max_age_hours:               # within the caller's nominal TTL — read the disk cache
                 obj = json.loads(f.read_text())
                 bars = obj.get("bars")
-                if bars:
+                if bars and age < _effective_max_age(bars, max_age_hours):
                     _BARS_MEM[sym] = (mtime, bars)
                     return bars
         except Exception:
@@ -894,10 +1088,12 @@ def _descending_resistance(h, l, c, adr_pct, lookback=None, _times=None):
          move rolled over from). It must be a genuine local high (a left-pivot — higher than the few bars
          before it) so we don't anchor mid-slope.
       2. For each later daily high that is genuinely BELOW the peak, draw the candidate line peak->that
-         high and KEEP the line under which EVERY intervening high sits (a real ceiling). Among the valid
-         candidates pick the one giving the MOST touches (the best-supported ceiling), tie-broken to the
-         most recent end-anchor. End-anchor must be a confirmed pivot OR the live tail; leg >=
-         `TREND_MIN_LEG` (3) bars.
+         high and KEEP the line under which EVERY intervening high sits (a real ceiling). Among ALL valid
+         candidates (across every anchor) pick the PROXIMATE CEILING — the line whose TODAY value is the
+         LOWEST while still overhead (the nearest descending resistance ABOVE the current price, the wall a
+         break actually has to clear). "Most touches"/most-recent end-anchor is only the SECONDARY tiebreak
+         when two lines have effectively the same today value (within ~0.25× ADR). End-anchor must be a
+         confirmed pivot OR the live tail; leg >= `TREND_MIN_LEG` (3) bars.
       3. The line must slope DOWN by at least `TREND_MIN_DESC_ADR` ADR/bar (a near-flat line is the
          horizontal wall's job, not this gate).
       4. RESPECT: count DISTINCT bars whose HIGH comes within `TREND_TOUCH_TOL_ADR` ADR of the line (>=
@@ -922,66 +1118,151 @@ def _descending_resistance(h, l, c, adr_pct, lookback=None, _times=None):
     tol = rubric.TREND_TOUCH_TOL_ADR * adr_px        # generous: a high within this BELOW the line = a touch
     break_tol = rubric.TREND_BREAK_TOL_ADR * adr_px  # tight: a high more than this ABOVE the line = BROKEN (SEDG fix)
     start = max(2, n - lb)
-    # 1. the peak = highest high in the window; require it to be a genuine local high (a left-pivot)
-    i0 = max(range(start, n), key=lambda i: h[i])
-    if i0 >= n - 2:                                        # peak must be old enough to have a down-leg after it
-        return None
-    if h[i0] < max(h[max(0, i0 - 3):i0] or [0]):          # not higher than the bars just before it = mid-slope
-        return None
-    p0 = h[i0]
     sh_idx = {i for (i, _p) in _swing_highs(h, lookback=lb)}   # confirmed pivots = valid end-anchors
-    # 2. try every later lower high as the end-anchor; keep lines that are a real ceiling (nothing pokes
-    #    decisively above) with a real leg-length + drop + a genuine lower-highs staircase under it; pick
-    #    the best-supported (most touches), most-recent end-anchor as the tiebreak.
-    best = None
-    for i1 in range(i0 + 1, n):
-        if (i1 - i0) < rubric.TREND_MIN_LEG:              # too short = noise, not a line (relaxed to ~3)
+
+    def _right_pivot(i):                                  # a genuine local high looking FORWARD (start of a
+        return h[i] >= max(h[i + 1:i + 4] or [0])         # down-leg) — a top the move rolled over from
+
+    # 1. CANDIDATE ANCHOR PEAKS (generalized 2026-06-10, the BE two-stage-top case). The detector used to
+    #    anchor ONLY at the single highest high in the window; on a TWO-STAGE TOP (a high first peak, then a
+    #    lower SECONDARY peak) every line off the absolute peak gets broken by an intervening bounce, so it
+    #    returned None even when the trader's line — drawn off the secondary, lower peak — is a clean,
+    #    respected descending ceiling (BE: abs peak 2026-05-22 $322.83; the June-2 bounce $305.11 breaks every
+    #    line off it; the trader anchors off the ~$318/$306 late-May cluster). FIX: try a SET of candidate
+    #    anchors and keep the best valid line across all of them. We ONLY ADD anchors — every per-line guard
+    #    below is unchanged, so a line that was valid stays valid and a broken/noisy one stays rejected.
+    #    Candidates: (a) the global max in the window, (b) the confirmed swing-high pivots, (c) the SECONDARY
+    #    peak = the highest right-pivot top in a short window just AFTER the global max (the 2nd stage of a
+    #    two-stage top). Each candidate must independently be a genuine local high (a LEFT-pivot, the old
+    #    test, OR a RIGHT-pivot — a top a down-leg starts from, which a secondary peak is even though a higher
+    #    first-stage bar sits just before it). No lookahead: every bar referenced is <= today.
+    g_max = max(range(start, n), key=lambda i: h[i])
+    cand_anchors = set(sh_idx) | {g_max}
+    sec_hi = min(n - 2, g_max + 8)                        # the 2nd-stage peak forms shortly after the 1st
+    if g_max + 1 <= sec_hi:
+        sec = max(range(g_max + 1, sec_hi + 1), key=lambda i: h[i])
+        if _right_pivot(sec):                             # the secondary peak must be a real top (rolls over)
+            cand_anchors.add(sec)
+    # 1b. CURRENT-DOWN-LEG ANCHORS (user 2026-06-10, the BE third-refinement). The single "secondary peak"
+    #     above only finds the highest top in a SHORT window right after the global max — on BE that is the
+    #     May-26 $318 bar, NOT the June-2 $305 bar that actually STARTS the current down-leg the trader draws
+    #     off. The real fix: the line should anchor at the MOST RECENT DOMINANT PEAK (the start of the current
+    #     unbroken lower-highs sequence), not the stale global max. So we add EVERY right-pivot local high in
+    #     the window that is a genuine DOMINANT top — strictly lower than the running max-high before it (a
+    #     fresh lower peak that a new down-leg rolls over from) AND higher than the few bars right before it
+    #     (a real local high, not mid-slope). Every per-line validity guard below is UNCHANGED, so these extra
+    #     anchors can only ADD an already-valid line (a clean uptrend has no such descending line — the
+    #     staircase/touch/poke guards reject it); they never relax noise control. No lookahead: every bar
+    #     referenced is <= today. Selection (below) then prefers the most-recent anchor within the eps band.
+    run_max = 0.0
+    for i in range(start, n - 2):
+        local_hi = h[i] >= max(h[max(0, i - 2):i] or [0])         # higher than the 1-2 bars right before it
+        if local_hi and _right_pivot(i) and h[i] < run_max - 0.15 * adr_px:
+            cand_anchors.add(i)                                   # a fresh DOMINANT lower peak = a down-leg start
+        run_max = max(run_max, h[i])
+
+    cands = []                                            # every VALID line across all anchors; selected below
+    for i0 in sorted(cand_anchors):
+        if i0 >= n - 2:                                   # peak must be old enough to have a down-leg after it
             continue
-        if i1 not in sh_idx and i1 < n - 3:               # end-anchor must be a CONFIRMED pivot (or the live tail)
+        left_pivot = h[i0] >= max(h[max(0, i0 - 3):i0] or [0])   # higher than the few bars before it
+        if not (left_pivot or _right_pivot(i0)):          # genuine local high (left- OR right-pivot top)
             continue
-        if h[i1] >= p0 - 0.5 * adr_px:                    # end-anchor must be genuinely LOWER than the peak
-            continue
-        slope = (h[i1] - p0) / (i1 - i0)
-        if slope >= -rubric.TREND_MIN_DESC_ADR * adr_px:  # not steep enough downward = a flat wall's job
-            continue
-        intercept = p0 - slope * i0
-        pokes = False
-        touch_idx = []
-        for i in range(i0, n):
-            line_i = slope * i + intercept
-            if h[i] > line_i + break_tol:                 # a high pokes ABOVE (more than a tiny wick) → BROKEN line, reject
-                pokes = True
-                break
-            if abs(h[i] - line_i) <= tol:
-                touch_idx.append(i)
-        if pokes or len(set(touch_idx)) < rubric.TREND_MIN_TOUCHES:
-            continue
-        # NOISE GUARD: a genuine LOWER-HIGHS staircase riding the line — >= TREND_MIN_LOWER_HIGHS bars
-        # AFTER the peak whose high TOUCHES the line AND makes a NEW lower-high (strictly below the running
-        # max-high since the peak by a real step). This is the real "lower highs off a peak" sequence and
-        # rejects "flat top + one stray dip" 2-point artifacts (whose middle highs are flat / far below the
-        # line, so they never both touch and step down). Works for a monotonic descent (DOCN: 180.5, 174.7,
-        # 172.7 each a new lower high on the line) AND a multi-bar channel (MRAM). The peak is not counted.
-        lower_highs, run_max = 0, p0
-        for ti in sorted(set(touch_idx)):
-            if ti <= i0:
+        p0 = h[i0]
+        # 2. try every later lower high as the end-anchor; keep lines that are a real ceiling (nothing pokes
+        #    decisively above) with a real leg-length + drop + a genuine lower-highs staircase under it; pick
+        #    the best-supported (most touches), most-recent end-anchor as the tiebreak.
+        for i1 in range(i0 + 1, n):
+            # LEG-LENGTH (user 2026-06-10, the BE third-refinement). The end-anchor is normally >= TREND_MIN_LEG
+            # bars after the peak. But a FRESH down-leg off a recent dominant peak can be only 2 bars long and
+            # STILL be the trader's real respected line (BE June2->June4: leg 2, 4 touches, 3 lower highs, slope
+            # -4.71, nothing pokes above, today ~$286 — the exact line the trader draws). The docstring already
+            # says the real noise-guard is PROXIMITY + the lower-highs staircase, not leg length. So we admit a
+            # short leg DOWN TO 2 bars and let the unchanged downstream guards (>= TREND_MIN_TOUCHES touches,
+            # >= TREND_MIN_LOWER_HIGHS staircase, no poke above, real drop, overhead/proximity) decide. We do
+            # NOT drop the floor to 1 (a 1-bar leg = only the anchor + one point = an arbitrary 2-point line),
+            # and we do NOT relax any of those staircase/touch guards — so a clean uptrend still yields nothing.
+            leg = i1 - i0
+            if leg < 2:                                   # < 2 bars = a bare 2-point line; never admit
                 continue
-            if h[ti] < run_max - 0.15 * adr_px:           # a real step DOWN from the highest high so far
-                lower_highs += 1
-            run_max = max(run_max, h[ti])
-        if lower_highs < rubric.TREND_MIN_LOWER_HIGHS:
-            continue
-        today = slope * (n - 1) + intercept
-        if today <= c[-1] * 0.999:                        # price already at/above the line → not overhead
-            continue
-        if (p0 - today) / adr_px < rubric.TREND_MIN_DROP_ADR:   # near-flat drift, not a real pullback
-            continue
-        cand = (len(touch_idx), i1, slope, intercept, today)
-        if best is None or (cand[0], cand[1]) > (best[0], best[1]):
-            best = cand
-    if best is None:
+            if leg < rubric.TREND_MIN_LEG:
+                # short fresh leg: only worth fitting if it can plausibly carry the full staircase support
+                # (>= TREND_MIN_LOWER_HIGHS lower highs needs >= that many later bars under the line). The
+                # real touch/staircase/poke/drop guards below still make the final keep/reject call.
+                if (n - i0) <= rubric.TREND_MIN_LOWER_HIGHS:
+                    continue
+            # end-anchor must be a CONFIRMED pivot, a right-pivot top (a genuine lower-high the line rides
+            # through — e.g. BE's June-2 bounce, which is neither a confirmed pivot nor the live tail), or the
+            # live tail. This lets the slope pin to the real lower-high cluster of a two-stage top.
+            if i1 not in sh_idx and not _right_pivot(i1) and i1 < n - 3:
+                continue
+            # end-anchor must be genuinely LOWER than the peak. The margin is ADR-scaled (0.5×ADR) but CAPPED
+            # at an absolute % of price (TREND_ENDLOWER_CAP_PCT) so an explosive name doesn't over-penalize a
+            # real lower-high step (BE June4 $295.69 IS a real step below June2 $305.11, but 0.5×ADR≈$11 wrongly
+            # rejected it; the ~$7.6 absolute cap admits it). Normal-ADR names are unchanged (cap doesn't bind).
+            endlower_margin = min(0.5 * adr_px, rubric.TREND_ENDLOWER_CAP_PCT / 100 * c[-1])
+            if h[i1] >= p0 - endlower_margin:
+                continue
+            slope = (h[i1] - p0) / (i1 - i0)
+            if slope >= -rubric.TREND_MIN_DESC_ADR * adr_px:  # not steep enough downward = a flat wall's job
+                continue
+            intercept = p0 - slope * i0
+            pokes = False
+            touch_idx = []
+            for i in range(i0, n):
+                line_i = slope * i + intercept
+                if h[i] > line_i + break_tol:             # a high pokes ABOVE (more than a tiny wick) → BROKEN line, reject
+                    pokes = True
+                    break
+                if abs(h[i] - line_i) <= tol:
+                    touch_idx.append(i)
+            if pokes or len(set(touch_idx)) < rubric.TREND_MIN_TOUCHES:
+                continue
+            # NOISE GUARD: a genuine LOWER-HIGHS staircase riding the line — >= TREND_MIN_LOWER_HIGHS bars
+            # AFTER the peak whose high TOUCHES the line AND makes a NEW lower-high (strictly below the running
+            # max-high since the peak by a real step). This is the real "lower highs off a peak" sequence and
+            # rejects "flat top + one stray dip" 2-point artifacts (whose middle highs are flat / far below the
+            # line, so they never both touch and step down). Works for a monotonic descent (DOCN: 180.5, 174.7,
+            # 172.7 each a new lower high on the line) AND a multi-bar channel (MRAM). The peak is not counted.
+            lower_highs, run_max = 0, p0
+            for ti in sorted(set(touch_idx)):
+                if ti <= i0:
+                    continue
+                if h[ti] < run_max - 0.15 * adr_px:       # a real step DOWN from the highest high so far
+                    lower_highs += 1
+                run_max = max(run_max, h[ti])
+            if lower_highs < rubric.TREND_MIN_LOWER_HIGHS:
+                continue
+            today = slope * (n - 1) + intercept
+            if today <= c[-1] * 0.999:                    # price already at/above the line → not overhead
+                continue
+            if (p0 - today) / adr_px < rubric.TREND_MIN_DROP_ADR:   # near-flat drift, not a real pullback
+                continue
+            # collect EVERY valid line across all anchors; the final selection happens after the loop (the
+            # PROXIMATE-CEILING rule below needs adr_px to apply the today-value epsilon tiebreak).
+            cands.append((today, len(set(touch_idx)), i1, slope, intercept, i0, p0))
+    if not cands:
         return None
-    touches, i1, slope, intercept, today = best
+    # PROXIMATE-CEILING SELECTION (user 2026-06-10, the BE case). For an ACTIONABLE "clear the wall" gate the
+    # right line is the NEAREST OVERHEAD ceiling — the valid descending line whose TODAY value sits closest
+    # ABOVE the current price (the resistance price is actually fighting) — NOT the most-touched line, which on
+    # a two-stage top can sit a full leg above the real breakout (BE: the 6-touch line read ~$293, ~$10 over the
+    # ~$281 wall a break would actually clear). So we pick the line with the LOWEST today value while still
+    # overhead (every candidate already passed the overhead guard). "Most touches" / most-recent end-anchor is
+    # kept ONLY as the secondary tiebreak when two lines have effectively the SAME today value (within a small
+    # epsilon = 0.25× ADR) — i.e. the same wall reached two ways; then prefer the better-supported, most-recent,
+    # higher/earlier anchor. NO validity guard was relaxed; only the choice AMONG already-valid lines changed.
+    eps = 0.25 * adr_px
+    # sort by: today value (ascending → nearest overhead first); within an eps band, most touches, then most
+    # recent end-anchor (i1 desc), then — ANCHOR RECENCY (user 2026-06-10, made explicit) — the MOST RECENT
+    # anchor peak (i0 DESC). The line should anchor at the start of the CURRENT down-leg, not a stale earlier
+    # peak: when two equally-near, equally-supported lines reach the same wall, prefer the one anchored at the
+    # more recent dominant peak. This composes with the proximate-ceiling primary key (on BE the June-2 line is
+    # ALSO the lower/nearer one, so the bucket already selects it; anchor-recency makes the intent explicit and
+    # decides the otherwise-tied general case). We bucket the today value to the eps grid so two lines within
+    # eps compare on the tiebreaks instead of on a sub-eps today difference.
+    best = min(cands, key=lambda x: (round(x[0] / eps) if eps else x[0], -x[1], -x[2], -x[5]))
+    today, touches, i1, slope, intercept, i0, p0 = best
     out = {"slope": slope, "intercept": intercept, "i0": i0, "i1": i1,
            "p0": round(p0, 2), "p1": round(slope * i1 + intercept, 2),
            "today": round(today, 2), "touches": touches}
@@ -1563,6 +1844,23 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
         _res_trend = _descending_resistance(h, l, c, adr)
     except Exception:
         _res_trend = None
+
+    # PER-ENTRY CONFIRMATION (user 2026-06-10, the BE case): a BREAKOUT entry confirms on the BREAK itself
+    # — NOT the pullback's "reclaim of the 50 EMA". Give it its OWN break_level + (coinciding) trendline +
+    # menu so the card's "confirms on" row names the right thing per entry (wallConfirmText reads these).
+    # When today's res_trendline sits at/just above the breakout trigger (within the wall band), the break
+    # IS the trendline break -> "clear the downtrend line"; else it's the prior-day high / overhead pivot.
+    _adr_px_now = close * adr / 100 or 0.01
+    for e in entries:
+        if e.get("kind") != "breakout":
+            continue
+        _trig = e["entry"]
+        e["break_level"] = round(_trig, 2)
+        _band = rubric.WALL_NEAR_ADR * _adr_px_now
+        e["res_trendline"] = (_res_trend if (_res_trend and _res_trend.get("today")
+                              and (_trig - _band) <= _res_trend["today"] <= (_trig + _band)) else None)
+        e["confirm_menu"] = (["YH_RECLAIM"] if "prior-day high" in (e.get("entry_note") or "").lower()
+                             else ["ORH_BREAK"])
 
     # ----- why -----
     why = ["Above 10/20/50 MA" if above == 3 else f"Above {above}/3 MAs", f"+{p1m:.0f}% 1m"]

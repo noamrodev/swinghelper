@@ -1,5 +1,166 @@
 # Changelog
 
+## 2026-06-10 — SESSION HANDOFF (read first)
+
+**What was done today (all LIVE locally; SYNCED to swinghelper but NOT committed/pushed — git is the trader's):**
+1. **Hosted on-demand LIVE scan** — kills the frozen-snapshot problem; the friends' site gates behind a fresh full
+   scan (wait panel + progress), never shows stale as live. Free.
+2. **🚨 Data-feed fix (HIGH)** — the whole app was a session stale: Yahoo returns the latest CLOSED bar with null/omitted
+   OHLC, the fetcher skipped it. Now backfilled from the same free Yahoo `meta` (PATH A null / PATH B omitted),
+   provisional-tagged with a 1h TTL. App caught up to June 9. (tests/test_fetch_backfill.py.)
+3. **Descending-trendline detector** — anchors at the CURRENT down-leg (not the stale all-time high) + proximate-ceiling
+   selection + short-fresh-leg + secondary-peak. BE now = June-2 line → $280.74 (= the breakout), as the trader drew it.
+4. **Per-entry confirmation messages at 3-surface parity** — breakout entries name the BREAK ("clear the downtrend
+   line"), pullbacks keep "reclaim of the 50 EMA"; the dashboard CARD, AUTO PILOT, and the LIVE-COACH PANEL all render
+   the same wording. (panel.html is local-only → not in the build, by design.)
+5. **Arm A+/A/B in a healthy (green) tape** — compute_now (~app.py:3585): in a GREEN light, B now arms for ANY setup
+   (breakouts/plain pullbacks), not just patient dip-buys; weaker tapes keep the strict gate (caution → patient-only).
+   WATCH-only — the reclaim+buyers_confirm+stop-≤1×ADR FIRE gates are unchanged; firewalled from grades (124 tests pass).
+   Real-time entry-switching already works (leg-filter arms the best NON-STALE qualifying entry, so a missed/stale
+   pullback yields to the breakout when it qualifies ≥B). A C breakout (extended chase, e.g. BE $280) correctly stays
+   unarmed ("below B, no"). Verified live in the current red tape: arms 8 A + 10 B patient setups, no breakouts.
+
+**Decisions:** grade firewall held throughout (golden re-baselined ADDITIVELY on the FROZEN fixtures; never run
+`tools/make_golden.py` for that — it re-fetches + moves the baseline to live data; re-run analyze on existing fixtures
+instead). Confirmation/trendline are firewalled from grades. Full suite 124 passed; multiple Burry SHIP verifications.
+
+**What's next / open:**
+- **Push to deploy:** `git -C swinghelper add -A && git -C swinghelper commit -m "…" && git -C swinghelper push origin main` (Render auto-deploys; 403 = the NoamHooked/noamrodev account thing).
+- **Refresh** the local Auto Pilot tab + the coach panel window to see the confirm changes (static files; browser refresh).
+- **Forward-test** the hosted live-scan timing on the real free dyno (how long the friend waits); trim the universe if too slow.
+- Minor: a breakout-PRIMARY name's pullback 2nd-entry shows no confirm row (deliberate — no-confirm > wrong-confirm); could add a per-entry pullback confirm if wanted.
+- Pre-today carry-forwards still open: grade-rubric v6 forward-test; NXT/FN/SATS/TCGL items.
+
+## 2026-06-10 — Per-entry confirmation messages: breakout entry names the BREAK, not the pullback's 50-EMA
+
+**Trader (BE):** the BREAKOUT entry's card said "confirms on: reclaim of the 50 EMA" — wrong; a breakout
+confirms on the BREAK (clear the downtrend line / prior-day high), the 50-EMA reclaim is the PULLBACK entry's.
+Root cause: a dual-setup name (e.g. BE = Deep Pullback + a breakout 2nd-entry) had confirm info only at the
+SUGGESTION level, and the card rendered the live rec's confirm for EVERY entry — so the breakout entry inherited
+the pullback's `RECLAIM_50`.
+
+**Fix (confirmation-only; grades byte-for-byte).**
+- **scanner.py** — after `_res_trend` is computed, attach per-ENTRY confirm fields to every breakout entry:
+  `break_level` = the trigger, `res_trendline` = today's line IF it sits within the wall band of the trigger
+  (then the break IS the trendline break), `confirm_menu` = `YH_RECLAIM` (prior-day-high note) / `ORH_BREAK`.
+  BE breakout now: break_level 280.74, res_trendline 280.74 → **"close above $280.74 — clear the downtrend line"**;
+  the pullback entry keeps "reclaim of the 50 EMA". (compute_now's live-rec breakout already names the line via
+  the earlier FIX-2; panel/autopilot show the live rec, so they were already correct — the gap was the card's 2nd entry.)
+- **web/app.js** — new `entryConfirmRec(s,e)`: a breakout entry (`break_level != null`) uses ITS OWN fields;
+  other entries borrow this name's live rec ONLY when it's the same kind (entry_type) — so a breakout-PRIMARY's
+  pullback 2nd-entry no longer shows the breakout's "clear the downtrend line" (symmetric bug); on a kind
+  mismatch the confirm row is HIDDEN (no confirm > wrong confirm). **web/index.html** — the "confirms on" row
+  reads `entryConfirmRec(s,e)` per entry instead of `confRec(s)` for all.
+- **Surfaces audited:** pullback-family setups (Deep Pullback/Pullback/Consolidation/AVWAP/Pullback-21) correct
+  on BOTH entries; breakout-family breakout entry → downtrend-line/overhead, pullback alt → hidden.
+- **3-surface parity (added after the card fix):** Auto Pilot (web/autopilot.html) had NO confirms-on row — added
+  `_CONFIRM_LABEL`+`confirmMenuText`+`wallConfirmText` (copied byte-for-byte from app.js) and a "confirms on: …"
+  line on each armed row. The Live-Coach PANEL (web/panel.html) only showed the WALL confirm — added
+  `confirmMenuTextPanel` so pullback setups (no break_level) now show "reclaim of the 50 EMA" too. Both use the
+  SAME logic/wording as the card. VERIFIED live: 18 confirm lines on each, zero console errors. Charts/setup
+  details were already shared (same /api/chart + suggestions), so they matched already.
+- **VERIFIED live** (rescan 2026-06-10 11:45 UTC): BE breakout alt = "close above $280.74 — clear the downtrend
+  line"; CAR (breakout-primary) breakout = "clear the downtrend line", its pullback alt hidden. NB: had to kill
+  DUPLICATE server instances — an earlier rescan ran on a stale process before the edit loaded; one clean server now.
+
+**Firewall.** Only 3 additive keys (`break_level`/`res_trendline`/`confirm_menu`) appear on breakout entries —
+verified zero shared-field change, grades byte-for-byte (golden re-baselined additively on the FROZEN 250-bar
+fixtures; `golden_grade_snapshot` unchanged → `lexicon_tags_do_not_change_grades` green). Full suite 124 passed.
+NB: avoid `tools/make_golden.py` for additive re-baselines — it RE-FETCHES + overwrites the fixtures (pulled them
+to 251-bar/June-9, polluting the frozen baseline); re-run analyze on the existing fixtures instead. **Not built/pushed.**
+
+## 2026-06-10 — 🚨 DATA-FEED FIX: app was a full session stale (Yahoo null/omit latest bar) — backfill from meta
+
+**Severity: HIGH (every setup was graded on a session-old data).** Trader caught it on BE: the chart candles were
+wrong — the last real candle (June 9) was missing for EVERY ticker; the whole app sat on June-8 data.
+
+**Root cause.** `scanner._fetch_raw` skips any daily bar with a null OHLC. Yahoo's free chart API returns the latest
+CLOSED session (June 9) with its **historical close = null** (not yet finalized into the array) even though the
+session closed — so the app dropped it for all 800 names and froze at June 8. The real numbers were sitting unused in
+the same response's `meta` block (regularMarketPrice/DayHigh/DayLow/Volume). FREE — same endpoint, we were just
+throwing the meta away. (This also explains the trendline confusion: the breakout "$280.41" was June-5's high, and
+the June-2 line read $286/$293 — all because June 9 was absent. With June 9 in, the June-2 line now reads **$280.74 =
+yesterday's high = the breakout**, exactly as the trader said.)
+
+**Fix (scanner.py — `_parse_chart` pure helper + `get_bars`; built & verified via two ultracode workflows).**
+- **PATH A** — latest bar present but close=null → reconstruct from `meta`.
+- **PATH B** — Yahoo OMITS the latest closed session entirely → derive the session date from `meta.regularMarketTime`/
+  `currentTradingPeriod` and append it. Both share `_reconstruct_bar_from_meta` (close/high/low/vol from meta; open
+  from quote-array open, else prior close, clamped into [low,high]).
+- **Guards:** only when `_meta_session_closed` (never a live/forming/pre-market/future bar), strict-greater dedup (no
+  double-add), graceful degrade on partial meta (never raises), no lookahead. `.TA` still normalized.
+- **Provisional convergence:** meta-built bars tagged `_provisional` (non-breaking key; downstream reads only OHLCV);
+  `get_bars` shortens their cache TTL to **1h** so they reconverge to Yahoo's finalized close/volume — without making
+  an 800-name scan refetch every name each cache hit.
+
+**Verified.** 2 workflows, 9 agents. Live force-fetch: BE = exact `O261.94 H280.74 L241.92 C259.61 V16166746`; all
+tickers advanced 06-08→06-09; SPY (ref index) advancing un-sticks app-wide freshness/EOD gating. Completeness critic
+PASS (P1 omitted-variant, P2 provisional TTL, P3 pre-market non-fabrication all closed). Grade firewall intact —
+golden byte-for-byte; **suite 124 passed** (+4 backfill tests). Backups in `backups/2026-06-10_backfill-harden/`.
+Deployed: local server restarted + full rescan re-grading on June-9 data. **NOT built/pushed** (trader's call).
+
+## 2026-06-10 — Descending-trendline detector: anchor at the CURRENT down-leg (the BE fix)
+
+**Trigger.** Trader (on BE): the chart wasn't drawing the descending resistance, and the engine, when forced to,
+anchored it at the **stale all-time high (May 22 $322)** instead of the **start of the current down-leg (June 2 $305)**.
+His rule (correct): "it's NOT from the highest point, it's from the most relevant point where the trendline didn't
+break yet — June 2." Three quant passes + 2 Burry SHIP verifications, all **confirmation-only, grades byte-for-byte**.
+
+**What was wrong & fixed in `_descending_resistance` (scanner.py):**
+1. **Anchor = current down-leg, not global max.** Added current-down-leg anchor candidates (every right-pivot
+   dominant lower peak), and made the selection prefer the **most-recent** qualifying anchor. BE: was May22→$293
+   (6 touches), now **June2 $305.11 → $286.27 today (4 touches)** — exactly the trader's line.
+2. **Secondary-peak anchoring** (two-stage tops) — earlier pass; the global-max line gets broken by a later lower
+   peak's bounce, so try lower pivots too.
+3. **Proximate-ceiling selection** — pick the nearest OVERHEAD line (the wall price is actually fighting), not the
+   most-touched stale one.
+4. **Short fresh leg admitted** — a 2-bar leg (June2→June4) is no longer dropped on `TREND_MIN_LEG=3` alone, IF it
+   still has the full touches + lower-highs staircase + proximity (leg length was never the real noise guard).
+5. **End-anchor margin cap** — new `rubric.TREND_ENDLOWER_CAP_PCT=3.0` (only binds for ADR>6% names like BE; the
+   0.5×ADR margin was wrongly demanding a bigger lower-high step than BE's real ~$9.4 on its 8.6% ADR).
+6. **Breakout setup now NAMES a coinciding trendline** (app.py compute_now) — "close above $X — clear the downtrend
+   line" when a breakout trigger sits under an in-band res_trendline; the line never pushes the trigger up.
+
+**Honest nuance (told the trader):** the steepest CLEAN June-2 line lands ~$286, not his hand-drawn ~$268 — going
+lower would cut through the real **June 4 high ($295.69)**, which the strict no-poke guard (rightly) won't do.
+
+**Verified.** Burry SHIP ×2: only `res_trendline` drifted in the golden (NVDA null→line, TSLA/GOOGL→recent anchors,
+all grade fields byte-for-byte). No lookahead, no loosened core guards, no clean-uptrend noise. Suite 60/60 (112 full).
+**Chart endpoint** already recomputes res_trendline live (app.py ~5389) — so a server **restart** shows BE's new line
+immediately; the suggestion's stored value needs a **rescan**. Backups in `backups/2026-06-10_descending-anchor-recency/`.
+
+## 2026-06-10 — Hosted on-demand LIVE scan (kills the frozen-snapshot problem) + synced to swinghelper
+
+**Problem.** The hosted (friends') site served a FROZEN warm snapshot from build time — Render's free plan sleeps
+after ~15 min idle and wipes the disk, so `_shared_refresh_loop` deliberately never auto-rescanned (a wake-time
+rescan changed the list on every click). Result: friends saw stale/build-time setups labelled "watching live".
+Trader: *"we can't allow frozen snapshots… fake data is the worst thing we can show them. they will wait."*
+
+**Fix (HOSTED only; LOCAL completely unchanged; grades firewalled — grader 7/7 byte-for-byte, full gate 31/31).**
+On-demand full scan: gate every setup surface behind a fresh scan, never render stale rows as live.
+- **Backend (app.py):** new `_data_stale(s)` + `_scan_age_min(s)` + `HOSTED_FRESH_MIN=30` — stale if no items / a
+  prior-session scan / (during RTH) >30 min old. Added freshness fields to `/api/suggestions`, `compute_autopilot`
+  (`stale`,`scanning`,`scan_done`,`scan_total`,`scanned_at`,`screener_id`,`hosted`) and `compute_health`
+  (`hosted`,`scan_running`). Scan POST endpoint now claims `SCAN.running=True` **synchronously** before spawning
+  (closed a start-race where the poller saw running=False and thought the scan had finished instantly).
+- **Frontend (autopilot.html + app.js + index.html):** on hosted+stale → hide setups, auto-POST `/scan/<sid>?fresh=1`,
+  show a wait panel ("Getting today's live setups" + spinner + N/800 progress + current ticker), poll `/scan/status`,
+  then render live setups stamped **"LIVE · HH:MM"**. Manual **↺ Re-scan** button when live; honest header (no fake
+  "watching live"); 13-min stall→retry. Mobile-friendly. LOCAL path untouched.
+- **Architecture note:** `suggest_f()` etc. are SHARED (not per-user) on hosted → ONE scan serves all friends; the
+  global SCAN lock serializes correctly (no per-user scan storms).
+
+**Verified LIVE on a throwaway HOSTED instance (port 8766):** fresh load → LIVE stamp + setups + Re-scan; Re-scan →
+wait panel with live 0→800 progress (no stale rows) → real scan wrote fresh data (07:44→08:03) → flipped back to
+LIVE · new stamp. LOCAL (8765) confirmed unchanged ("● watching live", reload ↻, no gate). **3 bugs found & fixed
+during live test:** (1) screener_id not set on the fresh path → Re-scan no-op; (2) scan start-race; (3) the 5-min
+auto-reload fired mid-scan (guarded at fire-time now). Test instance stopped; data/suggestions.json restored to pretest.
+
+**Status: BUILT & synced to swinghelper (NOT committed, NOT pushed — git is the trader's).** To publish:
+`git -C swinghelper add -A && git -C swinghelper commit -m "…" && git -C swinghelper push origin main` (Render auto-deploys).
+**What's next:** push to deploy; forward-test the real free-dyno scan time (~5 min local incl. earnings fetch — confirm
+it's tolerable on the throttled dyno); optional `.claude/launch.json` "hosted-test" config left in for future hosted QA.
+
 ## 2026-06-10 — SESSION HANDOFF (everything below this date is LIVE; read this first)
 
 **Current state.** Server running (last PID 30524, port 8765), alerts ON (`notify_mode` removed), all of today's

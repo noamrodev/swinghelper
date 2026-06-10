@@ -67,6 +67,9 @@ function dataCenter() {
     docs: { lessons: '' },
     scan: { running: false, done: 0, total: 0 },
     scanScreener: '',
+    // Hosted-only stale-data gate. States: null (local/not-yet-loaded) | 'waiting' (scan in progress)
+    // | 'live' (fresh data rendered). Never falls back to stale items.
+    hostedScan: { state: null, done: 0, total: 0, current: '', scannedAt: null, screener_id: null, _timer: null, _stalled: false },
     filters: ['all', 'pending', 'approved'],
     filter: 'all',
     marketRegime: { posture: null, label: '', indexes: [] },
@@ -245,6 +248,19 @@ function dataCenter() {
       if (!this.live.market_state) return 'LIVE…';
       const m = { REGULAR: 'OPEN', PRE: 'PRE', PREPRE: 'PRE', POST: 'AFTER', POSTPOST: 'AFTER', CLOSED: 'CLOSED' }[this.live.market_state] || this.live.market_state;
       return 'LIVE · ' + m + (this.live.updated_at ? ' · ' + this.liveAgeSec + 's' : '');
+    },
+    // Hosted freshness stamp: "LIVE · HH:MM" converted from UTC scanned_at to viewer local time.
+    // Returns null when data is not yet fresh (waiting state or never scanned).
+    get hostedLiveStamp() {
+      const sa = this.hostedScan.scannedAt || this.suggestions.scanned_at;
+      if (!sa) return null;
+      try {
+        // scanned_at arrives as "YYYY-MM-DD HH:MM:SS UTC" — parse to local
+        const utcStr = sa.replace(' UTC', '').replace(' ', 'T') + 'Z';
+        const d = new Date(utcStr);
+        if (isNaN(d.getTime())) return sa;   // fallback: show raw string
+        return 'LIVE · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (e) { return sa; }
     },
     liveSymbols() {
       const a = new Set();
@@ -494,6 +510,9 @@ function dataCenter() {
     // auto-rescan: every 30 min while the market's open, pull FRESH bars (today's candle) so new
     // setups/grades appear intraday. Guarded so it never overlaps a running scan.
     maybeAutoScan() {
+      // On hosted, scans are driven exclusively by the stale-gate and the manual Re-scan button —
+      // the 30-min auto-rescan must not interfere with that flow.
+      if (this.hosted) return;
       if (!this.liveOn || !this.autoScan || !this.marketOpen || this.scan.running) return;
       const now = Date.now();
       if (this._lastAutoScan && now - this._lastAutoScan < 30 * 60 * 1000) return;
@@ -570,7 +589,114 @@ function dataCenter() {
     // ---------- loaders ----------
     async loadSettings() { this.settings = await this.api('/settings'); if (this.settings.briefing_enabled === undefined) this.settings.briefing_enabled = true; },
     async loadScreeners() { this.screeners = await this.api('/screeners'); },
-    async loadSuggestions() { this.suggestions = await this.api('/suggestions'); this.mergeLive(); },
+    async loadSuggestions() {
+      const d = await this.api('/suggestions');
+      // Keep the screener id current so the Re-scan button works even on the fresh path.
+      if (this.hosted && d.screener_id) this.hostedScan.screener_id = d.screener_id;
+      // Hosted stale gate — trust the server's `stale` flag exclusively; never recompute.
+      if (this.hosted && d.stale) {
+        // If we already have live data showing, keep it displayed — do NOT wipe the live rows.
+        // Only the first-load (state===null) or a manual Re-scan (state==='waiting') triggers
+        // the wait panel. Periodic background refreshes that see stale simply keep the last
+        // live payload and ignore the stale flag.
+        if (this.hostedScan.state === 'live') {
+          // Keep the last good data; just don't update this.suggestions with stale payload
+          return;
+        }
+        // First load or rescan: show the wait panel
+        this.suggestions = d;
+        this.mergeLive();
+        this.hostedScan.screener_id = d.screener_id || this.scanScreener || '';
+        if (this.hostedScan.state !== 'waiting') {
+          this.hostedScan.state = 'waiting';
+          this.hostedScan._stalled = false;
+        }
+        if (d.scanning) {
+          this._hostedPollScan();   // scan already running server-side — just poll
+        } else {
+          await this._hostedStartScan();
+        }
+      } else if (this.hosted && !d.stale) {
+        // A manual Re-scan in progress owns the transition back to live — a background refresh that
+        // sees the (still-fresh) data must NOT clear the poll or kill the wait panel mid-scan.
+        if (this.hostedScan.state === 'waiting') return;
+        // Data is fresh — capture freshness metadata, mark live, and render
+        this.suggestions = d;
+        this.mergeLive();
+        this.hostedScan.scannedAt = d.scanned_at || null;
+        this.hostedScan.state = 'live';
+        this.hostedScan._stalled = false;
+        clearTimeout(this.hostedScan._stalled_timer);
+        clearInterval(this.hostedScan._timer);
+        this.hostedScan._timer = null;
+      } else {
+        // LOCAL — unchanged path
+        this.suggestions = d;
+        this.mergeLive();
+      }
+    },
+    async _hostedStartScan() {
+      const sid = this.hostedScan.screener_id;
+      if (!sid) return;
+      try {
+        const r = await this.api('/scan/' + sid + '?fresh=1', 'POST');
+        // 409 = scan already running — that's fine, just start polling
+        if (r && r.ok) { /* started */ }
+      } catch (e) { /* 409 arrives as a rejected fetch on some setups — safe to ignore */ }
+      this._hostedPollScan();
+    },
+    _hostedPollScan() {
+      if (this.hostedScan._timer) return;   // already polling
+      const STALL_MS = 18 * 60 * 1000;     // generous — full scan ~5 min local, slower on the throttled free dyno
+      this.hostedScan._stalled = false;
+      // Stall watchdog
+      this.hostedScan._stalled_timer = setTimeout(() => {
+        if (this.hostedScan.state === 'waiting') {
+          this.hostedScan._stalled = true;
+          clearInterval(this.hostedScan._timer);
+          this.hostedScan._timer = null;
+        }
+      }, STALL_MS);
+      this.hostedScan._timer = setInterval(async () => {
+        try {
+          const st = await this.api('/scan/status');
+          this.hostedScan.done = st.done || 0;
+          this.hostedScan.total = st.total || 0;
+          this.hostedScan.current = st.current || '';
+          if (!st.running) {
+            // Scan finished — re-fetch payload and check freshness
+            clearInterval(this.hostedScan._timer);
+            this.hostedScan._timer = null;
+            clearTimeout(this.hostedScan._stalled_timer);
+            const d = await this.api('/suggestions');
+            this.suggestions = d;
+            this.mergeLive();
+            if (!d.stale) {
+              this.hostedScan.scannedAt = d.scanned_at || null;
+              this.hostedScan.state = 'live';
+            } else {
+              // still stale after scan (e.g. another workspace's scan finished first) — restart
+              await this._hostedStartScan();
+            }
+          }
+        } catch (e) { /* transient network error — keep polling */ }
+      }, 2500);
+    },
+    // Manual Re-scan (hosted only) — user taps the button after data is live to get a refresh
+    async hostedRescan() {
+      if (this.hostedScan.state === 'waiting') return;  // already scanning
+      this.hostedScan.state = 'waiting';
+      this.hostedScan._stalled = false;
+      this.hostedScan.screener_id = this.suggestions.screener_id || this.scanScreener || '';
+      await this._hostedStartScan();
+    },
+    // Retry after a stall (the "Scan failed — tap to retry" button)
+    async hostedRetry() {
+      this.hostedScan._stalled = false;
+      this.hostedScan.state = 'waiting';
+      this.hostedScan._timer = null;   // ensure poll can restart
+      await this._hostedStartScan();
+    },
     async loadTrades() { this.trades = await this.api('/trades'); this.mergeLive(); },
     async loadWatchlist() { this.watchlist = await this.api('/watchlist'); },
     onWatch(t) { return (this.watchlist || []).some(r => r.ticker === t); },
@@ -867,6 +993,17 @@ function dataCenter() {
       if (m.includes('RECLAIM_50')) return 'close above ' + lvl + ' — reclaim the 50 EMA';
       // Fallback — wall exists but no known menu tag
       return 'close above ' + lvl;
+    },
+    // Per-ENTRY confirm source: a breakout entry carries its OWN break_level/res_trendline/confirm_menu
+    // (set in scanner.analyze) so its "confirms on" names the BREAK — "clear the downtrend line" — instead
+    // of the pullback's "reclaim of the 50 EMA". A non-breakout entry borrows this name's LIVE rec ONLY when
+    // it's the same kind (entry_type) — so a breakout-primary's pullback 2nd-entry never shows the breakout's
+    // confirm (and vice-versa); on a mismatch we show no confirm row rather than the wrong one.
+    entryConfirmRec(s, e) {
+      if (e && e.break_level != null) return e;
+      const r = this.confRec(s);
+      if (r && e && r.entry_type && e.entry_type && r.entry_type !== e.entry_type) return null;
+      return r;
     },
     wl(r) { return this.wlData[r.ticker] || {}; },
     get topSuggestions() { return (this.suggestions.items || []).filter(s => s.status !== 'rejected' && s.status !== 'taken').slice(0, 8); },

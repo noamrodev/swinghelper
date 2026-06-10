@@ -86,11 +86,14 @@
   </div>
 
   <!-- controls -->
-  <div class="row" style="margin-top:10px; gap:6px">
+  <div class="row" style="margin-top:10px; gap:6px; flex-wrap:wrap">
     <button class="btn" id="soundBtn" onclick="AP.toggleSound()">🔔 Sound on</button>
     <button class="btn" id="alertBtn" onclick="AP.enableAlerts()">🔔 Enable alerts</button>
     <button class="btn on-sky" id="refBtn" onclick="AP.toggleAutoRefresh()">🔄 Auto-refresh: ON</button>
-    <button class="btn" onclick="location.reload()" title="Refresh now">↻</button>
+    <!-- LOCAL only: manual page reload. On hosted the live scan keeps data fresh. -->
+    <button class="btn" id="reloadBtn" onclick="location.reload()" title="Refresh now">↻</button>
+    <!-- HOSTED only: Re-scan button — visible once data is live -->
+    <button class="btn" id="rescanBtn" onclick="AP.hostedRescan()" title="Run a fresh full scan now" style="display:none">↺ Re-scan</button>
     <a class="btn" href="/?site=1" style="margin-left:auto">Browse setups →</a>
   </div>
   <div id="alertMsg" class="mut" style="font-size:11px; margin-top:6px; display:none"></div>
@@ -139,10 +142,31 @@ const AP = {
   sound: true, alertsOn: false, autoRefresh: true, alertMsg: '',
   flash: {},
   _ac: null, _poll: null, _reload: null,
+  // Hosted stale-gate state machine. state: null | 'waiting' | 'live'
+  _isHosted: false,
+  hostedScan: { state: null, done: 0, total: 0, current: '', scannedAt: null, screener_id: null, _timer: null, _stalled: false, _stalled_timer: null },
 
   fmt(v){ return (v==null?'?':v); },
   gradeColor(g){ return ({ 'A+':'#22e0a1','A':'#22e0a1','B':'#7fd7ff','C':'#ffd591','D':'#ff9bb0' })[g] || '#c3cee0'; },
   esc(s){ return (s==null?'':String(s)).replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); },
+
+  // Confirmation-label helpers — mirrors app.js _CONFIRM_LABEL / confirmMenuText / wallConfirmText exactly.
+  _CONFIRM_LABEL: { ORH_BREAK: "opening-range-high break", HOD_BREAK: "today's-high break",
+    YH_RECLAIM: "reclaim of yesterday's high", RECLAIM_50: "reclaim of the 50 EMA",
+    EMA_RECLAIM: "reclaim above the EMA cluster" },
+  confirmMenuText(a){
+    const m = (a && a.confirm_menu) || [];
+    return m.map(t => this._CONFIRM_LABEL[t] || t).join(' or ');
+  },
+  wallConfirmText(rec){
+    if (!rec || rec.break_level == null) return null;
+    const m = rec.confirm_menu || [], lvl = '$' + rec.break_level;
+    if (rec.res_trendline) return 'close above ' + lvl + ' — clear the downtrend line';
+    if (m.includes('YH_RECLAIM')) return 'close above ' + lvl + ' — clear the prior-day high';
+    if (m.includes('ORH_BREAK') || m.includes('HOD_BREAK')) return 'close above ' + lvl + ' — clear the overhead resistance';
+    if (m.includes('RECLAIM_50')) return 'close above ' + lvl + ' — reclaim the 50 EMA';
+    return 'close above ' + lvl;
+  },
 
   alertKey(){ return 'ap_alerted_' + new Date().toISOString().slice(0,10); },
   loadAlerted(){ try{ return new Set(JSON.parse(localStorage.getItem(this.alertKey())||'[]')); }catch(e){ return new Set(); } },
@@ -152,6 +176,44 @@ const AP = {
 
   async load(){
     let d; try{ d = await (await fetch('/api/autopilot', {cache:'no-store'})).json(); }catch(e){ return; }
+
+    // ── Hosted stale gate ────────────────────────────────────────────────────
+    // Trust the server's `stale` flag. Never render stale rows as live.
+    if (d.hosted) {
+      this._isHosted = true;
+      // Always keep the screener id current so the Re-scan button works even on the fresh path.
+      if (d.screener_id) this.hostedScan.screener_id = d.screener_id;
+    }
+    if (d.hosted && d.stale) {
+      // If we already have live data showing, preserve it — periodic polls that
+      // see stale don't wipe live data; only first-load and manual rescan gate.
+      if (this.hostedScan.state === 'live') return;
+      // First load or explicit rescan: enter the wait panel
+      if (this.hostedScan.state !== 'waiting') {
+        this.hostedScan.state = 'waiting';
+        this.hostedScan._stalled = false;
+      }
+      this.render();   // renders the wait panel (content is gated)
+      if (d.scanning) {
+        this._hostedPollScan();   // scan already running — just poll
+      } else {
+        await this._hostedStartScan();
+      }
+      return;
+    }
+    if (d.hosted && !d.stale) {
+      // A manual Re-scan in progress owns the transition back to live — a background 20s/5min
+      // refresh that sees the (still-fresh) data must NOT clear the poll or kill the wait panel.
+      if (this.hostedScan.state === 'waiting') return;
+      // Fresh data — record stamp, mark live, clear any poll
+      this.hostedScan.scannedAt = d.scanned_at || null;
+      this.hostedScan.state = 'live';
+      this.hostedScan._stalled = false;
+      clearTimeout(this.hostedScan._stalled_timer);
+      clearInterval(this.hostedScan._timer);
+      this.hostedScan._timer = null;
+    }
+    // ── Normal render path (local always; hosted when fresh) ─────────────────
     this.prev = this.data; this.data = d;
     // fresh-confirmation alerts: a ticker now in buys that we haven't alerted today
     const alerted = this.loadAlerted();
@@ -162,6 +224,86 @@ const AP = {
       if (this.prev) this.fire(b);     // don't burst on first load
     });
     this.render();
+  },
+
+  async _hostedStartScan(){
+    const sid = this.hostedScan.screener_id;
+    if (!sid) return;
+    try {
+      const r = await fetch('/api/scan/'+encodeURIComponent(sid)+'?fresh=1', {method:'POST', cache:'no-store'});
+      // 409 = scan already running — fine, fall through to polling
+    } catch(e) {}
+    this._hostedPollScan();
+  },
+  _hostedPollScan(){
+    if (this.hostedScan._timer) return;   // already polling
+    const STALL_MS = 18 * 60 * 1000;   // generous — the full scan is ~5 min local, slower on the throttled free dyno
+    this.hostedScan._stalled = false;
+    this.hostedScan._stalled_timer = setTimeout(()=>{
+      if (this.hostedScan.state === 'waiting'){
+        this.hostedScan._stalled = true;
+        clearInterval(this.hostedScan._timer);
+        this.hostedScan._timer = null;
+        this.render();
+      }
+    }, STALL_MS);
+    this.hostedScan._timer = setInterval(async ()=>{
+      try {
+        const st = await (await fetch('/api/scan/status', {cache:'no-store'})).json();
+        this.hostedScan.done = st.done || 0;
+        this.hostedScan.total = st.total || 0;
+        this.hostedScan.current = st.current || '';
+        this.render();   // keep progress bar live
+        if (!st.running){
+          clearInterval(this.hostedScan._timer);
+          this.hostedScan._timer = null;
+          clearTimeout(this.hostedScan._stalled_timer);
+          // Re-fetch autopilot payload to check freshness
+          let d2; try{ d2 = await (await fetch('/api/autopilot', {cache:'no-store'})).json(); }catch(e){ return; }
+          if (d2 && !d2.stale){
+            this.hostedScan.scannedAt = d2.scanned_at || null;
+            this.hostedScan.state = 'live';
+            this.hostedScan._stalled = false;
+            this.prev = this.data; this.data = d2;
+            const alerted = this.loadAlerted();
+            (d2.buys||[]).forEach(b=>{
+              if (alerted.has(b.ticker)) return;
+              alerted.add(b.ticker); this.saveAlerted(alerted);
+              this.flash[b.ticker] = true; setTimeout(()=>{ delete this.flash[b.ticker]; this.render(); }, 8500);
+              if (this.prev) this.fire(b);
+            });
+            this.render();
+          } else {
+            // still stale — restart scan
+            await this._hostedStartScan();
+          }
+        }
+      } catch(e) {}
+    }, 2500);
+  },
+  async hostedRescan(){
+    if (this.hostedScan.state === 'waiting') return;
+    this.hostedScan.state = 'waiting';
+    this.hostedScan._stalled = false;
+    this.hostedScan._timer = null;
+    this.render();
+    await this._hostedStartScan();
+  },
+  async hostedRetry(){
+    this.hostedScan._stalled = false;
+    this.hostedScan.state = 'waiting';
+    this.hostedScan._timer = null;
+    this.render();
+    await this._hostedStartScan();
+  },
+  // Convert "YYYY-MM-DD HH:MM:SS UTC" → local "HH:MM"
+  liveStamp(sa){
+    if (!sa) return null;
+    try {
+      const d = new Date(sa.replace(' UTC','').replace(' ','T')+'Z');
+      if (isNaN(d.getTime())) return sa;
+      return 'LIVE · ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    } catch(e){ return sa; }
   },
 
   fire(b){
@@ -201,7 +343,15 @@ const AP = {
   },
   toggleSound(){ this.sound=!this.sound; if(this.sound) this.beep(); this.renderControls(); },
   toggleAutoRefresh(){ this.autoRefresh=!this.autoRefresh; try{ localStorage.setItem('ap_autorefresh', this.autoRefresh?'1':'0'); }catch(e){} this.scheduleReload(); this.renderControls(); },
-  scheduleReload(){ clearTimeout(this._reload); if(!this.autoRefresh) return; this._reload = setTimeout(()=>location.reload(), 5*60*1000); },
+  scheduleReload(){
+    clearTimeout(this._reload);
+    if (!this.autoRefresh) return;
+    // Guard at FIRE time, not schedule time: _isHosted isn't known when start() first schedules this
+    // (it's set by the first /api/autopilot load). On hosted a full reload would wipe an in-progress
+    // live scan (and could flash pre-scan data as live), so never reload there — the 20s poll keeps
+    // data fresh and the dyno awake without a full reload.
+    this._reload = setTimeout(()=>{ if (this._isHosted) return; location.reload(); }, 5*60*1000);
+  },
 
   planShortTarget(st){ st=(st||'').toLowerCase();
     if(st.includes('deep pullback')) return 'trail 50';
@@ -252,14 +402,80 @@ const AP = {
     const ab=document.getElementById('alertBtn'); ab.textContent = this.alertsOn?'✅ Alerts on':'🔔 Enable alerts'; ab.className='btn'+(this.alertsOn?' on-green':'');
     const rb=document.getElementById('refBtn'); rb.textContent = this.autoRefresh?'🔄 Auto-refresh: ON':'🔄 Auto-refresh: OFF'; rb.className='btn'+(this.autoRefresh?' on-sky':'');
     const am=document.getElementById('alertMsg'); am.textContent = this.alertMsg||''; am.style.display = this.alertMsg ? 'block' : 'none';
+    // Hosted: swap reload↻ for ↺ Re-scan (only when live data is showing)
+    const reloadBtn = document.getElementById('reloadBtn');
+    const rescanBtn = document.getElementById('rescanBtn');
+    if (reloadBtn && rescanBtn) {
+      if (this._isHosted) {
+        reloadBtn.style.display = 'none';
+        rescanBtn.style.display = this.hostedScan.state === 'live' ? '' : 'none';
+      } else {
+        reloadBtn.style.display = '';
+        rescanBtn.style.display = 'none';
+      }
+    }
   },
 
   render(){
-    const d = this.data; if (!d){ document.getElementById('content').innerHTML = '<div class="empty">Loading the live setups…</div>'; return; }
     const e = this.esc;
-    // live badge
-    document.getElementById('liveBadge').textContent = this.marketOpen() ? ('● watching live'+(d.updated_at?' · '+d.updated_at:'')) : 'market closed';
-    document.getElementById('liveBadge').className = this.marketOpen() ? 'up' : 'dim';
+    const badge = document.getElementById('liveBadge');
+    const content = document.getElementById('content');
+
+    // ── Hosted wait panel ──────────────────────────────────────────────────
+    if (this._isHosted && this.hostedScan.state === 'waiting') {
+      badge.textContent = 'scanning…';
+      badge.className = 'warn';
+      badge.style.fontSize = '12px';
+      if (this.hostedScan._stalled) {
+        content.innerHTML = `<div class="card" style="padding:28px 20px;text-align:center;margin-top:12px">
+          <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+          <div style="font-weight:800;font-size:15px;color:#ffd591;margin-bottom:8px">Scan timed out</div>
+          <div style="font-size:13px;color:#9aa8c2;margin-bottom:16px;line-height:1.55">The scan is taking longer than expected.</div>
+          <button class="btn" onclick="AP.hostedRetry()">↺ Retry scan</button>
+        </div>`;
+      } else {
+        const pct = this.hostedScan.total ? Math.round(this.hostedScan.done / this.hostedScan.total * 100) : 0;
+        const tickerLine = this.hostedScan.current
+          ? `<div style="font-size:12px;color:#9aa8c2;margin-top:4px">→ ${e(this.hostedScan.current)}</div>` : '';
+        const countLine = this.hostedScan.total
+          ? `${this.hostedScan.done} / ${this.hostedScan.total} stocks` : 'Starting scan…';
+        content.innerHTML = `<div class="card" style="padding:28px 20px;text-align:center;margin-top:12px">
+          <div style="display:flex;justify-content:center;margin-bottom:16px">
+            <div style="width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,181,61,.2);border-top-color:#ffb53d;animation:spin 0.9s linear infinite"></div>
+          </div>
+          <div style="font-weight:800;font-size:15px;color:#e6ecf7;margin-bottom:6px">Getting today's live setups</div>
+          <div style="font-size:13px;color:#9aa8c2;line-height:1.55;max-width:280px;margin:0 auto 16px">Scanning the full market live. This can take a few minutes — keep this tab open.</div>
+          <div style="width:100%;max-width:280px;margin:0 auto;height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden">
+            <div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#6366f1,#22d3ee);background-size:200% 100%;animation:shimmer 2s linear infinite;width:${pct}%;transition:width 0.6s ease"></div>
+          </div>
+          <div style="font-size:12px;color:#9aa8c2;margin-top:8px;font-variant-numeric:tabular-nums">${countLine}</div>
+          ${tickerLine}
+        </div>`;
+        // inject keyframes once
+        if (!document.getElementById('ap-spin-kf')) {
+          const st = document.createElement('style'); st.id='ap-spin-kf';
+          st.textContent = '@keyframes spin{to{transform:rotate(360deg)}} @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}';
+          document.head.appendChild(st);
+        }
+      }
+      this.renderControls();
+      return;
+    }
+
+    const d = this.data; if (!d){ content.innerHTML = '<div class="empty">Loading the live setups…</div>'; return; }
+
+    // ── Live badge ─────────────────────────────────────────────────────────
+    if (this._isHosted && this.hostedScan.state === 'live') {
+      const stamp = this.liveStamp(this.hostedScan.scannedAt || d.scanned_at);
+      badge.textContent = stamp || 'LIVE';
+      badge.className = 'up';
+      badge.style.fontSize = '12px';
+    } else if (!this._isHosted) {
+      // LOCAL: unchanged behaviour
+      badge.textContent = this.marketOpen() ? ('● watching live' + (d.updated_at ? ' · ' + d.updated_at : '')) : 'market closed';
+      badge.className = this.marketOpen() ? 'up' : 'dim';
+      badge.style.fontSize = '';
+    }
     // disclaimer
     if (d.disclaimer){ document.getElementById('disc').style.display='block'; document.getElementById('discTxt').textContent = d.disclaimer; }
     // ⚠️ tape guard (local owner only — the key is absent for hosted friends, so this never shows for them)
@@ -313,6 +529,8 @@ const AP = {
       html += '<div class="sec-l warn">⏳ Armed — waiting to confirm</div>';
       armed.forEach((a,i)=>{
         const trig = a.break_level ? ('break $'+a.break_level) : a.orh ? ('OR hi $'+a.orh) : (a.kind==='breakout'?'on OR-high break':('zone $'+this.fmt(a.zone||a.entry)));
+        const wct = this.wallConfirmText(a);
+        const conf = wct ? wct : this.confirmMenuText(a);
         html += `<div class="armed">
           <div class="armed-h" onclick="AP.toggle(${i})">
             <span>📋</span><span class="grade" style="color:${this.gradeColor(a.grade)}">${e(a.grade)}</span>
@@ -321,6 +539,7 @@ const AP = {
             <span class="warn" style="font-size:12px">${e(trig)}</span>
             <span class="dim" id="arw${i}" style="font-size:10px">▼</span>
           </div>
+          ${conf ? `<div style="padding:3px 11px 7px; font-size:12px; color:var(--warn)">confirms on: ${e(conf)}</div>` : ''}
           <div class="plan" id="plan${i}" style="display:none">${this.planHtml(a)}</div>
         </div>`;
       });

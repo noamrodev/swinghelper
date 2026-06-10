@@ -1797,6 +1797,46 @@ def _session_date(mk=None):
         return now_date()
 
 
+# Hosted freshness gate: how recent an intraday scan must be (minutes) to count as "live" during the
+# regular session. Outside regular hours the gate uses the session-date rule instead (a post-close scan
+# stays fresh through the evening/weekend). Tuned so a friend isn't forced to re-scan every few minutes,
+# but never sees a build-time snapshot served as live. (user 2026-06-10: "fake data is the worst".)
+HOSTED_FRESH_MIN = 30
+
+
+def _scan_age_min(s):
+    """Minutes since the scan recorded in a suggestions dict `s`, or None if the timestamp won't parse."""
+    ts = (s.get("scanned_at") or "").replace(" UTC", "").strip()
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            dt = datetime.strptime(ts[:19], fmt).replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - dt).total_seconds() / 60.0
+        except Exception:
+            continue
+    return None
+
+
+def _data_stale(s):
+    """Is this scan too old to show as LIVE on the hosted site? The gate that stops a stale/seed snapshot
+    from being presented as a live feed (the whole point of the on-demand hosted scan):
+      - no items or no timestamp           -> stale (nothing real to show)
+      - scan predates the latest session   -> stale (a prior day's / the shipped build's snapshot)
+      - regular hours, older than the cap   -> stale (the live tape has moved on)
+      - otherwise (fresh settled scan)      -> fresh
+    Used for the hosted freshness flag; grade math is untouched (firewalled)."""
+    if not s.get("items"):
+        return True
+    sd = (s.get("scanned_at") or "")[:10]
+    if not sd or sd < _session_date():
+        return True
+    if _us_regular_open():
+        age = _scan_age_min(s)
+        return age is None or age > HOSTED_FRESH_MIN
+    return False
+
+
 def _next_session_date(mk=None):
     """The NEXT trading session after the latest completed one — i.e. the day you'd ACT on picks
     captured at the last close. Forward snapshots are LABELED by this (the trade day), so the picks you
@@ -3542,10 +3582,16 @@ def compute_now(shared=False):
             # (worth_waiting OR "AVWAP" in setup_type). The reclaim + buyers_confirm + stop-≤1×ADR gates still
             # govern the FIRE (this only widens WATCH, not BUY); breakouts/EPs + plain Pullbacks keep A/A+.
             _patient_b = bool(s.get("worth_waiting") or ("AVWAP" in (s.get("setup_type") or "")))
+            # HEALTHY tape (green light) → arm A+/A/B for ANY setup, incl. breakouts/plain pullbacks (the
+            # trader's rule 2026-06-10: "A+/A/B can be armed in a healthy market; lower than that, no").
+            # In a mixed/weak tape we keep the stricter gate — B only for PATIENT support-buys (worth_waiting
+            # / AVWAP), breakouts/EPs stay A/A+. WATCH only — the reclaim + buyers_confirm + stop-≤1×ADR gates
+            # still govern the actual FIRE, so this widens what's WATCHED in a strong tape, not the BUY.
+            _healthy = (light == "green")
             legs = [e for e in (s.get("entries") or [])
                     if e.get("entry") and e.get("stop") and not e.get("stale")
                     and (e.get("grade") in ("A+", "A")
-                         or (_patient_b and e.get("grade") == "B"))]
+                         or ((_patient_b or _healthy) and e.get("grade") == "B"))]
             if not legs:
                 continue
             best = sorted(legs, key=lambda e: e.get("rating", 0), reverse=True)[0]
@@ -4124,10 +4170,34 @@ def compute_now(shared=False):
         # THE PLAN — per-setup (level / stop / volume-gate / trail differ by setup); 📋 icon opens it.
         plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
                             sized, triggered, too_extended), "why": s.get("why")}
+        # NAME THE DOWNTREND LINE on a BREAKOUT whose trigger IS the line (user 2026-06-10, the BE case). The
+        # chart draws res_trendline but the setup said nothing about it. When the breakout trigger (EMA-cluster
+        # break / prior-day-high / ORH) sits AT or just below today's descending res_trendline — within
+        # WALL_NEAR_ADR — the break above that trigger IS the trendline break. We surface res_trendline + a
+        # break_level so the frontend's wallConfirmText() labels it "clear the downtrend line". Confirmation-
+        # text ONLY (firewalled from grades). The line NEVER pushes break_level higher than the breakout
+        # trigger: if the trigger is below the line it stays at the trigger (the _descending_trend_gate above
+        # already handles a line that sits FAR enough overhead to need its own CLOSE-above wait); here we only
+        # LABEL a trigger the line coincides with. (When res_entry/EMA-cluster is the trigger, break_level was
+        # already res_entry — we just attach the label.)
+        _bo_trig = res_entry or orh or (s.get("prior_high") or leg_entry)
+        _rt = s.get("res_trendline")
+        _bo_break_level = res_entry                          # default: the EMA-cluster break level (or None)
+        _rec_rt = None
+        if _rt and _bo_trig and adr_pct:
+            _rt_today = _rt.get("today")
+            _adr_px_t = _bo_trig * adr_pct / 100
+            # the line coincides with / sits just above the breakout trigger (within the wall band) → the break
+            # above the trigger clears the line. Line below the trigger by more than a hair also coincides (the
+            # trigger already clears it) — label it too. A line FAR overhead is handled by _td_gate, not labeled here.
+            if (_rt_today and _adr_px_t and (_rt_today - _bo_trig) <= rubric.WALL_NEAR_ADR * _adr_px_t):
+                _rec_rt = _rt                                # surface the line so wallConfirmText() names it
+                if _bo_break_level is None:                  # pure ORH / prior-day-high breakout → label the trigger
+                    _bo_break_level = round(_bo_trig, 2)     # NEVER above the trigger (just labels the break level)
         rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
                "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
                "kind": e.get("kind"), "trigger": res_entry or orh or (s.get("prior_high") or leg_entry),
-               "break_level": res_entry,    # the EMA-cluster break level (the armed/buy entry), if any
+               "break_level": _bo_break_level, "res_trendline": _rec_rt,   # label the downtrend-line break (FIX 2)
                "orh": orh, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
                "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
                "buyable_now": bool(e.get("buyable_now")),
@@ -4284,11 +4354,19 @@ def compute_autopilot():
                    f"No buy yet — you'll be alerted the moment one confirms its trigger.")
     else:
         verdict = "Nothing armed right now — quiet or extended tape. Cash is a position."
+    # FRESHNESS GATE (hosted): so Auto Pilot can hide setups + force a live scan instead of showing the
+    # shipped/seed snapshot as a live feed. screener_id lets autopilot.html trigger the scan on its own.
+    _sug = read_json(suggest_f(), {"items": []})
+    _stale = _data_stale(_sug)
+    _sid = _sug.get("screener_id") or next((sc.get("id") for sc in read_json(screeners_f(), [])), None)
     return {"computed_at": n.get("computed_at"), "updated_at": time.strftime("%H:%M:%S"),
             "light": n.get("light"), "stance": n.get("stance"), "verdict": verdict,
             "buys": buys, "armed": armed, "posture": n.get("posture"), "label": n.get("label"),
             "tape_guard": tape_guard, "tape_turn": tape_turn,
             "fear_greed": n.get("fear_greed"), "market_state": n.get("market_state"),
+            "scanned_at": _sug.get("scanned_at"), "stale": _stale, "hosted": HOSTED,
+            "scanning": bool(SCAN.get("running")), "scan_done": SCAN.get("done", 0),
+            "scan_total": SCAN.get("total", 0), "screener_id": _sid,
             "disclaimer": ("Not financial advice. Auto Pilot is an experimental work-in-progress that surfaces "
                            "educational momentum-setup ideas from a strategy — nothing is guaranteed and signals "
                            "can be wrong or mistimed. The final decision to take any trade is entirely yours, and "
@@ -5205,10 +5283,13 @@ class Handler(BaseHTTPRequestHandler):
                     if o.get("catalyst") is not None:
                         it["catalyst"] = o["catalyst"]
             s["items"] = grade_suggestions(s.get("items", []), _equity_settings())
-            # STALENESS: flag when the scan is from a session BEFORE the latest completed one, so the UI can
-            # warn "these grades are from a prior session — rescan before acting" instead of looking live.
-            _sd = (s.get("scanned_at") or "")[:10]
-            s["stale"] = bool(_sd and _sd < _session_date())
+            # STALENESS: the hosted gate that stops a frozen/seed snapshot being shown as live. The frontend
+            # hides setups and forces a fresh scan whenever stale (the user: "fake data is the worst thing").
+            # `scanning`/progress let it render a wait state without a second call.
+            s["stale"] = _data_stale(s)
+            s["scanning"] = bool(SCAN.get("running"))
+            s["scan_done"] = SCAN.get("done", 0)
+            s["scan_total"] = SCAN.get("total", 0)
             self._json(s)
         elif route == "market":
             mk = read_json(market_f(), {})
@@ -5319,7 +5400,10 @@ class Handler(BaseHTTPRequestHandler):
                     # check on the suggestion's res_trendline; this filters the chart DRAW only.
                     if res_trendline and res_trendline.get("today"):
                         _px = _c[-1]; _lvl = res_trendline["today"]; _adrpx = _px * _adr / 100 if _adr else 0
-                        if not (_adrpx and _px < _lvl <= _px + 1.5 * _adrpx):
+                        # 2.0x ADR (was 1.5x): 1.5 hid genuinely-relevant overhead resistance on DEEP PULLBACKS in
+                        # high-ADR names — BE's June-2 line ($286) sat $0.14 outside the window above a pulled-back
+                        # $253 close. Draw-only filter; the gate keeps its own 0.6x ADR proximity. (trader 2026-06-10)
+                        if not (_adrpx and _px < _lvl <= _px + 2.0 * _adrpx):
                             res_trendline = None
             except Exception:
                 res_trendline = None
@@ -5445,6 +5529,12 @@ class Handler(BaseHTTPRequestHandler):
                         self._json({"ok": False, "error": "scan already running"}, 409); return
                 if UNIVERSE["running"]:   # never run a full scan + universe rebuild at once (freeze risk)
                     self._json({"ok": False, "error": "universe build running — try again shortly"}, 409); return
+                # Claim the running flag SYNCHRONOUSLY, inside the lock, BEFORE spawning — the worker thread
+                # takes a beat to start run_scan and set this itself, and the hosted live-scan poller checks
+                # /scan/status right after this returns; without claiming here it would see running=False and
+                # wrongly conclude "scan finished" before the scan even began (the Re-scan-flashes bug).
+                SCAN.update(running=True, current="starting…", done=0, total=0,
+                            finished_at=None, started_at=time.time())
                 _spawn(run_scan, sid, max_age=0 if fresh else 12)
             self._json({"ok": True})
 
@@ -6074,6 +6164,7 @@ def compute_health():
     ]
     healthy = yahoo_ok and (watcher_ok or HOSTED)
     return {"ok": True, "healthy": bool(healthy), "active": active, "scanning": bool(watcher_ok and active),
+            "hosted": HOSTED, "scan_running": bool(SCAN.get("running")),   # hosted gate: friend's on-demand scan
             "market_state": mstate, "armed": info.get("armed"), "buys": info.get("buys"),
             "light": info.get("light"), "subs": subs, "time": time.strftime("%H:%M:%S"),
             "boot_id": BOOT_ID}    # frontend auto-reloads when this changes (server restarted)
