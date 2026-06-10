@@ -1804,8 +1804,13 @@ def _session_date(mk=None):
 HOSTED_FRESH_MIN = 30
 
 
-def _scan_age_min(s):
-    """Minutes since the scan recorded in a suggestions dict `s`, or None if the timestamp won't parse."""
+def _scan_age_min(s=None):
+    """Minutes since the scan timestamp. Pass a suggestions dict `s`, or omit it to read suggestions.json
+    directly. Returns None if there's no parseable timestamp. (Single definition — a second 0-arg copy of
+    this name lower in the file used to SHADOW this one, so `_data_stale`'s `_scan_age_min(s)` call hit the
+    arg-less version and raised TypeError the instant the regular session opened — the both-sites-offline bug.)"""
+    if s is None:
+        s = read_json(suggest_f(), {})
     ts = (s.get("scanned_at") or "").replace(" UTC", "").strip()
     if not ts:
         return None
@@ -6691,17 +6696,6 @@ def _ticker_adr(tkr):
         return None
 
 
-def _scan_age_min():
-    """Minutes since the last scan (suggestions.json `scanned_at`, stored as 'YYYY-MM-DD HH:MM UTC').
-    Used to disclose when a logged entry is the planned scan price rather than a confirmed fill."""
-    ts = (read_json(suggest_f(), {}).get("scanned_at") or "").replace(" UTC", "").strip()
-    try:
-        dt = datetime.strptime(ts, "%Y-%m-%d %H:%M")
-        return max(0, int((datetime.utcnow() - dt).total_seconds() // 60))
-    except Exception:
-        return None
-
-
 def _graded_sug(tkr):
     settings = read_json(settings_f(), {})
     sug = read_json(suggest_f(), {}).get("items", [])
@@ -6834,7 +6828,7 @@ def _chat_take(raw, low, tkr):
         lines.append(f"{shares} sh{extra}")
     if from_sug_entry:                                 # G8: disclose a planned (scan) price vs a real fill
         age = _scan_age_min()
-        agetxt = f", {age}m old" if age is not None else ""
+        agetxt = f", {age:.0f}m old" if age is not None else ""
         lines.append(f"_Using the planned entry from the last scan{agetxt} — reply "
                      f"*took {tkr} @ <your fill>* to correct._")
     if _is_long_hold(setup):

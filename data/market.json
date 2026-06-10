@@ -1,6 +1,6 @@
 {
-  "computed_at": "2026-06-10 15:04",
-  "posture": 43,
+  "computed_at": "2026-06-10 16:36",
+  "posture": 44,
   "posture_raw": 45,
   "label": "Caution - correction",
   "indexes": [
@@ -63,16 +63,16 @@
     }
   ],
   "fear_greed": {
-    "score": 60,
+    "score": 58,
     "label": "Greed",
     "components": {
       "extension": 68,
       "rsi": 54,
-      "breadth": 58,
-      "highs_lows": 91,
+      "breadth": 57,
+      "highs_lows": 84,
       "vix": 27
     },
-    "posture_nudge": -2
+    "posture_nudge": -1
   },
   "vix_trend": {
     "level": 18.92,
@@ -110,5 +110,5 @@
     ],
     "as_of": "2026-06-08"
   },
-  "computed_at_ts": 1781093076.8791952
+  "computed_at_ts": 1781098561.1334083
 }
