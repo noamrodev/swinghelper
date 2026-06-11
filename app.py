@@ -3277,7 +3277,8 @@ def _ema_lbl_for(lvl, e9, e21):
     return "9-EMA" if (lvl == e9) else ("21-EMA" if (lvl == e21) else "EMA")
 
 
-def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_trendline=None):
+def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_trendline=None,
+                           ema_cands=None):
     """STACKED-WALL unifier (user 2026-06-10, the DOCN case). Clearing the NEAREST overhead wall isn't
     enough when several walls stack just above the entry — you are not "above resistance" until ALL of the
     in-band walls are cleared. Returns the HIGHEST overhead wall that's within rubric.WALL_NEAR_ADR (0.6× ADR)
@@ -3295,6 +3296,12 @@ def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_
       - ema_wall      : the overhead EMA clear level (or None) — the baseline floor + proximity anchor.
       - walls         : iterable of horizontal resistance levels (prior-day/recent highs); proximity-gated.
       - res_trendline : scanner's descending-resistance line dict; proximity-gated.
+      - ema_cands     : (NEW, user 2026-06-10, the INOD case) overhead daily EMAs (9/21) to treat as
+                        PROXIMITY-GATED candidates ABOVE the entry anchor — UNLIKE `ema_wall` (always
+                        included as the baseline floor), these only gate when in-band. Used by the Path-B
+                        reclaim, where the entry sits AT the AVWAP and an overhead 9-EMA may or may not be in
+                        band (INOD: reclaim $100.67 with the 9-EMA $103.28 ~2.6% / within 0.6× ADR overhead →
+                        gate it). Default None → no change for the existing Path-A / 50-reclaim callers.
 
     Returns (gate, level, kind): gate=True with the highest in-band wall `level` and `kind` in
     {"ema","wall","trend"} naming WHICH wall is the highest (for the cmsg label). gate=False, None, None when
@@ -3308,6 +3315,9 @@ def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_
     cands = []   # (level, kind)
     if ema_wall:
         cands.append((ema_wall, "ema"))                # the EMA-clear is always the baseline gate floor
+    for em in (ema_cands or []):                        # overhead daily EMAs in-band ABOVE the anchor (INOD)
+        if em and em > anchor * 1.0015 and (em - anchor) <= band:
+            cands.append((em, "ema"))
     for w in (walls or []):                            # horizontal walls in-band ABOVE the anchor
         if w and w > anchor * 1.0015 and (w - anchor) <= band:
             cands.append((w, "wall"))
@@ -4019,23 +4029,89 @@ def compute_now(shared=False):
                     buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
                     adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
                     raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
-                    if adr_px and raw_risk and raw_risk > 1.0 * adr_px:
-                        too_extended = True                      # already too far above the AVWAP → stop > 1× ADR
-                        cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but the stop ${_f(cand_stop)} is already wider than "
-                                f"1× ADR from here — too extended off the AVWAP. No call (don't widen the stop).")
+                    # ── GATE 1: NEAR-AVWAP cap = 0.5× ADR (user 2026-06-10, the ONTO case) ────────────────────
+                    # The reclaim must confirm NEAR the AVWAP. The old 1× ADR cap let the buy fire up to ~1× ADR
+                    # ABOVE the AVWAP (ONTO: reclaim fired $289.75 with the AVWAP $274.95 = ~1× ADR above, at the
+                    # top of the candle = a CHASE). This is an entry-distance / zone-drift cap (how far above the
+                    # AVWAP we'll buy), NOT just a stop-width note — tighten it to 0.5× ADR. Trips → stay ARMED for
+                    # a retest closer to the AVWAP, no chase. (Path A's EMA-clear cap at ~app.py:3935 stays 1.0× ADR:
+                    # the EMA-clear entry legitimately sits up near the cleared EMA — don't touch it.)
+                    if not frozen and adr_px and raw_risk and raw_risk > 0.5 * adr_px:
+                        too_extended = True                      # too far above the AVWAP → no chase, wait for a closer retest
+                        cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but ${_f(cand_entry)} is already >0.5× ADR ABOVE "
+                                f"the AVWAP — too far above it to buy. Staying armed for a retest closer to the AVWAP "
+                                f"(${_f(_avwap_sup)}); no chase up here.")
                     elif not buyers_ok:
                         buyers_wait = True
                         cmsg = (f"Tested the AVWAP (${_f(_avwap_sup)}) and turning up, but {buyers_why} — no call yet "
                                 f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
                     else:
-                        triggered = True
-                        confirm_trigger = "RECLAIM_AVWAP"
-                        entry, stop = cand_entry, cand_stop
-                        _confirmed_fkeys.add(fkey)
-                        if not frozen:                           # first confirm → LOCK the buy price + stop for the day
-                            _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
-                        cmsg = (f"CONFIRMED — tested the AVWAP (${_f(_avwap_sup)}) and turned up with buyers stepping in. "
-                                f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP). Room above.")
+                        # ── GATE 2: OVERHEAD-WALL gate, anchored at the LIVE reclaim entry (user 2026-06-10, INOD) ──
+                        # Path B had NO overhead-wall proximity check (Path A's gate keys off the AVWAP support, so a
+                        # reclaim where an overhead 9/21 EMA sits > 0.5× ADR above the support skips Path A and falls
+                        # to Path B — INOD: AVWAP $96.42, 9-EMA $103.28 ($6.86 / >0.5× ADR over the support → Path A
+                        # skipped → Path B fired $100.67, only ~2.6% under the 9-EMA = into resistance). Candidate
+                        # walls in-band (within WALL_NEAR_ADR 0.6× ADR) ABOVE the reclaim entry: the overhead 9/21
+                        # daily EMA (proximity-gated via ema_cands), horizontal prior/recent highs, and the descending
+                        # res_trendline (the line GOVERNS when present). Anchored to the entry (a stable level), never
+                        # the live tick — same lesson as the per-wall gates. Frozen (already fired) bypasses it.
+                        _e9b = s.get("ema9") or s.get("ema10")
+                        _e21b = s.get("ema21") or s.get("ema20")
+                        _ema_oh = [v for v in (_e9b, _e21b) if v and v > cand_entry]   # only EMAs ABOVE the entry
+                        _walls_b = [s.get("prior_high"), s.get("prev_high"), s.get("last_high")]
+                        _bg, _bl, _bk = (False, None, None) if frozen else _highest_overhead_wall(
+                            cand_entry, adr_pct, ema_wall=None, walls=_walls_b,
+                            res_trendline=s.get("res_trendline"), ema_cands=_ema_oh)
+                        if _bk == "trend":
+                            _blbl = "descending line"
+                        elif _bk == "wall":
+                            _blbl = "prior-day high"
+                        elif _bk == "ema":
+                            _blbl = _ema_lbl_for(_bl, round(_e9b, 2) if _e9b else None,
+                                                 round(_e21b, 2) if _e21b else None)
+                        else:
+                            _blbl = "wall"
+                        if _bg and _bl:
+                            # FIRE only on a COMPLETED 5-min close above the wall (~0.3% buffer via _closed_above).
+                            if not _closed_above(b5, _bl):
+                                deep_wait = True
+                                cmsg = (f"Reclaimed the AVWAP (${_f(_avwap_sup)}) but the {_blbl} (${_f(_bl)}) sits just "
+                                        f"overhead — a reclaim under it buys into resistance. Fires on a 5-min CLOSE above "
+                                        f"${_f(_bl)} (clear the {_blbl}, no chase beneath it); stop still under the AVWAP.")
+                            else:
+                                # CLEARED the wall → entry rises to the clear level (or the gap-through close). Re-run the
+                                # ≤1× ADR stop check on the POST-CLEAR entry: if clearing pushed the buy so far up that the
+                                # stop (under the AVWAP) now exceeds 1× ADR, there is NO clean entry — stay ARMED (ONTO: the
+                                # line is overhead AND the bounce already ran). Stop STILL just under the AVWAP.
+                                _clear_lv = round(_bl * (1 + (ebuf or 0) / 100), 2)
+                                _post = max(_closed or _clear_lv, _clear_lv)   # the clear level, or the gap-through close
+                                _post_risk = (_post - cand_stop) if cand_stop else None
+                                _post_adr = (_post * adr_pct / 100) if (_post and adr_pct) else None
+                                if _post_adr and _post_risk and _post_risk > 1.0 * _post_adr:
+                                    too_extended = True          # clearing the wall blows the 1× ADR stop → no clean entry
+                                    cmsg = (f"Cleared the {_blbl} (${_f(_bl)}) but buying there puts the stop ${_f(cand_stop)} "
+                                            f"(under the AVWAP ${_f(_avwap_sup)}) wider than 1× ADR — the bounce already ran. "
+                                            f"No chase (no clean entry up here).")
+                                else:
+                                    triggered = True
+                                    confirm_trigger = ("CLEAR_TREND" if _bk == "trend"
+                                                       else "CLEAR_WALL" if _bk == "wall" else "CLEAR_9EMA")
+                                    cand_entry, cand_stop = _post, cand_stop
+                                    entry, stop = cand_entry, cand_stop
+                                    _confirmed_fkeys.add(fkey)
+                                    if not frozen:               # first confirm → LOCK the buy price + stop for the day
+                                        _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
+                                    cmsg = (f"CONFIRMED — reclaimed the AVWAP and cleared the {_blbl} (${_f(_bl)}) on a 5-min "
+                                            f"close (no chase beneath it). Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP).")
+                        else:
+                            triggered = True
+                            confirm_trigger = "RECLAIM_AVWAP"
+                            entry, stop = cand_entry, cand_stop
+                            _confirmed_fkeys.add(fkey)
+                            if not frozen:                       # first confirm → LOCK the buy price + stop for the day
+                                _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab}
+                            cmsg = (f"CONFIRMED — tested the AVWAP (${_f(_avwap_sup)}) and turned up with buyers stepping in. "
+                                    f"Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the AVWAP). Room above.")
             sized = _size_leg(entry, stop)
             plan = {**_plan_for(setup_type, leg_entry, orh, (stop if triggered else None),
                                 sized, triggered, too_extended), "why": s.get("why")}
@@ -6326,32 +6402,40 @@ def _now_watcher():
                         fired[f"defend:{etd}"] = now_t
                     # TAPE GUARD FLIP heads-up (user 2026-06-09): the market rejected & is rolling over.
                     # Telegram + desktop + feed — LOCAL-ONLY (notify_telegram is a no-op without local creds).
-                    # Re-reminds on a ~30-min cooldown (intraday, keyed by the alert ledger) so it doesn't spam,
-                    # mirroring defend's FLATTEN cooldown. The per-position RAISE_BE alerts fire separately below.
+                    # TAPE GUARD / TAPE TURN heads-up alerts — each EDGE-TRIGGERED and DECOUPLED (BUG FIX 2026-06-10).
+                    # History: (1) the alert re-reminded every 30 min → spam on a sustained tape; (2) a mutual
+                    # key-popping "edge" design was tried, but Guard and Turn are INDEPENDENT state machines that can
+                    # BOTH be true in the same poll (a V-recovery day: indices red on the SESSION yet spun back up
+                    # INTRADAY) — the cross-pops then re-cleared each other EVERY poll = infinite 30-sec double-spam
+                    # (Burry 2026-06-10). FIX: NO coupling. Each signal fires ONCE per episode and re-arms only after
+                    # it has been OFF continuously for _TAPE_REARM_SEC; a brief flicker does NOT re-arm. Independent →
+                    # a loop is structurally impossible even when both are live. Alert-only; the persisted fired-ledger
+                    # makes a restart mid-episode not re-fire (cold-start safe). Per-position RAISE_BE alerts fire below.
+                    _TAPE_REARM_SEC = 20 * 60
                     tg = n.get("tape_guard") or {}
                     if tg.get("on"):
-                        _tgk = "tapeguard:on"
-                        _last_tg = fired.get(_tgk)
-                        if _last_tg is None or now_t - _last_tg >= 30 * 60:
+                        fired.pop("tapeguard:off_since", None)         # on → cancel any pending re-arm (flicker-proof)
+                        if "tapeguard:on" not in fired:                # off→on transition → ONE alert
                             notify_telegram("⚠️ TAPE GUARD armed", tg.get("reason", ""))
                             notify_desktop("⚠️ TAPE GUARD armed", tg.get("reason", ""), urgent=True)
                             add_notification("⚠️ TAPE GUARD armed", tg.get("reason", ""), light="yellow", actionable=True)
-                            fired[_tgk] = now_t
-                    # TAPE TURN FLIP heads-up (user 2026-06-09): the market flushed and spun back up — the
-                    # all-clear (green/positive). Only the CONFIRMED phase pings (the held reclaim = stand-down
-                    # lifted); a "forming" turn is panel-only (not yet actionable). Telegram + desktop + feed,
-                    # LOCAL-ONLY (notify_telegram is a no-op without local creds). ~30-min cooldown like tapeguard.
+                            fired["tapeguard:on"] = now_t
+                    elif "tapeguard:on" in fired:                      # off after a fire → time the off-window
+                        if now_t - fired.setdefault("tapeguard:off_since", now_t) >= _TAPE_REARM_SEC:
+                            fired.pop("tapeguard:on", None); fired.pop("tapeguard:off_since", None)   # sustained off → re-arm
+                    # TAPE TURN — the all-clear (CONFIRMED phase only; a "forming" turn is panel-only). Same
+                    # independent edge+debounce pattern; deliberately NOT coupled to the Guard (that was the loop bug).
                     tt = n.get("tape_turn") or {}
                     if tt.get("on") and tt.get("phase") == "confirmed":
-                        _ttk = "tapeturn:on"
-                        _last_tt = fired.get(_ttk)
-                        if _last_tt is None or now_t - _last_tt >= 30 * 60:
+                        fired.pop("tapeturn:off_since", None)
+                        if "tapeturn:on" not in fired:
                             notify_telegram("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""))
                             notify_desktop("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""))
                             add_notification("✅ TAPE TURN — stand-down lifted", tt.get("reason", ""), light="green", actionable=True)
-                            fired[_ttk] = now_t
-                    elif not tt.get("on"):
-                        fired.pop("tapeturn:on", None)   # reset the cooldown when the turn is off (re-arm cleanly)
+                            fired["tapeturn:on"] = now_t
+                    elif "tapeturn:on" in fired:
+                        if now_t - fired.setdefault("tapeturn:off_since", now_t) >= _TAPE_REARM_SEC:
+                            fired.pop("tapeturn:on", None); fired.pop("tapeturn:off_since", None)
                 except Exception:
                     pass
                 # ---- the ONLY things that may beep: discrete, actionable alerts ----

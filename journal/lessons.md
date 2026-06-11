@@ -28,6 +28,15 @@ lessons, newest insights merged in (not an endless list of duplicates).
   the trigger), stop still just under the AVWAP, risk ≤1× ADR. A far-overhead EMA (deep-pullback shape) keeps
   the normal reclaim+spin; the 50-reclaim deep-pullback path is unchanged. Needs a server restart + rescan to
   see it live (engine: `app.compute_now`, trigger tag `CLEAR_9EMA`).
+- **AVWAP plain-reclaim: confirm NEAR the AVWAP and not under a wall (2026-06-10, INOD + ONTO).** Two ways the
+  *fallback* reclaim path (Path B — fires when the overhead EMA sits too far above the support for the IREN gate)
+  still chased: (1) **too far above the AVWAP** — ONTO reclaim fired $289.75 vs AVWAP $274.95 (~1× ADR above, top
+  of the candle). The near-AVWAP entry cap is now **0.5× ADR** (was 1×); farther → stay ARMED for a closer retest.
+  (2) **a wall right overhead** — INOD AVWAP $96.42 with the 9-EMA $103.28 only ~2.6% above the $100.67 reclaim =
+  buying into the EMA. Now Path B clears overhead walls too (9/21 EMA / prior-day high / descending line within
+  0.6× ADR above the *entry*): in-band → require a 5-min close above the HIGHEST wall, else ARM. And if clearing
+  the wall would push the stop (under the AVWAP) past 1× ADR, there's no clean entry → stay armed (don't chase the
+  ran-away bounce). Confirmation-only — grades unchanged. Restart + rescan to see it live (engine: `app.compute_now`).
 - **Under a DESCENDING trendline = WAIT for the break, never buy beneath it (2026-06-09, DOCN; relaxed v2).**
   The sloped sibling of the IREN overhead-EMA + AXTI horizontal-wall "clear the wall" gates. When a genuine
   descending resistance line (lower highs off a recent peak) sits just overhead the entry, a confirm fired
@@ -92,6 +101,14 @@ lessons, newest insights merged in (not an endless list of duplicates).
   INOD is ~+0.9R and DOCN ~+1.2R while still open; the plan is to bank a partial into the spike
   and raise the stop (breakeven after +1R, then trail the 9 EMA on a daily-close basis) so a winner
   can't round-trip. (open observation, INOD/DOCN, 2026-06-01 — confirm when closed)
+- **TP-ing a winner in a red/choppy tape is defensible DEFENSE — but make it a deliberate regime call,
+  not a reflex (2026-06-10, DOCN/BE).** In a red light (posture 44, chop), banked DOCN at **+0.5R / +$35**
+  (under its $175.71 target) and scratched **BE flat at break-even** rather than risk giving green back —
+  consistent with protecting green in a hostile tape (cf. FLNC; Tape Guard → break-even stops). The
+  watch-out: clipping winners below +1R is exactly the **win-rate-over-R leak** the backtest flagged when
+  done by reflex in a NORMAL tape. Rule: in a confirmed hostile/red tape, a defensive TP/scratch is fine;
+  in a healthy tape, let the 9-EMA trail decide the exit — don't cut the winner that pays for the book.
+  (from DOCN/BE, 2026-06-10)
 - **Late to a news catalyst → only enter on a spin/reclaim near support, never the extended top, and
   don't size up on the thesis.** ONDS was a Trump/US "drones" news chase a day late; entering on the
   intraday 9-EMA reclaim (a "spin") was the right way to get controlled risk on a chase — but it was

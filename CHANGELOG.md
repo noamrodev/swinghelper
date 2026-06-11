@@ -1,5 +1,96 @@
 # Changelog
 
+## 2026-06-10 (late⁴) — Tape alerts fully fixed: Guard re-spam + a DECOUPLED redesign (Burry caught a loop)
+
+**Bug chain:** After the Turn-spam fix, the trader still got "⚠️ TAPE GUARD armed" **6× in 2.5h** (every 30
+min) on a sustained fade — the Guard was still level-triggered (re-reminder). First fix: Guard edge-triggered +
+the Turn-fire clears the Guard key (symmetric). **Burry then caught a worse latent bug:** Guard and Turn are
+INDEPENDENT state machines that can BOTH be true in one poll (a V-recovery day — indices red on the SESSION yet
+spun back up INTRADAY); the mutual key-popping then re-cleared each other EVERY 30-sec poll = infinite
+double-spam (worse than the original).
+
+**Final fix — DECOUPLED edge + debounce:** removed ALL cross-key-popping. Each signal fires ONCE per episode and
+re-arms only after it's been OFF continuously for 20 min (`_TAPE_REARM_SEC`); a brief flicker doesn't re-arm.
+Independent → a loop is structurally impossible even when both are live. Alert-only; cold-start safe (persisted
+ledger). The `tape_turn_state` / `tape_guard_state` machines were unchanged (correct).
+
+**Proof:** 151 tests pass (139 + 12 new, incl. the both-signals-true loop-regression test that fails-old /
+passes-new); grader golden byte-for-byte; independent grep confirms zero cross-pops (each key popped only by its
+own block). Burry **SHIP**. Backups: `backups/2026-06-10_tapeguard-spam/` + `2026-06-10_tapeturn-spam/`.
+
+**What's next:** **restart** to go live (the running server predates this fix). NOT yet re-synced to swinghelper
+— needs a fresh `build` to reach the friends' site.
+
+## 2026-06-10 (late³) — Tape Turn message SPAM fixed (Burry, restart pending)
+
+**Bug (trader, live):** in a choppy red tape the "✅ TAPE TURN — stand-down lifted" alert spammed repeatedly
+(Telegram + desktop). The Tape Guard fired once and worked. **Root cause** (`_now_watcher`, app.py ~6419):
+the old `elif not tt.get('on'): fired.pop('tapeturn:on')` wiped the Turn's 30-min cooldown the instant the
+turn flickered off, so the next `confirmed` poll re-fired as a first-timer — unbounded spam when the tape
+oscillates confirmed→off→confirmed every 30–90s. The Guard had no symmetric pop-on-off → it never spammed.
+
+**Fix (Burry):** never pop the Turn key on the off-state (the 30-min cooldown persists through flickers,
+mirroring the Guard). The Turn cooldown resets ONLY when a fresh Guard alert fires — a genuine new
+Guard→Turn cycle earns one fresh all-clear. Turn now fires once, then quiet ~30 min / until a real new cycle.
+The `tape_turn_state` machine itself was confirmed correct (stateless-per-poll by design; the flicker is real
+market behaviour, handled at the watcher layer).
+
+**Proof:** 139 tests pass (135 + 4 new spam-regression tests in `tests/test_tape_turn.py`); grader golden
+byte-for-byte. Burry **SHIP**. Backup: `backups/2026-06-10_tapeturn-spam/`. Needs a server restart to go live.
+
+## 2026-06-10 (late²) — AVWAP plain-reclaim: two anti-chase gates (BUILT + Burry-verified, restart+rescan pending)
+
+**What was done:** The fallback AVWAP-reclaim path (Path B in `compute_now`) still chased two ways the trader
+hit live today:
+1. **Too far above the AVWAP (ONTO).** Confirmed $289.75 vs AVWAP $274.95 (~1×ADR up, top of the candle). The
+   near-AVWAP entry cap is tightened **1×→0.5×ADR**; farther above → stay ARMED for a closer retest. (Path A's
+   EMA-clear cap left at 1×ADR.)
+2. **A wall right overhead (INOD).** Confirmed $100.67 with the 9-EMA $103.28 only ~2.6% above = buying into it.
+   Path B now runs the entry-anchored highest-overhead-wall gate (9/21 EMA / prior-day high / descending line
+   within 0.6×ADR above the *entry*): in-band → require a 5-min CLOSE above the HIGHEST wall, else ARM; and if
+   clearing the wall would push the stop (under the AVWAP) past 1×ADR → no clean entry → stay armed.
+   `_highest_overhead_wall` gained an `ema_cands` param (proximity-gated overhead EMAs); existing callers
+   unchanged (default None).
+
+Built by quant; **135 tests pass** (124 baseline + 11 new gate tests incl. Burry's Gate-2-exclusive test);
+grader golden **byte-for-byte** (firewall held). Confirmation-only.
+
+**Decisions:** 0.5×ADR cap chosen by the trader (over 0.25× / 1×). Burry **SHIP** verdict — one misleading test
+annotation corrected (the production logic was never in question). Backups: `backups/2026-06-10_scan-age-collision/`
+(`app_pre-pathB-gates.py`, `app_pre-avwap-gate.py`).
+
+**What's next:** **restart + rescan** to go live, then **forward-test** — INOD should ARM "clear $103.28", ONTO
+should stay ARMED (no $289.75 chase). Lesson recorded in `journal/lessons.md`.
+
+## 2026-06-10 (late) — CRASH FIX: local + hosted both went offline at market open
+
+**What was done:**
+1. **Root-caused & fixed the market-open crash.** A second `def _scan_age_min()` (0-arg, used by journal
+   logging) had been added LOWER in app.py and silently **shadowed** the original `_scan_age_min(s)`.
+   `_data_stale()` calls it only inside `if _us_regular_open()`, so `/api/suggestions` raised `TypeError` on
+   every request the instant the US regular session opened → empty reply (curl: "Empty reply from server") →
+   the dashboard rendered "offline" with no setups. Hit LOCAL and the hosted Render site at the same moment
+   (same code). Fix: merged into one `_scan_age_min(s=None)` (reads suggestions.json when the arg is omitted),
+   deleted the duplicate, formatted the journal age as `:.0f`. Verified: py_compile, both call sites, and the
+   forced regular-hours `_data_stale` branch — no TypeError. Swept app.py for other duplicate top-level def
+   names: none. Backup: `backups/2026-06-10_scan-age-collision/`.
+2. **Build synced to swinghelper** (31 tests pass incl. analyze_matches_golden → grades byte-for-byte) — NOT
+   committed/pushed. The friends' site stays broken until the trader pushes
+   (`git -C swinghelper add -A && commit && push origin main`).
+3. **Journal correction.** An SNDK (SanDisk) buy was mis-logged as **SNDX** (Syndax, ~$18); the watcher quoted
+   real SNDX at $17.99 against the $1698 entry and **false-auto-closed it as a −20R stop-out**. Corrected to
+   SNDK / open / entry 1698 (trader set stop 1658.5); false −$84/−1R removed. trades.json backed up alongside.
+
+**Decisions:** The Telegram bot is confirmed to be a thin layer over `compute_now()` — no separate
+setup/confirmation logic, so engine/grade/confirmation changes flow to it automatically; it only needs a
+server **restart** to pick up app.py edits. Auto-close-on-stop kept ON at the trader's choice.
+
+**What's next:**
+- **TRADER ACTION:** push `swinghelper` to deploy the crash fix to the friends' Render site.
+- **OPEN (engine — needs Burry/qa + restart):** *implausible-quote guard* — suppress the stop-out/auto-close
+  when the live price is wildly off the entry (e.g. <0.5× or >2×); treat as a data/ticker error and warn
+  instead. Would have caught the SNDX/SNDK false stop. Same family as the agorot unit-jump bug.
+
 ## 2026-06-10 — SESSION HANDOFF (read first)
 
 **What was done today (all LIVE locally; SYNCED to swinghelper but NOT committed/pushed — git is the trader's):**
