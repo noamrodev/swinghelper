@@ -336,9 +336,18 @@ const AP = {
     let p = Notification.permission;
     if (p==='default'){ try{ p = await Notification.requestPermission(); }catch(e){ p='denied'; } }
     this.alertsOn = (p==='granted');
-    this.alertMsg = p==='granted' ? ''
-      : (p==='denied' ? "Notifications are blocked for this site — turn them on in your browser's site settings (tap the lock/'aA' icon by the address bar). The sound + on-screen alert still work meanwhile."
-                      : 'Notifications not enabled — sound + on-screen alerts still work.');
+    if (p==='granted'){
+      // Prove it works: fire a real pop-up NOW so the user SEES the channel is live (otherwise a
+      // silent green button looks identical to "nothing happened" until a setup confirms hours later).
+      this.alertMsg = '✅ Alerts on — you just got a test pop-up. New BUYs will pop up like that (keep this tab open).';
+      try{ const n = new Notification('🛩️ Auto Pilot — alerts enabled', { body: "Test pop-up. You'll get one like this when a setup confirms.", tag:'ap-test' });
+        n.onclick = ()=>{ window.focus(); n.close(); }; }catch(e){}
+    } else if (p==='denied'){
+      this.alertMsg = "🔕 Notifications are BLOCKED for this site. Click the 🔒 lock icon (left of the address bar) → Site settings → set Notifications to Allow → reload. Until then the sound + on-screen flash still fire while this tab is open.";
+    } else {
+      // 'default' — Chrome suppressed the prompt (quiet mode / dismissed before). Tell the user how to force it.
+      this.alertMsg = "🔔 Chrome didn't show the permission pop-up (it gets suppressed if dismissed before). Click the 🔒 lock icon (left of the address bar) → set Notifications to Allow → reload. The sound + on-screen flash still fire meanwhile.";
+    }
     this.beep(); this.renderControls();
   },
   toggleSound(){ this.sound=!this.sound; if(this.sound) this.beep(); this.renderControls(); },
@@ -402,6 +411,14 @@ const AP = {
     const ab=document.getElementById('alertBtn'); ab.textContent = this.alertsOn?'✅ Alerts on':'🔔 Enable alerts'; ab.className='btn'+(this.alertsOn?' on-green':'');
     const rb=document.getElementById('refBtn'); rb.textContent = this.autoRefresh?'🔄 Auto-refresh: ON':'🔄 Auto-refresh: OFF'; rb.className='btn'+(this.autoRefresh?' on-sky':'');
     const am=document.getElementById('alertMsg'); am.textContent = this.alertMsg||''; am.style.display = this.alertMsg ? 'block' : 'none';
+    // make the status impossible to miss: green when on, amber when it needs action (was a tiny grey line nobody saw)
+    if (this.alertMsg){
+      const ok = this.alertsOn;
+      am.style.fontSize='12px'; am.style.lineHeight='1.5'; am.style.padding='8px 10px'; am.style.borderRadius='8px';
+      am.style.background = ok ? 'rgba(34,224,161,.12)' : 'rgba(255,181,61,.12)';
+      am.style.border = '1px solid ' + (ok ? 'rgba(34,224,161,.4)' : 'rgba(255,181,61,.4)');
+      am.style.color = ok ? '#aef5d6' : '#ffd591';
+    }
     // Hosted: swap reload↻ for ↺ Re-scan (only when live data is showing)
     const reloadBtn = document.getElementById('reloadBtn');
     const rescanBtn = document.getElementById('rescanBtn');
