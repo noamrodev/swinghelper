@@ -2669,16 +2669,18 @@ def _posture_label(p):
             "Risk-off - deep correction")
 
 
-def market_regime(market="us", tickers=None):
+def market_regime(market="us", tickers=None, max_age=12):
     """Classify the benchmark indexes -> blended posture (0-100), then NUDGE it with the Fear &
     Greed gauge: a frothy/greedy tape (indexes stretched above the 50, overbought RSI, low VIX,
     narrowing breadth) TRIMS the posture (correction risk) so grades cool when the market is
     extended. Greed-only by design — fear never *adds* posture (the price-based states already
     handle weakness; a fear boost would reward buying a falling knife). `tickers` = the universe,
-    for the breadth + highs/lows components (omitted if not supplied)."""
+    for the breadth + highs/lows components (omitted if not supplied). `max_age` = index-bar TTL —
+    callers pass a small value DURING the session so posture tracks the live tape (2026-06-12: the
+    default 12h cache left the local posture stale all session → grades graded against an old regime)."""
     idx = []
     for name, sym in mcfg(market)["indexes"]:
-        bars = get_bars(sym)
+        bars = get_bars(sym, max_age)
         if bars and len(bars) >= 60:
             try:
                 idx.append(_regime_one(name, bars))

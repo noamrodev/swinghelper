@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-06-12 (night, 5) — LOCAL posture went STALE all session (the local↔hosted "not synced" root cause)
+
+**Trader: friends site and local app aren't synced.** Pulled both `/api/market`: LOCAL regime computed **17:55,
+posture 67, SPX 7394 "Pullback"**; HOSTED **18:51, posture 78, SPX 7430 "Recovery"**. The market RALLIED intraday
+(SPX flipped Pullback→Recovery, posture 67→78) and the **hosted refreshed its regime but the local did NOT** — so
+the always-on local app was grading every setup against an **hour-old posture** (all-A+ vs the hosted's proper
+A+/A/B spread, different RS, different armed members). Not a render bug — a stale-regime bug.
+
+**Two layers, both fixed (Burry-verified PASS, grades byte-for-byte for a given posture):**
+1. `_intraday_rescan_loop` (local-only, ~5 min) refreshed *suggestions* but **never called `run_market_regime`**
+   → posture froze at boot. Now it calls `run_market_regime()` at the top of each scan tick (so the scan grades
+   against the CURRENT regime).
+2. Even if called, `scanner.market_regime` fetched the 3 index bars with the **default 12h cache** → posture
+   wouldn't move intraday. Added a `max_age` param; `run_market_regime` passes **0.5h during the session, 12h
+   after the close** (settled/deterministic — no lookahead in the forward snapshot). Breadth still reuses the
+   scan's cached universe bars (0 extra fetches — no freeze risk).
+**Result:** local now recomputes **posture 79, SPX 7430 "Recovery"** — matching the hosted (78). The two are now
+both fresh and aligned (residual difference is only the small scan-time gap, not an hour-stale regime). 203 tests
+green. Restarted (live). Rebuilt to swinghelper so the hosted copy gets the same fix on the trader's push.
+
+
+## 2026-06-12 (night, 4) — ULTRACODE root-cause: ran-up names get their own lane (the real "A+ LITE" fix)
+
+**The trader was furious that LITE showed as "A+" on the friends site after THREE rounds of "fixed".** A 7-agent
+deep workflow (5 investigators → synthesis → adversarial refute) found what every prior fix MISSED: I'd been
+fixing the *card framing* (confirm text, chips, no breakout words — all correct now), but the trader opens the
+site and reads **"best: LITE"** at the top (the verdict line) with LITE at **position 0 of the armed list** wearing
+an **A+** chip. None of the framing fixes touched the verdict sentence or the sort. The refute also established:
+(a) the A+ is **legit** (deep-at-the-50 patient buy, chase-exempt, trend_template leader — graded at the buy
+zone, not the extended price; it's a real grade, not a bug), and (b) **all 18 armed setups are A+** in a healthy
+tape, so zero-grading just LITE would move the complaint to the next name.
+
+**Fix (matches the Breakout-Watch precedent): a ran-up name is NOT an armed setup — it's "wait for the dip".**
+Route every `RANUP_PULLBACK_WATCH` record into a NEW `pullback_watch` lane (app.py compute_now + compute_autopilot),
+OUT of `armed` — which automatically removes it from the "best:" verdict and the armed sort. The lane shows **no
+letter grade** (RS + "+X% above the buy zone" + the zone, like breakout_watch) under a yellow **"🟡 Watching for
+pullback — ran up today"** header. Wired to all 3 surfaces: autopilot.html (+ togglePw), index.html (Alpine), and
+the Telegram brief. The A+ grade is left untouched in the rubric (firewalled) — it's just not displayed on a
+non-actionable watch. **Visually verified** (rendered real records through the live frontend): LITE now reads
+"LITE RS 62 +6.9% above the buy zone → $867.38", no grade; armed leads with MXL; verdict no longer names LITE.
+203 tests green; JS parses clean; restarted; rebuilt to swinghelper (trader to push). Open (not done, deeper):
+grade-inflation — everything that arms in a healthy tape is A+, so A+ has lost discriminatory power (separate
+rubric question, forward-test gated).
+
+
 ## 2026-06-12 (night, 3) — ATOMIC writes + corruption-recovery read + scan serialization (the blind-engine bug)
 
 **Root cause of the earlier `data/suggestions.json` outage:** `write_json` used a truncating `write_text`; two

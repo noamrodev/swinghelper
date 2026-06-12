@@ -750,7 +750,10 @@ def run_market_regime():
     Passes the universe so the Fear & Greed gauge can compute breadth + 52wk highs/lows."""
     try:
         tickers = read_json(universe_f(), {}).get("tickers", [])
-        reg = scanner.market_regime(market(), tickers=tickers)
+        # Refetch index bars FRESH during the session (was a 12h cache → stale posture all day → grade drift,
+        # and the local-vs-hosted desync). After the close the bars are settled, so the 12h cache stands.
+        _ma = 0.5 if _session_today_if_open() else 12
+        reg = scanner.market_regime(market(), tickers=tickers, max_age=_ma)
         if reg:
             # B3: stamp freshness so consumers can detect a stale prior-session regime dict
             if not reg.get("computed_at_ts"):
@@ -7935,6 +7938,10 @@ def _intraday_rescan_loop():
                         claimed = True
             if claimed:
                 try:
+                    try:
+                        run_market_regime()                  # refresh posture FIRST so the scan grades against the
+                    except Exception:                        # CURRENT regime — without this the local posture froze at
+                        pass                                 # boot all session (stale grades + local↔hosted desync, 2026-06-12)
                     if cycle % 6 == 0:                       # ~every 30 min at a 5-min cadence: full discovery
                         sid = read_json(suggest_f(), {}).get("screener_id") \
                             or next((s.get("id") for s in read_json(screeners_f(), [])), None)
