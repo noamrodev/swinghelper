@@ -2747,6 +2747,18 @@ def run_intraday_partial(n=220, max_age=0.05):
         if r:
             r["status"] = it.get("status", "pending")        # preserve the user's overlay marks
             r["catalyst"] = it.get("catalyst", "")
+            # PRESERVE FULL-UNIVERSE RELATIVE STRENGTH (user 2026-06-12, the RMBS A↔A+ desync). rs_pct is a
+            # PERCENTILE rank over the SCANNED set (scanner._attach_rs); a partial re-scan ranks the top-N only,
+            # so a name that's 91st-pct in the full universe becomes ~70th among the elite top-N → its grade
+            # flips A+→A and the local view diverges from a full-scan (hosted) view. Keep the RS the last FULL
+            # scan computed over the whole universe; the partial refreshes only price/levels/setup. Re-derive the
+            # idempotent RS score-term from the preserved rs_pct so `score` (sort order) stays consistent too.
+            for _k in ("rs_pct", "rs_score", "rs_outperf", "trend_template", "tt_count", "tt_rs_ok"):
+                if it.get(_k) is not None:
+                    r[_k] = it[_k]
+            _b = r.get("score_base", r.get("score", 0))
+            r["score_base"] = _b
+            r["score"] = round(_b + scanner._rs_score_term(r.get("rs_pct", 0) or 0, r.get("trend_template")), 1)
             merged.append(r)
         else:
             merged.append(it)                                # outside the refreshed set → keep as-is

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-06-12 (night, 6) — THE local↔hosted desync bug: partial re-scan was compressing RS percentiles
+
+**Root cause (finally, proven).** Grades/setups differed between local and friends site. Diffed the grade code:
+`rubric.py` + `grade_suggestions` are byte-for-byte IDENTICAL. Then graded the SAME data at both postures →
+RMBS = A at posture 78 AND 79; the ONLY thing flipping it to A+ was `rs_pct` (70 local vs 91 hosted). `rs_pct`
+is a PERCENTILE rank over the SCANNED SET (`scanner._attach_rs`: `100*rank/(n-1)`). And `run_intraday_partial`
+re-scans only the **top-220 graded names** — `scanner.scan` then recomputed `rs_pct` as the percentile *within
+those 220 elite names*, so a name that's 91st-percentile in the full 800-universe became ~70th among the top-220
+→ its grade flipped A+→A and the sort order (RS-driven `score`) reshuffled the whole list. The local's last scan
+was a partial (compressed RS); the hosted's was a full scan (true RS) → wildly different views.
+
+**Fix (`app.py run_intraday_partial`):** the partial merge now PRESERVES the full-universe RS the last FULL scan
+computed (`rs_pct/rs_score/rs_outperf/trend_template/tt_count/tt_rs_ok`) instead of overwriting with the compressed
+top-220 percentile; only price/levels/setup refresh intraday; the idempotent RS score-term is re-derived from the
+preserved `rs_pct` so `score` (sort) stays consistent. **Verified:** local RMBS 70 → 90 after a full scan, and a
+partial now KEEPS 90 (was crushing it to 70). 203 tests green. Restarted + full-rescanned + rebuilt to swinghelper.
+
+**Honest residual:** RMBS sits at rs_pct **90 (local) vs 91 (hosted)** — EXACTLY on the A/A+ line. Two independent
+LIVE scanners fetch Yahoo a few seconds apart → a hair-different intraday price → a boundary name rounds 90 vs 91 →
+A vs A+. This is the last 1-notch difference and it's inherent to two separate live scans; it goes to ZERO once both
+grade off the SAME settled post-close bars. The gross desync (70 vs 91, different members, all-A+ vs spread) is gone.
+
+
 ## 2026-06-12 (night, 5) — LOCAL posture went STALE all session (the local↔hosted "not synced" root cause)
 
 **Trader: friends site and local app aren't synced.** Pulled both `/api/market`: LOCAL regime computed **17:55,
