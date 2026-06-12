@@ -753,8 +753,10 @@ function dataCenter() {
       const stopV = p && p.stop != null ? '$' + p.stop : (esc(pl.stop) || '—');
       const sizeV = (p && p.shares != null) ? p.shares + ' sh'
         : (pl.size ? esc(String(pl.size).split('·')[0].trim()) : '—');   // fall back to the plan's size text
-      const tgtV = this.planShortTarget(setup);
-      const invalV = this.planShortInvalid(setup);
+      // a ran-up pullback WATCH rides the 50 (not the breakout cluster) → deep-pullback strip labels
+      const setupEff = (p && p.ranup_pullback) ? 'Deep Pullback' : setup;
+      const tgtV = this.planShortTarget(setupEff);
+      const invalV = this.planShortInvalid(setupEff);
       const levels = `
         <div class="levels">
           <div class="lvl5 stop"><div class="lvl-l">Stop</div><div class="lvl-v mono">${stopV}</div></div>

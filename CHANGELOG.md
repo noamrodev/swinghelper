@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-12 (night, 2) — LITE ran-up watch RENDERS as a pullback (was still dressed as a breakout)
+
+After the trader pushed the build, the hosted card STILL showed LITE as an "A+ Consolidation — BUY the break
+THROUGH the EMAs / confirms on: ORH break." The engine WAS correct (API returned `RANUP_PULLBACK_WATCH`, "wait for
+the pullback to $867"), but the watch RECORD reused the Consolidation's breakout scaffolding — `confirm_menu =
+['ORH_BREAK','HOD_BREAK']` and a breakout `plan` ("BUY the break THROUGH the EMAs") — and the frontend renders
+"confirms on:" from confirm_menu and the BUY hero from plan.trigger. So the card looked like a breakout chase.
+**Fix (`app.py` RANUP_PULLBACK_WATCH record):** confirm_menu → `['RECLAIM_50']` ("confirms on: reclaim of the 50
+EMA") and plan → `_plan_for("Deep Pullback", ...)` so the hero reads "BUY the BOUNCE off the 50 EMA — settle on the
+50 and turn up, tight stop just under it." LITE now renders identically to AAOI/AEHR pullback-watch cards. (The A+
+was a stale-scan grade; the live rescan grades LITE **B**.) 192 tests green; restarted; rebuilt to swinghelper
+(trader to push).
+
 ## 2026-06-12 (night) — ran-up ⇒ prefer pullback over breakout + high-ADR near-support cap (LITE/TSEM)
 
 **Trigger:** friends site showed "BUY TSEM A+ Pullback @ AVWAP" (confirmed $266.45, +2.5% above the AVWAP) and

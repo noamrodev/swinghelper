@@ -380,7 +380,10 @@ const AP = {
     const buyTxt = e(pl.trigger || 'Buy the confirmed trigger off the level — tight stop just under it.');
     const stopV = p && p.stop!=null ? '$'+this.fmt(p.stop) : (e(pl.stop) || '—');
     const sizeV = p && p.shares!=null ? p.shares+' sh' : '—';
-    const tgtV = this.planShortTarget(setup), invalV = this.planShortInvalid(setup);
+    // a ran-up pullback WATCH rides the 50 (not the breakout cluster) → use the deep-pullback strip labels
+    // (trail 50 / close<50) so the Target/Invalid chips match the "reclaim of the 50" framing, not "trail 9".
+    const setupEff = (p && p.ranup_pullback) ? 'Deep Pullback' : setup;
+    const tgtV = this.planShortTarget(setupEff), invalV = this.planShortInvalid(setupEff);
     const levels = `<div class="levels">
       <div class="lvl5 stop"><div class="lvl-l">Stop</div><div class="lvl-v mono">${stopV}</div></div>
       <div class="lvl5 size"><div class="lvl-l">Size</div><div class="lvl-v mono">${sizeV}</div></div>

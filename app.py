@@ -3791,11 +3791,15 @@ def compute_now(shared=False):
                 "shares": _sized.get("shares"), "dollar_risk": _sized.get("dollar_risk"),
                 "risk_pct_actual": _sized.get("risk_pct_actual"), "pct_acct": _sized.get("pct_acct"),
                 "why": s.get("why"), "confirmed": False, "confirm": _cmsg,
-                "plan": {**_plan_for(s.get("setup_type"), _pl_entry, None, None, _sized, False, False),
+                # Reframe the watch as a PULLBACK (it confirms on a RECLAIM of support, NOT an ORH/breakout) so
+                # the card stops showing "BUY the break THROUGH the EMAs" / "confirms on: ORH break". The plan +
+                # confirm_menu are pulled from the breakout setup_type otherwise (the LITE 'looks like a chase'
+                # bug). RECLAIM_50 = "confirms on: reclaim of the 50 EMA" — the deepest support the pullback rides.
+                "plan": {**_plan_for("Deep Pullback", _pl_entry, None, _pl_stop, _sized, False, False),
                          "why": s.get("why")},
                 "p1m": s.get("p1m"), "p6m": s.get("p6m"),
                 "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
-                "confirm_menu": lexicon.get_confirm_menu(s.get("setup_type") or ""),
+                "confirm_menu": ["RECLAIM_50"],
                 "confirm_trigger": "RANUP_PULLBACK_WATCH", "overhead": None,
                 "ranup_pullback": True,
             })
