@@ -1,5 +1,6 @@
 {
-  "computed_at": "2026-06-12 23:14",
+  "computed_at": "2026-06-13 00:08",
+  "computed_at_ts": 1781298534.703493,
   "sections": [
     {
       "name": "\ud83c\uddfa\ud83c\uddf8 Trump & policy",
@@ -62,7 +63,7 @@
         },
         {
           "title": "US Can Enforce Section 122 Tariffs Until Appeals Court Rules",
-          "source": "Bloomberg",
+          "source": "Bloomberg.com",
           "published": "Thu, 11 Jun 2026 20:31:21 GMT",
           "link": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQQlJMTEgtSzVzc1dyQ1hsTkRhMXdPVGpHRVlvTDRxeHA5Zm9SMmE4b0Mxb282bEMxejZiRS0zS1hBTlhLN2RGOWx3Q3NUczNZQzFYOGdUR3daWGxBb19McDcwNGw0UTdpeEFpTERMa003ZHE3QVVicWl4dnktQWxsWEx0UlBTRVZ6WHVEUWV5NUxBQms4MngyLUZZV3ZMaGZNOFkzWHNRb014TjZNZTkyenpuTUI?oc=5",
           "sentiment": "neutral",
@@ -74,68 +75,68 @@
       "name": "\ud83d\udcf0 Market catalysts",
       "items": [
         {
-          "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
-          "source": "WHEC.com",
-          "published": "Fri, 12 Jun 2026 19:50:05 GMT",
-          "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxOTnRjYktIYkVwMmsyOWVJbGVxRUNMc0xoa1ZPV3pBNW84R2dwV0luNVk3d1FLengyc0VVSmdMRmJubm9OSmFSMnhnRDRsU3dTTVJnRThGRXpzdDVzTFFFNm1icm1KWXZDQ1FqWVVIYThvZ1Nra2Znblh4TzBxeWJrSk8zUmluZGQwVHd2dkZqeVJzTTgwbjJObFNWSE5GNGdZMzAySEFLYw?oc=5",
+          "title": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+          "source": "Los Angeles Times",
+          "published": "Fri, 12 Jun 2026 21:00:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
           "sentiment": "good",
-          "_ep": 1781293805.0
+          "_ep": 1781298000.0
+        },
+        {
+          "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
+          "source": "AP News",
+          "published": "Fri, 12 Jun 2026 20:51:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMivAFBVV95cUxORjJYREd6U2x6SkRDTmgxdkV6b2dUSVo4c0t0NzJFeVA2czRKT0F2dXdTc0hLQkNDLXRxUVRHbnMwS0NtVmtOd3dqM3ZBQUpOYktVZzY1SEFSd2p4WG4xN3RpdVJDSmVqeTlQVDN4SHBFVzU1Um1pU1NsMFNFNnJfa2FaRE9zSFhNbDk0SDN2UllsUUpqWGd3Wm9hMkppYXJBRjg3dDl4Tk9fRklUWVBGWnJTcV9OZ0JSZEd5Qw?oc=5",
+          "sentiment": "good",
+          "_ep": 1781297460.0
+        },
+        {
+          "title": "Elon Musk becomes world's first trillionaire as SpaceX soars in stock market debut",
+          "source": "BBC",
+          "published": "Fri, 12 Jun 2026 20:46:32 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiWkFVX3lxTFBXU3A1ZEtDbHhYenRtOXZRX2NzbUhpRUMyX3V4Mk10Vzk4U2VxV0FjNGxvY19lVUZtY3MyUlBYUG8yNFFScGhVcWJ2LTZHTEtCRTZLbi0yY01NUQ?oc=5",
+          "sentiment": "good",
+          "_ep": 1781297192.0
+        },
+        {
+          "title": "Roku Stock Soars 20%. The Streaming Play Could Be for Sale.",
+          "source": "Barron's",
+          "published": "Fri, 12 Jun 2026 20:44:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiekFVX3lxTFBDZHhYbm9pWVhTelotdlRMcFNNVWNhdExSU0pxZjRJdVBPZ1k4QWNOcGxDY1p3WlhKOEkxbFlnZEdWQUhVcFFmaS10eUxZWnRFN0pYQXVBMnVqSGlFRl9yNC1id3U2bTZQSzNhNUxZVF90NWxhenptdGFR?oc=5",
+          "sentiment": "good",
+          "_ep": 1781297040.0
         },
         {
           "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
           "source": "Northeast Mississippi Daily Journal",
-          "published": "Fri, 12 Jun 2026 19:47:08 GMT",
-          "link": "https://news.google.com/rss/articles/CBMi9gFBVV95cUxOM2ZXZnYwSzVLdThTMEh6WGxkTUQzRkZXQzFuZE80YXBaRnNIRVJjTWFOSnhJWFYtc0VzRUpLRlY1cy1fSk9OaElVX1VSUmpMd0N4cDlpOFBpQWhNZHZyVFd3eFZERVVtNWJidjdNUXBkRHZmWDVEaWhDODNOWkZ3bW5qS0Q0VHZ4cm5mYzFZU1VjSHVza1dlcnN0UXlkd042Q2JVM0tCZThtUERHSEYyZmNQUlRod3FmRC1mSTQwckFMeXk4dV9McHFzZ3J2NC02SjlmOFFlVk1YRHBIQWwzNnBjbWs1dFpzdFFsWUVyLURZOExqamc?oc=5",
+          "published": "Fri, 12 Jun 2026 20:35:00 GMT",
+          "link": "https://news.google.com/rss/articles/CBMi3gFBVV95cUxPQVlidlB4T2lNTGNldHdsbGlLcU5BcnNSRm9paVFlNHB2SXZQamlMc2lhbnJLOW5wdk9qN0IzaTBSaG5MaTYyZTgwaWdvVkpNTUE4US13Mm42dHpVNlRpRjl0MWVWZWQ4SjZ5ODU4YnZiclpQbEpQdjlLeU9rN0h1UHlfTk1TdlpmYm41dVVBblg0U1pLSlA4THI4bmM1a08tVW9mSVRaVmd6SDJXRE1IeWFnRTc4QVlpWERVenpZUUN1cjhtWms4azc2dVBaa0ZJcWRndjRPWjR5SlZ6aUE?oc=5",
           "sentiment": "good",
-          "_ep": 1781293628.0
+          "_ep": 1781296500.0
+        },
+        {
+          "title": "Wall Street climbs as SpaceX shares launch, oil slides on Mideast deal hopes",
+          "source": "Yahoo Finance",
+          "published": "Fri, 12 Jun 2026 20:20:17 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiogFBVV95cUxQaWRzLXNha2UxM0NzVERBQnJVMThzc0hUcnpBVE5TWGFqc2RmVEVDZnJyaUhpZnlhVjBaUnZjZWZrM3o1dDBZVDYxZnBXREdYMXJjQTF2dHg2ZlpKQ2xCMEtTeWY4dkoxTHR5TjJkQ2kyS1ZyU3Znc195UVBkQ0tIQkFuT1gwRTdGT1VfTkRndTZoaW1zR096T2hYeERzYTk2bUE?oc=5",
+          "sentiment": "good",
+          "_ep": 1781295617.0
         },
         {
           "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
-          "source": "Eagle-Tribune",
-          "published": "Fri, 12 Jun 2026 19:47:08 GMT",
-          "link": "https://news.google.com/rss/articles/CBMi7AFBVV95cUxQbm96Nlh4V2NzT0RranhncXQyUFFNbndyUklsZHYzQTNrbXo4dlBNN1ZyQ1BTdWE3TXZzTkhCVEVQR0pOZzNianBQU2liTUN5a2gzWk5QM2lWU2FnMzRqdGViY3dqV25OQnJnR1psVmpHTUVYMEt4OHlHbE9MNjJTOGFIcTIzOGhCZS1SeUk0LV9IMGVMcnpvdFhJQ3VZRjRwQXRFNy1wQ3gwT0VCSHlkQ0FHZU81b2htZ1pLdmNmY243UzhySk16TGtPdU4zOTZKaVdQV2tRblpBdlhPNVNOZ3J2NGJyaUh1ZUk3LQ?oc=5",
+          "source": "Northeast Mississippi Daily Journal",
+          "published": "Fri, 12 Jun 2026 20:19:10 GMT",
+          "link": "https://news.google.com/rss/articles/CBMi9gFBVV95cUxOM2ZXZnYwSzVLdThTMEh6WGxkTUQzRkZXQzFuZE80YXBaRnNIRVJjTWFOSnhJWFYtc0VzRUpLRlY1cy1fSk9OaElVX1VSUmpMd0N4cDlpOFBpQWhNZHZyVFd3eFZERVVtNWJidjdNUXBkRHZmWDVEaWhDODNOWkZ3bW5qS0Q0VHZ4cm5mYzFZU1VjSHVza1dlcnN0UXlkd042Q2JVM0tCZThtUERHSEYyZmNQUlRod3FmRC1mSTQwckFMeXk4dV9McHFzZ3J2NC02SjlmOFFlVk1YRHBIQWwzNnBjbWs1dFpzdFFsWUVyLURZOExqamc?oc=5",
           "sentiment": "good",
-          "_ep": 1781293628.0
+          "_ep": 1781295550.0
         },
         {
-          "title": "Wall Street rises on Iran war peace deal hopes, SpaceX's historic debut",
-          "source": "Reuters",
-          "published": "Fri, 12 Jun 2026 19:02:47 GMT",
-          "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxQeXNKNzNQRjdTSU90RjJ6d0JSM1FNVHRUQ1Q3VTM1VTlRSWZfVkoxcU9DRzQxRkE5R2JNdk9QelpoS3RoS29rNGVJTzNpWnVydDdweHhlcEVpd2hWNFVKcV9JUWNpODNzdGVSVlRTUVNKenhMdWpIZGd2RlRwWlBSNS1lWkNfRkRUdFBlUzNYemNtclNFcTdRR2Q4eWMyaERXV3dLc1VMQWQwdVAyUzVvNQ?oc=5",
-          "sentiment": "bad",
-          "_ep": 1781290967.0
-        },
-        {
-          "title": "CANNOT MISS: Brayden Burries\u2019 Draft Stock SOARS\u2014Mavericks or Clippers WILL LAND Arizona\u2019s STAR",
-          "source": "KTVB",
-          "published": "Fri, 12 Jun 2026 18:11:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMisgJBVV95cUxNZ0hSejBsLU8tWkhFRFh0ak5HdVhYMUlMNzdkbDZ0cl92aWNpWWlHZDJIMUNZbWs4MXV3YnoxMkFJbDQwR0FOeHlNUjJCZlhhOXdLU1dpcl9XQ1gyY3prQngwWDQ5Wk5nZFZGaWxYRDFOZU52WUtjRFZGX3k4T3NhR2ZfZTdmYmdJd2R5d052MC1JeVpzQzVQZ2hBSHpWdlhiNGVRN0tBSC0zdWlFUHJiTlpXTHp3VTBuNUdEanJwMEl2LWVJS1pqMjVTcEFMc1M0ekt4WHRNTy1zY3BoSFYyMWhZbnBHUVJGMk4tVXJra3hnd3J0RzRlSTItZXA3cUNIVG15UFozLUw4Y3NLdTUzOThYZ2hnNWlqNFh2UDR0bTdpTEdEcXBvazVGYjVtaklXRXc?oc=5",
+          "title": "Space stocks drop as SpaceX soars in debut",
+          "source": "Yahoo Finance",
+          "published": "Fri, 12 Jun 2026 20:14:54 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNcW1LbkNzbmpMQVJQeGF1czI1R1pra3FXWUJvU3dkUUxXT3J0Ym9iTHZOTWxUemd0QmJwM2hIVDdSdWxza3REampJVWtxUl92aWNweHJkaTVlYU56VHl3NThEUEpJUmdVeFd2Q3BxOG9tRWJfYkNpMW5WQ2pmRkpIbi1GT05Yb3BybEI1REVuOTFWRUxpLXl6LTltVXRrNVRUNXhDaXpzb093dw?oc=5",
           "sentiment": "good",
-          "_ep": 1781287860.0
-        },
-        {
-          "title": "CANNOT MISS: Brayden Burries\u2019 Draft Stock SOARS\u2014Mavericks or Clippers WILL LAND Arizona\u2019s STAR",
-          "source": "WUSA9",
-          "published": "Fri, 12 Jun 2026 18:11:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMiswJBVV95cUxNR0RfRmphLXZTREhVY3FmSWtndjVkZFo4R294a3l5eVhIWXEyaWRkcUJ2eHhKeUtCRU5TQWtsTEptTXNZWVlaSV82N2FvaVBpdGpGTHA1dWhpS1VhWkdINkJqWGgyandaUzkwS3FkZmdydUtvRXV2a2piNU95NG1zY1ZwSzdoLVZoeE9lbzE3TUJ1WXVSdmdKX2hDQU8zbjVFUVA2NE02LWNyZHJ2TFBGUDdJNkNTRG5vZUZtYThCSmVXdlNJd3RnemdJZXc5NUxTSUdETlhMRzZGWTNOb3AwczgxZzNDdGlGWndOMWRWWWpXalk2VmpUc01qVW1rYmtDbEZ1aGZnMHdXbGNQVktRa1M1S1FiNzY0NkF2SWNleTNRVWQ5RzRNRGpxS20wejFUODBz?oc=5",
-          "sentiment": "good",
-          "_ep": 1781287860.0
-        },
-        {
-          "title": "CANNOT MISS: Brayden Burries\u2019 Draft Stock SOARS\u2014Mavericks or Clippers WILL LAND Arizona\u2019s STAR",
-          "source": "krem.com",
-          "published": "Fri, 12 Jun 2026 18:11:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMisgJBVV95cUxPZ3Facl9PcnhPNG1vbFNldmhQRW1VQkhwQkpaXzJTNTdLQVJqWWpuSEphRGZ0a0pfWFpnRm0wVkdiZFJ2ekFhR2FfQmVqZWtaamZxcmVYeENIdFY1WC1mWG4zVk0zRTliS05COWNHVzZIWm50SnBHWV9nT1k2V3ppbEN0NVZOV1ZtdHlVRFc4QXgtM3FtRHg2SWNSaGdBc3pzNXUzVEFNTVNxbTAxdXVIVGJmQUg2d1h6U3ozZmdReW5McGdIT2ZfRk1pcWhNeWNlY294R0JBX1Z2clVzWHBmYnhJQUlWNG9hSUkwczk3OEFJZ2w3czJ1OXF5bDE1d1ZSWkltV05qd3ZNVWE0V2xueHJaRFdqUWJ0cmZ6TC13dUM4SmZ1UzNnRW5zWW9hSjhPTkE?oc=5",
-          "sentiment": "good",
-          "_ep": 1781287860.0
-        },
-        {
-          "title": "CANNOT MISS: Brayden Burries\u2019 Draft Stock SOARS\u2014Mavericks or Clippers WILL LAND Arizona\u2019s STAR",
-          "source": "KGW",
-          "published": "Fri, 12 Jun 2026 18:11:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMisAJBVV95cUxOOGQxYXo3MlZ6MHc2dmc1M09uODU3aVlNZHFEY3NwZ05QVl9NS0NnVWZ3SVEtblo0d0U4cHNudDBfcVZLVzdMSk1pZmJBWGhkaUFzb0thWFFIalBCWmVWNkx2RXVQVTZfVVVpcXFHZlZDN2EtaDJ4LVdtbjUwQV9zUm12c1lieFEyaWJFcTZ0bmd1ZWtEUi1vNkM3Q1c0bExkV3RKUDdUTWJiUlFBVkZHRFczc0NGTThzUnhZaDdKazJxa2tFMnB4blpVXzVycW9POWNLY1VMMURrNmVoRElyR01QYUNJN2ZZLWoxaW1PYU1GYjh6YXg3UUxacXdmS3h0R0RXcU1qNWliaHczYW9fVkJTZXZqMHhnZGpOcmRxRkRRblRiVzdJdU9GUlAzRFo3?oc=5",
-          "sentiment": "good",
-          "_ep": 1781287860.0
+          "_ep": 1781295294.0
         }
       ]
     },
@@ -196,12 +197,20 @@
       "name": "\ud83d\udd25 Semi Testing",
       "items": [
         {
-          "title": "Chip Stocks Rebound: Semiconductor Investment Strategy for June 2026",
-          "source": "Intellectia AI",
-          "published": "Wed, 10 Jun 2026 08:08:13 GMT",
-          "link": "https://news.google.com/rss/articles/CBMigwFBVV95cUxObnhKOWNONk5PZ19ycUQyRWxPUnlVYXJYMHVaYUstZkhCTWVYeENDZ3lNSkdDMzlyTHhtU1ZiUzFNV1RVN1Fmejc3cFhiSDc4YnNhMDZRVHQ2M3pKOVNOLVdyU0h4YmhlLW1DdWpwa01adFowNDYtV1VCMkhkWDVOVjVVQQ?oc=5",
+          "title": "AI Chip Stock Selloff Erased $1 Trillion: Oracle Earnings Today Offer Next Recovery Test",
+          "source": "Tech Times",
+          "published": "Wed, 10 Jun 2026 13:08:40 GMT",
+          "link": "https://news.google.com/rss/articles/CBMi2AFBVV95cUxQQ0ZZRTZMYmczSThQQ3JNTEFTMUxHZm5JSVZFZDJYaEhlRDFkMUoxMjBZOGFMbHdtU3EtalI0b1FZenFseGZoT1pQWEJZRmdBcmk5X1k3NnNXbGlTdW1FVWZKTDVUbVI1MVJrYnIwN2QyRmJVSjUxY05INjRWQXhqLXlqRFNiMjAwYWRHbE9Ua2VfWklPblZuVFk3X3lIYV9RVjdfOGRJWVl1OTVKOXBKNFVYYU5VVXZLb0xWa2swZHRKQ1hrakNRcG1paVhTbXkxSTEyQ1lQQVM?oc=5",
+          "sentiment": "bad",
+          "_ep": 1781096920.0
+        },
+        {
+          "title": "Intel shares surge! Report: Google plans to order millions of AI chips; NVIDIA testing its 18A process",
+          "source": "\u5bcc\u9014\u725b\u725b",
+          "published": "Mon, 08 Jun 2026 13:31:30 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiogFBVV95cUxPUk43WnR0VlFMZDdDXzc1Tzc2cnh0MGY0THR2S3JKZWVVTzBPM0RCNGVScW9uVG95YUswOTNkTkhQWUhkMGNMMWVkNmsxRmhoN0lDekZoTGltSU1IeW5BWkU4Y0Rxb25pdXRTcFNYSXV2MUROcjNwLU1wek80VmZEZVA0Qnl3aXJsbmhtYkZ5aVRsbFpJSU1zRzBsQ3JTRXduM0E?oc=5",
           "sentiment": "good",
-          "_ep": 1781078893.0
+          "_ep": 1780925490.0
         },
         {
           "title": "[Semiconductor Stocks Plunge] Is This a Buying Opportunity or the Start of Further Declines? SpaceX IPO Tests the AI-Driven Market \u2013 Exploring Bull and Bear Strategies",
@@ -210,14 +219,6 @@
           "link": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPNktaQlFlWF9iVVJBNENzWHlRQ2dkMlFjNlFxNGdVODQtT1NidVdZYXdLSkVLam56VnRkRkVDZi1tTGZnOWFpM3BhVVFOWXB1TWFsR2h6U254ODNYTThZNDBxWE5rNnIzcFVBMV9ZbmoxR2dlZEhrNFFkS1JnajJBeEpSaUJyNjR0dFZTa3FoMVkyYWtZWWNVeXB2eVpfOTJqUW5lMlpLTE1PcTFqMkRxRkJGaw?oc=5",
           "sentiment": "bad",
           "_ep": 1780916836.0
-        },
-        {
-          "title": "AI selloff Screening for quality tech stocks after the reset",
-          "source": "Saxo",
-          "published": "Mon, 08 Jun 2026 06:45:50 GMT",
-          "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxOMDR2NE02dndudXhEY2JDYkQ1Wnl4NmtPRG84Q1paNXlkQ19FdVVHampQc0N0ajVqN2FMcTROYi15NDRHbVJNOGxXYUVkVWVUck5BRzdheGU4clBqRXBnbUhtaU02cHJaRUx2amg1Uklna1JzY29lWnN3R1A0aXV3bGQ3YmhMZzRLQ2FOemF5SlVjbEtpUno2RnA2Uk1nMk5iVDlzZnh5N1IwOWFKU3RSSUpKa0pDVkZp?oc=5",
-          "sentiment": "bad",
-          "_ep": 1780901150.0
         },
         {
           "title": "Why Did FormFactor Stock Plummet Despite Record Q1 Earnings",
@@ -230,39 +231,23 @@
       ]
     },
     {
-      "name": "\ud83d\udd25 Steel",
+      "name": "\ud83d\udd25 IP",
       "items": [
         {
-          "title": "Steel Dynamics Inc (NASDAQ:STLD) Surges with Strong Technical and Fundamental Momentum",
-          "source": "ChartMill",
-          "published": "Thu, 11 Jun 2026 10:10:36 GMT",
-          "link": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxObGpoN19tVWx2UmtLQWFKUGI0bEZiUHF3SGtsbk8zRjNSb3ZhT0lERmExUzRCZG1KZTFpWHkxa3FSZGV4S3l0aXlTOXVDWlE3WTFQT3phTjNQSm5fNnRVWnVFdm1sWE1ZaHZTcEtCMUp4UFJ6WnRETzlPSC1kdG9ZTWcwdm9KN1k0U202Y3EtdVZkUFQxa3lpemZFcmhTMFp4bnQ3SUNLRUFSOWZTNXQ0bDVtVXQxU2tjRTg4WU5RdmxSSHlPX3o1VDdjSTBqNFha?oc=5",
+          "title": "Acquisition Odds: How These 4 Cult Stocks Stack Up as Buyout Targets",
+          "source": "24/7 Wall St.",
+          "published": "Fri, 12 Jun 2026 13:15:53 GMT",
+          "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxNV0poeHk1bjdLbk1sUTZQNE5fVFZYZ01lRFRLWVNqVkFzdksyQW9VS1JKUUpsZXVNdDMzTmNfdXpvRzEwRlpOR2Nld2dxNXRHeGprZDhmcURMem1ncFJFSW91ZVFRdXdJOHptV3BLR3MwQU1WX21OUjBVRS1QVHhnTVY5a0xWaFlXdjdsQjMtNU9lUVFHVENibkZlWEd0NjNXa0dBSlduSkxIWnhlOWsxYg?oc=5",
           "sentiment": "good",
-          "_ep": 1781172636.0
+          "_ep": 1781270153.0
         },
         {
-          "title": "Is Steel Dynamics (STLD) Still Fairly Priced After Its 109% One Year Surge?",
-          "source": "Yahoo Finance",
-          "published": "Thu, 11 Jun 2026 06:12:00 GMT",
-          "link": "https://news.google.com/rss/articles/CBMingFBVV95cUxPbEhRMkFGXzZnbmY4aVdpY0xFc0tiZkY1T0xreTdPU2pKMk4xZXBteW9uVkhDS3U3dWdOMUhVelQ4WkRVRmswYW5iRDNyV3MxUDlra3kyaEgtZER1WGFnSi1IcGxqdkRLZVNRejhlUEQxMU1FR1FtT2twcEZkWE9jLUZ0SC1ZUzFiTnRCWkRHWmoyanZjVUZJLXNKb3JIZw?oc=5",
-          "sentiment": "good",
-          "_ep": 1781158320.0
-        },
-        {
-          "title": "Rathi Steel gains on hot charging breakthrough despite market slump",
-          "source": "MSN",
-          "published": "Mon, 08 Jun 2026 08:11:22 GMT",
-          "link": "https://news.google.com/rss/articles/CBMi_gFBVV95cUxQMVF6QWVMNnEyckZZdGdBRUxpX1dfa2pQUFZXd0NCeUxMSmRHeEpHeTFLa3NDTmVnR2Q5MkZIMFZEcXZyY2xzaHRveHlLNzFTYlliOEU1ZzZRT3Jjd1BkTGlCYkxWbFNXSnZUeUN2RVpjZWdRT2JtN0ptdGlCbF9FVGlqX2FRbDFhWXdHR2NlNnkybG9xeTRkRXl6Y1N6blBMLVk3WGZ4OU5DX2Q4UTVYcGFoNTNIVnA4Y1hickpmblZkbVdDRmRVMFZRTV9PbDFxa1pRQXlDaDBhUTIzMXl0U0plelpuazNtZGYxczMtam43MlBlRmNKVXBUSW9IZw?oc=5",
+          "title": "Qualcomm Drops 6%, Arm Holdings Falls 5% as Mobile-Chip Stocks Slide in the Selloff",
+          "source": "24/7 Wall St.",
+          "published": "Wed, 10 Jun 2026 18:27:04 GMT",
+          "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxPNWdtT3JQeFRJMlZlblRpYnMxMmlMY1ExYnFWUHA5SVNmX3hpMm5UN2xUVWYxdmw5VWZPZjBLVHlJQl9xeko4Mmp3eXE3c05FLWlWbmZReFpaTFZtVnpfRFVyRlBXT1hFNFA5VVRwRmxZczBuVmhuRVFEQ2lvT3U5QnlBMkFudHhINW5WMjFnRWgxc01kSWVpSDk5djVIQ21vRGdyWWdaWWVuTUFpV2RrZk1LSS1ZZ3JPcDRhNVp4OHhjZw?oc=5",
           "sentiment": "bad",
-          "_ep": 1780906282.0
-        },
-        {
-          "title": "Is Insider Selling Amid High Expectations Altering The Investment Case For Steel Dynamics (STLD)?",
-          "source": "simplywall.st",
-          "published": "Sun, 07 Jun 2026 15:31:08 GMT",
-          "link": "https://news.google.com/rss/articles/CBMizwFBVV95cUxOTE5FamppNmhpR1pVcGNfM09LYllfUlZ0STBTYlZacmttOUx4VjlodlVBb3dnMlgtY1FoLURZTHI2NURZazlPcXo5NkNoeDBvOEp3dWFSWmlySGJ2RzVRVE1GSFZTQjd3YmhTV2lQZW1oLW9CajRkNzFtdUNmbmVwSm9JWW1WcU11aERmR2ZZSTdPUllqc2FtZzE5bEt5cWhSY3NGTTVLYmhPSGo5QURTalBmR3dGV0VFVkhMY1VKcWJlemJfcDNmTEkxcHJ2azQ?oc=5",
-          "sentiment": "good",
-          "_ep": 1780846268.0
+          "_ep": 1781116024.0
         }
       ]
     }
@@ -276,16 +261,9 @@
       "trump": false
     },
     "VIAV": {
-      "title": "Viavi Solutions (VIAV) Gained from the Acquisition and Improved Demand",
-      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxON1RRb2I4ZGZhblNTSHJVbzdUdmdlYkM0QjBROTNFa3FCNzBUSjZGanZ1RUZnSXNrVURIMzFMaUduZ09KNWJ6QnBYdlZDTFdLTkx2cHJNYTNMODFYZThvXzA1R2dER20tZ0N2dXhxemUybGlYaWRBMWctSmpDMzlWM3B2SzFZN1hKY3VqRjdJcnZXQy1Hck11VHJTNUtsRkhQaHFtOTA2QQ?oc=5",
-      "published": "Fri, 12 Jun 2026 15:22:18 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "SMTC": {
-      "title": "Semtech (NASDAQ: SMTC) CFO trims stake and settles RSUs under plan",
-      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxQcW1tQktkajJNRDN1QnJMTUpoUUVWQk8tRXZYSDQ1bE5KeXd2NmpDM2tLUFN1bmVNcGotNndud20xRi10TTdqV2QycFhkNVYydU5xZmZVa2kzYWxZV2Z4TUxMd21pZEFvT2lZdlJoN25kcUlXcDV6VlJNdm9TTEg0QVo3cWNBcFBvSHFqWEU5aWlwUXZ4aUVYTUxneFMwRmNMcFZUQ3c3MUFVQQ?oc=5",
-      "published": "Fri, 12 Jun 2026 20:01:41 GMT",
+      "title": "VIAV Stock Pops As 5G, AI Wins And S&P Upgrade Fuel Momentum",
+      "link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPRXFwT2hfcEVaVE8yMEpuT0lTVGJZcmdrNWo5T3M0YkxIc2VycmpKNVVScjd4ZktFd2ljSXhLT1l6S2VEajJFbmV0bGlmZzROVWo2UXpvcUVoR21yaEN6cVVDM0h4LVlIRi11TUZ2NGZ2b1BjWG96Wkp5azlHbHdnYQ?oc=5",
+      "published": "Fri, 12 Jun 2026 15:33:00 GMT",
       "sentiment": "good",
       "trump": false
     },
@@ -300,6 +278,13 @@
       "title": "Micron Stock Drops Again But This Powerful Catalyst Can Reignite Rally",
       "link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPVWRRdlV0SktaaWtPVTNyLXlIUHR0WWdhZ3lqUmZ1a3V2aUkyZGZBV2g3YmZQSmE2Vk1UcXNBOFI2SjExa0VkODcyOUhzVElFbko1OXFwMWJsZU9lRXN1Ni1xQm9aa3RaVXE4eXlKRzRLMFEyVFZZLVUxTjNYRTBpTA?oc=5",
       "published": "Wed, 10 Jun 2026 20:57:00 GMT",
+      "sentiment": "good",
+      "trump": false
+    },
+    "SMTC": {
+      "title": "Semtech (NASDAQ: SMTC) CFO trims stake and settles RSUs under plan",
+      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxQcW1tQktkajJNRDN1QnJMTUpoUUVWQk8tRXZYSDQ1bE5KeXd2NmpDM2tLUFN1bmVNcGotNndud20xRi10TTdqV2QycFhkNVYydU5xZmZVa2kzYWxZV2Z4TUxMd21pZEFvT2lZdlJoN25kcUlXcDV6VlJNdm9TTEg0QVo3cWNBcFBvSHFqWEU5aWlwUXZ4aUVYTUxneFMwRmNMcFZUQ3c3MUFVQQ?oc=5",
+      "published": "Fri, 12 Jun 2026 20:01:41 GMT",
       "sentiment": "good",
       "trump": false
     },
@@ -331,17 +316,17 @@
       "sentiment": "good",
       "trump": false
     },
+    "BE": {
+      "title": "Bloom Energy (BE) Stock After 13x Three Year Surge Is There Still Upside Potential",
+      "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxQd3pSZExIaUtQSFdSMHRhaTBpd0xkZG1ySVMzUFlTQnRPUnlaSHByTDN4b3dwaWJIVzQwbUdQNDA0N1U0M0hXTHctSUpWbUFxQ1lUODMxUnRVcjBwY196cEt2TllnVXFJbmFJanozd1BLTzVJc2huV1h3eWotdE1XX3hIRE9QRUFkZlB5SmZwbjR5TjJCUzZIWg?oc=5",
+      "published": "Fri, 12 Jun 2026 05:12:00 GMT",
+      "sentiment": "good",
+      "trump": false
+    },
     "SITM": {
       "title": "SITIME (SITM) officer sells 2,000 shares but retains large equity stake",
       "link": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxOX1JMUWNLbHVERlF1S3BBX3lNdDJmT1BPUlpldmVsVjhkZU9BWG1NaEN3b0h1VVYxYnFnQXVaRnphS0syZDkzSWZ3Q2h1Sk1nR1l5TEhpNmlIaUthdnotZW1YNTJFQnJLNVUzdkhYWV82RDhxMEhjdFpSNjRCdmNndFM1azU1Wmo0blJEQ0U5bTY1S1o3ZUo3LXQ4R29lb0hNblNMbjEzTUI?oc=5",
       "published": "Sat, 06 Jun 2026 01:01:22 GMT",
-      "sentiment": "good",
-      "trump": false
-    },
-    "RMBS": {
-      "title": "Rambus Inc (RMBS) Shares Surge 4.6% -- What GF Score of 85 Tells Investors",
-      "link": "https://news.google.com/rss/articles/CBMiugFBVV95cUxQc0xzM2dTalNLWHJuZjBrRjRmaFlpRFFuS3h0YXNPb0NTZjJuWTRSRUFsc0wtaWFVNUV3VXFIdTVKeVVSdENQczFGQjItaDdpV0tnWGZnU2tnbGpYbmZSQ01Ia3phZm1mU3ZQakNiYnFaWVAxUHI1QW1oRGpqcUJFcU1FOWcyNFZwaG11b205elpxOHlfVGdoY3JwODUzMjZndlA5RG9GcHJCR19MUWZmYmdhbmdfOUM0UFE?oc=5",
-      "published": "Tue, 09 Jun 2026 02:00:41 GMT",
       "sentiment": "good",
       "trump": false
     },
@@ -352,41 +337,25 @@
       "sentiment": "good",
       "trump": false,
       "from_feed": true
-    },
-    "RTX": {
-      "title": "RTX (RTX) Stock After Defense Contract Focus Is The Valuation Now Fair?",
-      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOZk1EQnh0Z2w5ZUYtQ1M3RkNsTEFaY2M4bTY1aFQ4TngzNW5FdnBTS2hKUGswWXkydWNUQ2VfT1hXN2E0Y1BNakNybFh1QnZ4Wk1Wd1hhZVM4cTBxUWJhZDVFZDZZamxvVWpFZ29QakhvOUFMSnN0OEtWR0lGazJJb2VpQzJpR1ZMSzNBYTZSTDVxbjJCeWJvdmttMA?oc=5",
-      "published": "Fri, 12 Jun 2026 04:27:00 GMT",
-      "sentiment": "good",
-      "trump": false,
-      "from_feed": true
-    },
-    "STLD": {
-      "title": "Steel Dynamics Inc (NASDAQ:STLD) Surges with Strong Technical and Fundamental Momentum",
-      "link": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxObGpoN19tVWx2UmtLQWFKUGI0bEZiUHF3SGtsbk8zRjNSb3ZhT0lERmExUzRCZG1KZTFpWHkxa3FSZGV4S3l0aXlTOXVDWlE3WTFQT3phTjNQSm5fNnRVWnVFdm1sWE1ZaHZTcEtCMUp4UFJ6WnRETzlPSC1kdG9ZTWcwdm9KN1k0U202Y3EtdVZkUFQxa3lpemZFcmhTMFp4bnQ3SUNLRUFSOWZTNXQ0bDVtVXQxU2tjRTg4WU5RdmxSSHlPX3o1VDdjSTBqNFha?oc=5",
-      "published": "Thu, 11 Jun 2026 10:10:36 GMT",
-      "sentiment": "good",
-      "trump": false,
-      "from_feed": true
     }
   },
   "theme_news": {
     "Space": {
-      "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
-      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxOTnRjYktIYkVwMmsyOWVJbGVxRUNMc0xoa1ZPV3pBNW84R2dwV0luNVk3d1FLengyc0VVSmdMRmJubm9OSmFSMnhnRDRsU3dTTVJnRThGRXpzdDVzTFFFNm1icm1KWXZDQ1FqWVVIYThvZ1Nra2Znblh4TzBxeWJrSk8zUmluZGQwVHd2dkZqeVJzTTgwbjJObFNWSE5GNGdZMzAySEFLYw?oc=5",
-      "published": "Fri, 12 Jun 2026 19:50:05 GMT",
+      "title": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
+      "published": "Fri, 12 Jun 2026 21:00:00 GMT",
       "sentiment": "good"
     },
-    "Defence & Drones": {
-      "title": "RTX (RTX) Stock After Defense Contract Focus Is The Valuation Now Fair?",
-      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOZk1EQnh0Z2w5ZUYtQ1M3RkNsTEFaY2M4bTY1aFQ4TngzNW5FdnBTS2hKUGswWXkydWNUQ2VfT1hXN2E0Y1BNakNybFh1QnZ4Wk1Wd1hhZVM4cTBxUWJhZDVFZDZZamxvVWpFZ29QakhvOUFMSnN0OEtWR0lGazJJb2VpQzJpR1ZMSzNBYTZSTDVxbjJCeWJvdmttMA?oc=5",
-      "published": "Fri, 12 Jun 2026 04:27:00 GMT",
-      "sentiment": "good"
+    "Aluminum": {
+      "title": "President Trump Modifies Section 232 Tariffs on Aluminum, Copper and Steel Imports",
+      "link": "https://news.google.com/rss/articles/CBMixwFBVV95cUxQT1pPMUtraFNKRGdBTW50REtUSWxnLVVMbGZsNzRWNVBURHpFaHZnbFJUNHdNY1JpeldiQ20tS1VHLTZfNDFtTUNRUGNtT1FiWFJvS3prYmhCYWxaYmpxRjNMdTkyMWVlRUQxTXp1blZxYlZVNWtaZTFYYXAwLUJIandwNDFTczFUZjdKaGUzVERJRUdGMVlsTXc1M0Zsa3hUelZGWTNFbmlPU3J4YnVIVldMM0VjaEx5NTVVdkdEQmxjcVUwSFIw?oc=5",
+      "published": "Wed, 10 Jun 2026 15:29:40 GMT",
+      "sentiment": "neutral"
     },
     "Gas/Oil": {
-      "title": "UK shares clock weekly gains as Iran-US peace deal hopes push oil price lower",
-      "link": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxNamdwTDgyZmlRUFFkSmMxWGlvRFAxSi04NnFtMXNhcnc4NVJld2tQYkNvOTlIdE5qTThkbzJ2WXlqVzFiX3VZampINS1FVlBMSkhRMXhncUplZHF2NGs0OXVOcFNDMF80S1BXT1lsbEEyQU1LLTdYU1VjemtqdHoxLXlBSjNNend6bk15aXlYOFNVblpKbGtfXzFGNm96eG5CeFN4b0hyd0xWQVE?oc=5",
-      "published": "Fri, 12 Jun 2026 16:39:07 GMT",
+      "title": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
+      "published": "Fri, 12 Jun 2026 21:00:00 GMT",
       "sentiment": "good"
     },
     "China": {
@@ -405,22 +374,11 @@
   "alerts": [
     {
       "dir": "buy",
-      "scope": "stock",
-      "title": "SMTC",
-      "headline": "Semtech (NASDAQ: SMTC) CFO trims stake and settles RSUs under plan",
-      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxQcW1tQktkajJNRDN1QnJMTUpoUUVWQk8tRXZYSDQ1bE5KeXd2NmpDM2tLUFN1bmVNcGotNndud20xRi10TTdqV2QycFhkNVYydU5xZmZVa2kzYWxZV2Z4TUxMd21pZEFvT2lZdlJoN25kcUlXcDV6VlJNdm9TTEg0QVo3cWNBcFBvSHFqWEU5aWlwUXZ4aUVYTUxneFMwRmNMcFZUQ3c3MUFVQQ?oc=5",
-      "published": "Fri, 12 Jun 2026 20:01:41 GMT",
-      "tickers": [
-        "SMTC"
-      ]
-    },
-    {
-      "dir": "buy",
       "scope": "sector",
       "title": "Space",
-      "headline": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
-      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxOTnRjYktIYkVwMmsyOWVJbGVxRUNMc0xoa1ZPV3pBNW84R2dwV0luNVk3d1FLengyc0VVSmdMRmJubm9OSmFSMnhnRDRsU3dTTVJnRThGRXpzdDVzTFFFNm1icm1KWXZDQ1FqWVVIYThvZ1Nra2Znblh4TzBxeWJrSk8zUmluZGQwVHd2dkZqeVJzTTgwbjJObFNWSE5GNGdZMzAySEFLYw?oc=5",
-      "published": "Fri, 12 Jun 2026 19:50:05 GMT",
+      "headline": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
+      "published": "Fri, 12 Jun 2026 21:00:00 GMT",
       "tickers": [
         "PL",
         "VSAT",
@@ -428,6 +386,33 @@
         "RKLB",
         "ASTS",
         "LUNR"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "sector",
+      "title": "Gas/Oil",
+      "headline": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
+      "published": "Fri, 12 Jun 2026 21:00:00 GMT",
+      "tickers": [
+        "VAL",
+        "RIG",
+        "LBRT",
+        "HP",
+        "FTI",
+        "FET"
+      ]
+    },
+    {
+      "dir": "buy",
+      "scope": "stock",
+      "title": "SMTC",
+      "headline": "Semtech (NASDAQ: SMTC) CFO trims stake and settles RSUs under plan",
+      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxQcW1tQktkajJNRDN1QnJMTUpoUUVWQk8tRXZYSDQ1bE5KeXd2NmpDM2tLUFN1bmVNcGotNndud20xRi10TTdqV2QycFhkNVYydU5xZmZVa2kzYWxZV2Z4TUxMd21pZEFvT2lZdlJoN25kcUlXcDV6VlJNdm9TTEg0QVo3cWNBcFBvSHFqWEU5aWlwUXZ4aUVYTUxneFMwRmNMcFZUQ3c3MUFVQQ?oc=5",
+      "published": "Fri, 12 Jun 2026 20:01:41 GMT",
+      "tickers": [
+        "SMTC"
       ]
     },
     {
@@ -443,18 +428,13 @@
     },
     {
       "dir": "buy",
-      "scope": "sector",
-      "title": "Gas/Oil",
-      "headline": "UK shares clock weekly gains as Iran-US peace deal hopes push oil price lower",
-      "link": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxNamdwTDgyZmlRUFFkSmMxWGlvRFAxSi04NnFtMXNhcnc4NVJld2tQYkNvOTlIdE5qTThkbzJ2WXlqVzFiX3VZampINS1FVlBMSkhRMXhncUplZHF2NGs0OXVOcFNDMF80S1BXT1lsbEEyQU1LLTdYU1VjemtqdHoxLXlBSjNNend6bk15aXlYOFNVblpKbGtfXzFGNm96eG5CeFN4b0hyd0xWQVE?oc=5",
-      "published": "Fri, 12 Jun 2026 16:39:07 GMT",
+      "scope": "stock",
+      "title": "VIAV",
+      "headline": "VIAV Stock Pops As 5G, AI Wins And S&P Upgrade Fuel Momentum",
+      "link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPRXFwT2hfcEVaVE8yMEpuT0lTVGJZcmdrNWo5T3M0YkxIc2VycmpKNVVScjd4ZktFd2ljSXhLT1l6S2VEajJFbmV0bGlmZzROVWo2UXpvcUVoR21yaEN6cVVDM0h4LVlIRi11TUZ2NGZ2b1BjWG96Wkp5azlHbHdnYQ?oc=5",
+      "published": "Fri, 12 Jun 2026 15:33:00 GMT",
       "tickers": [
-        "VAL",
-        "RIG",
-        "LBRT",
-        "HP",
-        "FTI",
-        "FET"
+        "VIAV"
       ]
     },
     {
@@ -481,29 +461,13 @@
     },
     {
       "dir": "buy",
-      "scope": "sector",
-      "title": "Defence & Drones",
-      "headline": "RTX (RTX) Stock After Defense Contract Focus Is The Valuation Now Fair?",
-      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOZk1EQnh0Z2w5ZUYtQ1M3RkNsTEFaY2M4bTY1aFQ4TngzNW5FdnBTS2hKUGswWXkydWNUQ2VfT1hXN2E0Y1BNakNybFh1QnZ4Wk1Wd1hhZVM4cTBxUWJhZDVFZDZZamxvVWpFZ29QakhvOUFMSnN0OEtWR0lGazJJb2VpQzJpR1ZMSzNBYTZSTDVxbjJCeWJvdmttMA?oc=5",
-      "published": "Fri, 12 Jun 2026 04:27:00 GMT",
-      "tickers": [
-        "KRMN",
-        "RCAT",
-        "EH",
-        "ESLT",
-        "CW",
-        "UMAC"
-      ]
-    },
-    {
-      "dir": "buy",
       "scope": "stock",
-      "title": "RTX",
-      "headline": "RTX (RTX) Stock After Defense Contract Focus Is The Valuation Now Fair?",
-      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOZk1EQnh0Z2w5ZUYtQ1M3RkNsTEFaY2M4bTY1aFQ4TngzNW5FdnBTS2hKUGswWXkydWNUQ2VfT1hXN2E0Y1BNakNybFh1QnZ4Wk1Wd1hhZVM4cTBxUWJhZDVFZDZZamxvVWpFZ29QakhvOUFMSnN0OEtWR0lGazJJb2VpQzJpR1ZMSzNBYTZSTDVxbjJCeWJvdmttMA?oc=5",
-      "published": "Fri, 12 Jun 2026 04:27:00 GMT",
+      "title": "BE",
+      "headline": "Bloom Energy (BE) Stock After 13x Three Year Surge Is There Still Upside Potential",
+      "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxQd3pSZExIaUtQSFdSMHRhaTBpd0xkZG1ySVMzUFlTQnRPUnlaSHByTDN4b3dwaWJIVzQwbUdQNDA0N1U0M0hXTHctSUpWbUFxQ1lUODMxUnRVcjBwY196cEt2TllnVXFJbmFJanozd1BLTzVJc2huV1h3eWotdE1XX3hIRE9QRUFkZlB5SmZwbjR5TjJCUzZIWg?oc=5",
+      "published": "Fri, 12 Jun 2026 05:12:00 GMT",
       "tickers": [
-        "RTX"
+        "BE"
       ]
     },
     {
@@ -520,31 +484,85 @@
     {
       "dir": "buy",
       "scope": "stock",
-      "title": "STLD",
-      "headline": "Steel Dynamics Inc (NASDAQ:STLD) Surges with Strong Technical and Fundamental Momentum",
-      "link": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxObGpoN19tVWx2UmtLQWFKUGI0bEZiUHF3SGtsbk8zRjNSb3ZhT0lERmExUzRCZG1KZTFpWHkxa3FSZGV4S3l0aXlTOXVDWlE3WTFQT3phTjNQSm5fNnRVWnVFdm1sWE1ZaHZTcEtCMUp4UFJ6WnRETzlPSC1kdG9ZTWcwdm9KN1k0U202Y3EtdVZkUFQxa3lpemZFcmhTMFp4bnQ3SUNLRUFSOWZTNXQ0bDVtVXQxU2tjRTg4WU5RdmxSSHlPX3o1VDdjSTBqNFha?oc=5",
-      "published": "Thu, 11 Jun 2026 10:10:36 GMT",
+      "title": "FORM",
+      "headline": "FormFactor Inc (FORM) Shares Surge 6.5% -- What GF Score of 68 T",
+      "link": "https://news.google.com/rss/articles/CBMivwFBVV95cUxOZkNQUWkzSjN0OFdvckVIMk1hRTE5MzJFSEJoQjN2czJkeXJQUTBlZUhzUTlOWmIya2tZUW9BMEZybllfSTlLODlURm43Ti1EajdCQWZtTDg3bXVKOVN1RVRjb0xBTndURGRYNjZ6Q0JkSnExekpCSU1lbXhLMUtrNFVTRTdxcjNJN0NHdk5kckRMZlBZSU1hczB4Ry04YTJJNUpMMlpXNkFXLXI4dXQ3bUk2eFdqV3ZzazMzWjBXYw?oc=5",
+      "published": "Tue, 09 Jun 2026 01:30:00 GMT",
       "tickers": [
-        "STLD"
+        "FORM"
       ]
     }
   ],
   "feed": [
     {
-      "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
-      "link": "https://news.google.com/rss/articles/CBMipwFBVV95cUxOTnRjYktIYkVwMmsyOWVJbGVxRUNMc0xoa1ZPV3pBNW84R2dwV0luNVk3d1FLengyc0VVSmdMRmJubm9OSmFSMnhnRDRsU3dTTVJnRThGRXpzdDVzTFFFNm1icm1KWXZDQ1FqWVVIYThvZ1Nra2Znblh4TzBxeWJrSk8zUmluZGQwVHd2dkZqeVJzTTgwbjJObFNWSE5GNGdZMzAySEFLYw?oc=5",
-      "source": "WHEC.com",
-      "published": "Fri, 12 Jun 2026 19:50:05 GMT",
-      "ep": 1781293805.0,
+      "title": "Stocks rise after oil prices ease and SpaceX soars in its debut on Wall Street",
+      "link": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxNR3FFODVHRkJoY1NrLVpTckZoeS02UHRiNTVZb3BNSFVPY3kwWkJiWG5ENDZNeEEtclFWeXR3cHlGWFRpNFlfLW40c2xTZTBDWGVaWWxTUDV6T29qSDU3NldjMFVYaWpsWlJxZlVFQmo3ZmoyT3dnV2lMTmt5SjdHMFJQOFR4UDhFWWNpOS1sZFVuTm9YR0lsUkRfTkxEclFVb1FXNTZ4X3ZQbElGTVZ0WHU1MnZCWHhMdjFMY2w3dm9VUQ?oc=5",
+      "source": "Los Angeles Times",
+      "published": "Fri, 12 Jun 2026 21:00:00 GMT",
+      "ep": 1781298000.0,
       "sentiment": "good",
       "trump": false
     },
     {
-      "title": "Wall Street rises on Iran war peace deal hopes, SpaceX's historic debut",
-      "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxQeXNKNzNQRjdTSU90RjJ6d0JSM1FNVHRUQ1Q3VTM1VTlRSWZfVkoxcU9DRzQxRkE5R2JNdk9QelpoS3RoS29rNGVJTzNpWnVydDdweHhlcEVpd2hWNFVKcV9JUWNpODNzdGVSVlRTUVNKenhMdWpIZGd2RlRwWlBSNS1lWkNfRkRUdFBlUzNYemNtclNFcTdRR2Q4eWMyaERXV3dLc1VMQWQwdVAyUzVvNQ?oc=5",
-      "source": "Reuters",
-      "published": "Fri, 12 Jun 2026 19:02:47 GMT",
-      "ep": 1781290967.0,
+      "title": "SpaceX stock soars in debut and makes Elon Musk the first trillionaire",
+      "link": "https://news.google.com/rss/articles/CBMivAFBVV95cUxORjJYREd6U2x6SkRDTmgxdkV6b2dUSVo4c0t0NzJFeVA2czRKT0F2dXdTc0hLQkNDLXRxUVRHbnMwS0NtVmtOd3dqM3ZBQUpOYktVZzY1SEFSd2p4WG4xN3RpdVJDSmVqeTlQVDN4SHBFVzU1Um1pU1NsMFNFNnJfa2FaRE9zSFhNbDk0SDN2UllsUUpqWGd3Wm9hMkppYXJBRjg3dDl4Tk9fRklUWVBGWnJTcV9OZ0JSZEd5Qw?oc=5",
+      "source": "AP News",
+      "published": "Fri, 12 Jun 2026 20:51:00 GMT",
+      "ep": 1781297460.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Elon Musk becomes world's first trillionaire as SpaceX soars in stock market debut",
+      "link": "https://news.google.com/rss/articles/CBMiWkFVX3lxTFBXU3A1ZEtDbHhYenRtOXZRX2NzbUhpRUMyX3V4Mk10Vzk4U2VxV0FjNGxvY19lVUZtY3MyUlBYUG8yNFFScGhVcWJ2LTZHTEtCRTZLbi0yY01NUQ?oc=5",
+      "source": "BBC",
+      "published": "Fri, 12 Jun 2026 20:46:32 GMT",
+      "ep": 1781297192.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Roku Stock Soars 20%. The Streaming Play Could Be for Sale.",
+      "link": "https://news.google.com/rss/articles/CBMiekFVX3lxTFBDZHhYbm9pWVhTelotdlRMcFNNVWNhdExSU0pxZjRJdVBPZ1k4QWNOcGxDY1p3WlhKOEkxbFlnZEdWQUhVcFFmaS10eUxZWnRFN0pYQXVBMnVqSGlFRl9yNC1id3U2bTZQSzNhNUxZVF90NWxhenptdGFR?oc=5",
+      "source": "Barron's",
+      "published": "Fri, 12 Jun 2026 20:44:00 GMT",
+      "ep": 1781297040.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Wall Street climbs as SpaceX shares launch, oil slides on Mideast deal hopes",
+      "link": "https://news.google.com/rss/articles/CBMiogFBVV95cUxQaWRzLXNha2UxM0NzVERBQnJVMThzc0hUcnpBVE5TWGFqc2RmVEVDZnJyaUhpZnlhVjBaUnZjZWZrM3o1dDBZVDYxZnBXREdYMXJjQTF2dHg2ZlpKQ2xCMEtTeWY4dkoxTHR5TjJkQ2kyS1ZyU3Znc195UVBkQ0tIQkFuT1gwRTdGT1VfTkRndTZoaW1zR096T2hYeERzYTk2bUE?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Fri, 12 Jun 2026 20:20:17 GMT",
+      "ep": 1781295617.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Space stocks drop as SpaceX soars in debut",
+      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNcW1LbkNzbmpMQVJQeGF1czI1R1pra3FXWUJvU3dkUUxXT3J0Ym9iTHZOTWxUemd0QmJwM2hIVDdSdWxza3REampJVWtxUl92aWNweHJkaTVlYU56VHl3NThEUEpJUmdVeFd2Q3BxOG9tRWJfYkNpMW5WQ2pmRkpIbi1GT05Yb3BybEI1REVuOTFWRUxpLXl6LTltVXRrNVRUNXhDaXpzb093dw?oc=5",
+      "source": "Yahoo Finance",
+      "published": "Fri, 12 Jun 2026 20:14:54 GMT",
+      "ep": 1781295294.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Roku Stock Soars On Buyout Chatter For Streaming Video Platform",
+      "link": "https://news.google.com/rss/articles/CBMinAFBVV95cUxPaUhZSV9GRGFNOXExUmdrcFF1d2t0VnFLdTJ3M05MTjQ1bFNJWjlnTzRYeVRraXczQnNtS1REcjhJVENSUGhzR3piTUNxREVRN0NuRzllU2RNTDUyMVNiNUpKZEJjUXZ2c1BaNGxJaW5WSzBJQzVQczRVVS1uYVpla3dCRFhCXzJ3OEdza0x3MjQyZHBJQVJGY3B2ck8?oc=5",
+      "source": "Investor's Business Daily",
+      "published": "Fri, 12 Jun 2026 20:02:00 GMT",
+      "ep": 1781294520.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "RDDT Stock Plunges After Hours On S&P 500 Exclusion: But Wells Fargo Forecasts $550M AI Deal Jackpot",
+      "link": "https://news.google.com/rss/articles/CBMigAJBVV95cUxQaFZvZjVHamtiLVNJX19zNVlvT21zRHJvNmU5elZOWUtvMHE4TmlLRG14cjhjdjA2Q1BYM3N2TFRXR3hHMHNlRVp2R2xqSzdSd0JVMktDYjI2Z2c0b2RZVm5yZzExbjFvei02WXNXWHo0MlFyUElPQXlfc290VDA5aDA0Wi0yN082dXJVVkluZnFxUE1Ga1E2WWh4M2NYd25TM0VDOTJ0dUhWM1p6UmUwR01xMHpJT2puZGxBaGdzUktpLVptemhtVUl0Wnk4UEFSbGJNUWs0RjVRRVZMY2dSM2NGMmZfQnQ4TnJseFV4Rzdoc2szRi1sQVNUemRrZ1Yw?oc=5",
+      "source": "Stocktwits",
+      "published": "Fri, 12 Jun 2026 19:40:00 GMT",
+      "ep": 1781293200.0,
       "sentiment": "bad",
       "trump": false
     },
@@ -558,38 +576,11 @@
       "trump": false
     },
     {
-      "title": "Hopes for Iran Peace Deal Sparked Quick Rally in Luxury Stocks. Is It Time to Buy?",
-      "link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxPMEg4U1phcGVGRHJ5blNmSXRUTVp4VXNpX2p2VXJiZHROdmI4YndKZ3BIaVMtZkQtZ0pEOGxOdUJ5RHd4eWlVYkthckFENXU0REhPZkxWSTlWTzR6ZnAzZFJGd09ac3ZqcTY1X0dCaGhUTzdTeUN0SEdZRkNUSVlRTkNVRDV4dlYx?oc=5",
-      "source": "Barron's",
-      "published": "Fri, 12 Jun 2026 17:44:00 GMT",
-      "ep": 1781286240.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
       "title": "SpaceX stock soars in early trading, making Elon Musk a trillionaire",
       "link": "https://news.google.com/rss/articles/CBMif0FVX3lxTFBsdXdSMlpLa1d5aHJmUklaa1RNNHNQa29KQ2M2NElBVEdBUXRPUDloYkdIQi1TUVhGRS15MXdkUzBaMzZHVEhyTTA3dGFzN1hCUDl6LTRiZmFrbGVHRjdaOW00MV9zU3kxRWhpNDhuTXhkY05DYWNOcE1qdnhubEk?oc=5",
       "source": "NBC News",
       "published": "Fri, 12 Jun 2026 17:20:20 GMT",
       "ep": 1781284820.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Space stocks drop as SpaceX soars in debut",
-      "link": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNcW1LbkNzbmpMQVJQeGF1czI1R1pra3FXWUJvU3dkUUxXT3J0Ym9iTHZOTWxUemd0QmJwM2hIVDdSdWxza3REampJVWtxUl92aWNweHJkaTVlYU56VHl3NThEUEpJUmdVeFd2Q3BxOG9tRWJfYkNpMW5WQ2pmRkpIbi1GT05Yb3BybEI1REVuOTFWRUxpLXl6LTltVXRrNVRUNXhDaXpzb093dw?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Fri, 12 Jun 2026 16:42:19 GMT",
-      "ep": 1781282539.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "UK shares clock weekly gains as Iran-US peace deal hopes push oil price lower",
-      "link": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxNamdwTDgyZmlRUFFkSmMxWGlvRFAxSi04NnFtMXNhcnc4NVJld2tQYkNvOTlIdE5qTThkbzJ2WXlqVzFiX3VZampINS1FVlBMSkhRMXhncUplZHF2NGs0OXVOcFNDMF80S1BXT1lsbEEyQU1LLTdYU1VjemtqdHoxLXlBSjNNend6bk15aXlYOFNVblpKbGtfXzFGNm96eG5CeFN4b0hyd0xWQVE?oc=5",
-      "source": "Reuters",
-      "published": "Fri, 12 Jun 2026 16:39:07 GMT",
-      "ep": 1781282347.0,
       "sentiment": "good",
       "trump": false
     },
@@ -600,15 +591,6 @@
       "published": "Fri, 12 Jun 2026 16:30:32 GMT",
       "ep": 1781281832.0,
       "sentiment": "bad",
-      "trump": false
-    },
-    {
-      "title": "Wall Street climbs as SpaceX shares launch, oil slides on Mideast deal hopes",
-      "link": "https://news.google.com/rss/articles/CBMiogFBVV95cUxQaWRzLXNha2UxM0NzVERBQnJVMThzc0hUcnpBVE5TWGFqc2RmVEVDZnJyaUhpZnlhVjBaUnZjZWZrM3o1dDBZVDYxZnBXREdYMXJjQTF2dHg2ZlpKQ2xCMEtTeWY4dkoxTHR5TjJkQ2kyS1ZyU3Znc195UVBkQ0tIQkFuT1gwRTdGT1VfTkRndTZoaW1zR096T2hYeERzYTk2bUE?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Fri, 12 Jun 2026 16:04:49 GMT",
-      "ep": 1781280289.0,
-      "sentiment": "good",
       "trump": false
     },
     {
@@ -639,20 +621,20 @@
       "trump": false
     },
     {
-      "title": "Pop Culture Group stock plunges 75% on dilutive offering",
-      "link": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxNWnlKVHdBYnpXclJXM1VMc2NpamtoOVRMTGtfN1hiMXVPUGhWOE0wdnhaelREcWNpZG50VDlVZGYzUFZ4bEhUZmhSNlJUSms4OWhPS1h1bEtjcUg2dWs4QkMzVldzbVdndS1YZUY4R3ltSVNMNWozSC1VaC1TdEZpZjJyYVRvQWtHVVh6M2k4NmVkUzBobzNpT2hlRHBQMUFab0FpNXU4VEp6Y2t0S1YxVEtWVHpoczBF?oc=5",
-      "source": "Investing.com",
-      "published": "Fri, 12 Jun 2026 13:53:12 GMT",
-      "ep": 1781272392.0,
-      "sentiment": "bad",
-      "trump": false
-    },
-    {
       "title": "Hyperliquid Contract Points To First-Day Gain Of 35% For SpaceX Stock",
       "link": "https://news.google.com/rss/articles/CBMipAFBVV95cUxNRzBTZEoxaHJuclExVzdleHJ2Sy1IdnRHU013VktNRFVpTTlsY0NwWUVrd3hlbG92TXFMZFFqTFR3U2hGUzh1N1UySWRubURlOHpVbE1IbDR2aFFwSDJQTlRkSTBiYU5CdUR1N010eWU0N3dkU3c2U2s3NGwtYkxQTndLM1NFOGdkWnNXeWdIVXl3cmNsZmpHSGtqUkVQSE1RaGNJQQ?oc=5",
       "source": "Yahoo Finance",
       "published": "Fri, 12 Jun 2026 13:18:00 GMT",
       "ep": 1781270280.0,
+      "sentiment": "good",
+      "trump": false
+    },
+    {
+      "title": "Acquisition Odds: How These 4 Cult Stocks Stack Up as Buyout Targets",
+      "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxNV0poeHk1bjdLbk1sUTZQNE5fVFZYZ01lRFRLWVNqVkFzdksyQW9VS1JKUUpsZXVNdDMzTmNfdXpvRzEwRlpOR2Nld2dxNXRHeGprZDhmcURMem1ncFJFSW91ZVFRdXdJOHptV3BLR3MwQU1WX21OUjBVRS1QVHhnTVY5a0xWaFlXdjdsQjMtNU9lUVFHVENibkZlWEd0NjNXa0dBSlduSkxIWnhlOWsxYg?oc=5",
+      "source": "24/7 Wall St.",
+      "published": "Fri, 12 Jun 2026 13:15:53 GMT",
+      "ep": 1781270153.0,
       "sentiment": "good",
       "trump": false
     },
@@ -700,24 +682,6 @@
       "ep": 1781240998.0,
       "sentiment": "bad",
       "trump": true
-    },
-    {
-      "title": "RTX (RTX) Stock After Defense Contract Focus Is The Valuation Now Fair?",
-      "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxOZk1EQnh0Z2w5ZUYtQ1M3RkNsTEFaY2M4bTY1aFQ4TngzNW5FdnBTS2hKUGswWXkydWNUQ2VfT1hXN2E0Y1BNakNybFh1QnZ4Wk1Wd1hhZVM4cTBxUWJhZDVFZDZZamxvVWpFZ29QakhvOUFMSnN0OEtWR0lGazJJb2VpQzJpR1ZMSzNBYTZSTDVxbjJCeWJvdmttMA?oc=5",
-      "source": "Yahoo Finance",
-      "published": "Fri, 12 Jun 2026 04:27:00 GMT",
-      "ep": 1781238420.0,
-      "sentiment": "good",
-      "trump": false
-    },
-    {
-      "title": "Oil Tumbles and Stocks Jump on Signs of a Peace Deal With Deal",
-      "link": "https://news.google.com/rss/articles/CBMidkFVX3lxTFAtbEFYSXZCM1RNYXRCbTllT0Y0SFpLcnhUd21idmFVMHJKMHdKZUx0STdlYnlpTHZrM1RiWnE5UjRHTzBWTk9mUFoxLW04SWZURWZWcEhOLW8xdVZFcHRpek1lYlNRWWtBd093X2k1OVJFOW9CMXc?oc=5",
-      "source": "The New York Times",
-      "published": "Fri, 12 Jun 2026 03:52:55 GMT",
-      "ep": 1781236375.0,
-      "sentiment": "bad",
-      "trump": false
     },
     {
       "title": "Appeals court rules Trump\u2019s 10 percent global tariff can stay, for now",

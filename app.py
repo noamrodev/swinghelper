@@ -254,7 +254,8 @@ def run_sector_heat():
     for i, r in enumerate(rows):
         r["rank"] = i + 1
         r["tier"] = "Hot" if r["rank"] <= max(1, n // 3) else ("Warm" if r["rank"] <= 2 * n // 3 else "Cool")
-    write_json(sector_heat_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sectors": rows})
+    write_json(sector_heat_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"),
+                                 "computed_at_ts": time.time(), "sectors": rows})
     SECTORH.update(running=False, current="")
 
 
@@ -629,7 +630,8 @@ def run_news_refresh():
     # major market news — the high-bar macro banner (war / Fed chair / crash / election shock).
     # Scans the dedicated macro query + the existing pool; empty on a normal day.
     macro = _detect_macro(list(raw_macro) + pool)
-    write_json(news_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "sections": sections,
+    write_json(news_f(), {"computed_at": time.strftime("%Y-%m-%d %H:%M"), "computed_at_ts": time.time(),
+                        "sections": sections,
                         "ticker_news": tn, "theme_news": theme_news, "alerts": alerts,
                         "feed": feed, "macro": macro})
     NEWS.update(running=False, current="")
@@ -741,10 +743,17 @@ def run_detect_groups():
 
 
 def _file_older_min(path, mins):
-    """True when `path` is missing or its mtime is older than `mins` minutes — the cheap, tz-free
-    freshness probe the post-scan context refresh uses (timestamps INSIDE the files are written in
-    each machine's local clock format, so comparing those across local/Render would lie)."""
+    """True when `path`'s CONTENT is older than `mins` minutes (or the file is missing) — the
+    freshness probe the post-scan context refresh uses. Prefers the epoch stamped INSIDE the file
+    (`computed_at_ts`): a fresh Render deploy resets every file's MTIME to checkout time, so an
+    mtime probe called the build-shipped news/sector-heat "fresh" and the hosted scan skipped
+    refreshing them — graded against hours-old shipped context while local refreshed (the
+    AEHR/FORM/SITM armed-tail divergence, 2026-06-13). Falls back to mtime for files written
+    before the stamp existed."""
     try:
+        ts = read_json(path, {}).get("computed_at_ts")
+        if ts:
+            return (time.time() - ts) / 60.0 > mins
         return (time.time() - Path(path).stat().st_mtime) / 60.0 > mins
     except OSError:
         return True

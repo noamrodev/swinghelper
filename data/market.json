@@ -1,5 +1,5 @@
 {
-  "computed_at": "2026-06-12 23:35",
+  "computed_at": "2026-06-13 00:00",
   "posture": 77,
   "posture_raw": 80,
   "label": "Constructive",
@@ -110,5 +110,5 @@
     ],
     "as_of": "2026-06-12"
   },
-  "computed_at_ts": 1781296528.0369985
+  "computed_at_ts": 1781298055.43992
 }
