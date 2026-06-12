@@ -20,7 +20,7 @@ import time
 import threading
 import statistics as st
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import rubric
 
@@ -335,6 +335,72 @@ _BARS_MEM_MAX = 3000
 _PROVISIONAL_TTL_HOURS = 1.0
 
 
+def _sym_market(sym):
+    """Which market's session clock governs this symbol's daily bars."""
+    return "il" if sym.upper().endswith(".TA") else "us"
+
+
+def _tz_offset_hours(market, utc_dt):
+    """DST-AWARE UTC offset (hours) for the market's session clock — self-contained, no tzdata
+    (this Windows box has no IANA db). mcfg's fixed tz_offset is the SUMMER value; using it
+    year-round would put the close boundary an hour EARLY in winter, so a cache fetched in the
+    final trading hour would dodge the settled-boundary gate (Burry finding #1, 2026-06-12).
+      US: EDT -4 from the 2nd Sunday of March to the 1st Sunday of November (~07:00 UTC), else EST -5.
+      IL: IDT +3 from the Friday before the last Sunday of March to the last Sunday of October, else +2.
+    Transition-day precision is ±1h on a weekend — at worst one extra refetch, never a missed boundary."""
+    try:
+        y = utc_dt.year
+        if market == "il":
+            mar_last_sun = datetime(y, 3, 31, tzinfo=timezone.utc)
+            mar_last_sun -= timedelta(days=(mar_last_sun.weekday() + 1) % 7)   # last Sunday of March
+            dst_start = (mar_last_sun - timedelta(days=2)).replace(hour=0)     # the Friday before, ~02:00 local
+            oct_last_sun = datetime(y, 10, 31, tzinfo=timezone.utc)
+            oct_last_sun -= timedelta(days=(oct_last_sun.weekday() + 1) % 7)   # last Sunday of October
+            dst_end = oct_last_sun.replace(hour=0)
+            return 3 if dst_start <= utc_dt < dst_end else 2
+        mar = datetime(y, 3, 8, tzinfo=timezone.utc)                 # 2nd Sun of March = 1st Sun on/after the 8th
+        dst_start = (mar + timedelta(days=(6 - mar.weekday()) % 7)).replace(hour=7)
+        nov = datetime(y, 11, 1, tzinfo=timezone.utc)                # 1st Sun of November
+        dst_end = (nov + timedelta(days=(6 - nov.weekday()) % 7)).replace(hour=7)
+        return -4 if dst_start <= utc_dt < dst_end else -5
+    except Exception:
+        return mcfg(market)["tz_offset"]
+
+
+def _last_close_ts(sym, now_ts=None):
+    """Epoch (UTC seconds) of the MOST RECENT regular-session close for the symbol's market —
+    i.e. the last moment a forming daily bar became a settled one. Walks back over non-trading
+    days. DST-aware (see _tz_offset_hours); returns None only on a config error."""
+    mk = _sym_market(sym)
+    cfg = mcfg(mk)
+    if now_ts is None:
+        now_ts = time.time()
+    off = _tz_offset_hours(mk, datetime.fromtimestamp(now_ts, tz=timezone.utc)) * 3600
+    loc = now_ts + off                                   # market-local epoch
+    day = int(loc // 86400)
+    for _ in range(10):
+        midnight = day * 86400
+        wd = datetime.fromtimestamp(midnight, tz=timezone.utc).weekday()
+        if wd in cfg["trading_days"]:
+            close_loc = midnight + cfg["close"] * 3600
+            if close_loc <= loc:
+                return close_loc - off                   # back to a UTC epoch
+        day -= 1
+    return None
+
+
+def _cache_crossed_close(mtime, sym):
+    """SETTLED-BOUNDARY GATE (2026-06-12, the local↔hosted divergence root cause): a cache file
+    written BEFORE the most recent session close was fetched while that session's daily bar was
+    still FORMING — its last bar is a random intraday snapshot (whatever second the fetch landed),
+    NOT the official close. Serving it after the close froze each site at a DIFFERENT intraday
+    moment (local graded SPX 7422/VIX 19.55 vs hosted 7426/18.22 vs the real close 7431/17.62 —
+    different posture, RS, extension, setups, grades). Such a cache is DEAD once the close passes:
+    refetch (at most once per symbol per day) so every consumer converges to the settled series."""
+    ts = _last_close_ts(sym)
+    return ts is not None and mtime < ts
+
+
 def did_fetch():
     """True if the most recent get_bars() call on THIS thread hit the network."""
     return getattr(_FETCH_STATE, "did_fetch", False)
@@ -352,7 +418,10 @@ def _effective_max_age(bars, max_age_hours):
     return max_age_hours
 
 
-def get_bars(sym, max_age_hours=12):
+def get_bars(sym, max_age_hours=12, allow_preclose=False):
+    """`allow_preclose=True` skips the settled-boundary gate — ONLY for bulk advisory consumers
+    (the fear&greed breadth sweep over the whole universe) where forcing an 800-name refetch
+    inside a request would stall the app; everything that feeds grades/levels keeps the gate."""
     _FETCH_STATE.did_fetch = False
     sym = sym.strip().upper()
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -361,12 +430,13 @@ def get_bars(sym, max_age_hours=12):
         try:
             mtime = f.stat().st_mtime
             age = (time.time() - mtime) / 3600
+            fresh = allow_preclose or not _cache_crossed_close(mtime, sym)
             # In-memory hit first: it already holds the parsed bars, so we can read the provisional
             # flag without a disk read and only serve the hit when it's within the effective TTL.
             hit = _BARS_MEM.get(sym)
-            if hit and hit[0] == mtime and age < _effective_max_age(hit[1], max_age_hours):
+            if hit and hit[0] == mtime and fresh and age < _effective_max_age(hit[1], max_age_hours):
                 return hit[1]
-            if age < max_age_hours:               # within the caller's nominal TTL — read the disk cache
+            if fresh and age < max_age_hours:     # within the caller's nominal TTL — read the disk cache
                 obj = json.loads(f.read_text())
                 bars = obj.get("bars")
                 if bars and age < _effective_max_age(bars, max_age_hours):
@@ -2589,7 +2659,10 @@ def fear_greed(market="us", tickers=None):
     if tickers:
         above = tot = hi = lo = 0
         for t in tickers:
-            b = get_bars(t)
+            # allow_preclose: breadth is an 800-name advisory sweep — never force a post-close
+            # refetch storm inside a request. It converges to settled bars right after each side's
+            # post-close scan refreshes the cache (the scan path keeps the settled-boundary gate).
+            b = get_bars(t, allow_preclose=True)
             if not b or len(b) < 60:
                 continue
             c = [x["close"] for x in b]

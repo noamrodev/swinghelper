@@ -1,5 +1,64 @@
 # Changelog
 
+## 2026-06-12 (night, 7) — local↔hosted desync SOLVED: the settled-bar boundary + 4 sibling causes
+
+**What was done.** Attacked the "two sites, two different armed lists/grades" bug with live forensics: pulled
+`/api/suggestions` + `/api/market` from BOTH sites at the same instant and diffed all 793 names field-by-field.
+Found FIVE independent divergence mechanisms and fixed each:
+1. **THE root cause — stale forming bars served after the close** (`scanner.get_bars`): a bar cache written
+   DURING the session holds a forming intraday last bar; the 12h TTL kept serving it all evening, freezing each
+   site at a DIFFERENT pre-close moment (local graded SPX 7422.32/VIX 19.55, hosted 7426.73/18.22 — the real
+   closes were **7431.46 / 17.62**; posture 45 vs 80 from the same code!). New **settled-boundary gate**: a cache
+   older than the most recent session close is dead → one refetch per symbol per day → every consumer (regime,
+   F&G, VIX, RS, ext50, setups) converges to the official settled series. `fear_greed`'s 800-name breadth sweep
+   passes `allow_preclose=True` so a request can never trigger a refetch storm.
+2. **Hosted scan graded fresh bars against shipped context** (`run_scan`): the on-demand scan never recomputed
+   regime/sector-heat/news — it graded live bars against the build-time snapshot. Now EVERY scan finishes by
+   recomputing the regime (always) + sector heat (>30 min old) + news (>60 min old) — both sites leave a coherent
+   input set, so grade-time reads converge.
+3. **Hosted served a pre-close scan all evening** (`_data_stale`): a scan taken before the close is now STALE once
+   the session settles → the hosted frontend auto-triggers ONE settled re-scan in the evening.
+4. **Local's post-close scan lagged ≤30 min** (`_forward_eod_loop`): heartbeat 1800s → 600s.
+5. **Personal-stats grade nudge had no hosted counterpart** (`grade_suggestions`/`compute_stats`): the realized-
+   results nudge read the OWNER's journal locally and an EMPTY journal hosted → hosted graded one notch sunnier
+   (the all-A+ armed lane). Local now persists `data/grade_stats.json` (per-setup median R only, no dollars);
+   make-build ships it; HOSTED grades read the shipped snapshot (never per-user trades).
+
+**Verified:** new `tests/test_settled_cache.py` (12 checks: close-boundary math incl. weekends, cache gate,
+allow_preclose, post-close staleness) + full suite green + build test-gate green. Live: new code computes
+SPX 7431.46/Recovery/posture 80, deterministic across runs. Local server RESTARTED on new code; build SYNCED to
+swinghelper (NOT pushed — trader pushes).
+
+**Decisions made.** Determinism over per-user learning on shared grades (hosted friends' own journals no longer
+nudge shared grades — they use the owner's shipped stats). Breadth (F&G) tolerates pre-close cache to avoid
+refetch storms — it converges right after each side's next scan. Intraday, two independent scanners can still
+differ by ticks fetched seconds apart (honest residual, borderline names only); EVENINGS — when the sites are
+actually compared — are now byte-deterministic on settled closes. News remains a small residual (live RSS
+fetched at different minutes; ~4/793 names today).
+
+**What's next.** Trader: `git -C swinghelper add -A && commit && push` to deploy the hosted half — until then the
+hosted site still runs old code and WILL still diverge. After push: open both sites in the evening and compare
+(should match). If a local universe rebuild changes the 800-name set, make a build so hosted gets the same set.
+
+## 2026-06-12 (SAVE-ALL — context cleared) — session end, sync UNRESOLVED
+
+Trader cleared context mid-frustration. State saved: `backups/2026-06-12_SAVE-ALL-context-clear/` (115 files),
+HQ updated, **203 tests passing**. Full handoff in `memory/handoff-2026-06-12-sync-unresolved.md`.
+
+**Shipped today (all on disk + latest swinghelper build; trader may NOT have pushed all):** ran-up→"Watching for
+pullback" lane (LITE no longer touted A+/best), atomic suggestions.json writes, regime intraday-freshness, RS
+stability (partial scan preserves full-universe rs_pct), Breakout-Watch lane + chase guards + EARLY tests. All
+Burry-verified, grades byte-for-byte.
+
+**UNRESOLVED — local↔hosted grade/setup desync (trader furious).** Root cause proven: two INDEPENDENT scanners,
+each computing its own scan + regime off its own Yahoo fetch at a different clock instant → different posture (67
+vs 78 as the market moved) + different rs_pct on boundary names → different grades/setups. The grade CODE is
+byte-for-byte identical (diffed). NOT fixable inside the grader. Trader wants both LIVE **and** identical and
+REJECTED the mirror ("my local is mine"). Untried angles: grade off settled daily closes (deterministic) / align
+scan+regime cadence / soften the rs_pct≥90 + posture-band grade cliffs. **Open trade:** trader sold BE @ $261
+(+$32.98) — log it; and a Deep Pullback trails the 50-EMA, so "below the 9" is by design (don't flag it).
+
+
 ## 2026-06-12 (night, 6) — THE local↔hosted desync bug: partial re-scan was compressing RS percentiles
 
 **Root cause (finally, proven).** Grades/setups differed between local and friends site. Diffed the grade code:

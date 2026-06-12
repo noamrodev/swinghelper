@@ -141,6 +141,9 @@ def spinning_f():        return _mns(DATA / "spinning.json")      # last spinnin
 def forward_f():         return _mns(DATA / "forward_log.json")   # forward/paper-test snapshots
 def pnl_f():             return _mns(DATA / "pnl_calendar.json")  # per-day equity + day P&L calendar
 def groups_f():          return _mns(DATA / "groups.json")        # detected emerging groups
+def grade_stats_f():     return _mns(DATA / "grade_stats.json")   # owner's per-setup realized stats —
+                                                                  # the SHARED grade-nudge input (ships
+                                                                  # in the build so hosted grades match)
 
 
 _TEMPLATE_DEFAULTS = {
@@ -174,7 +177,7 @@ def bootstrap_workspace(ud):
 # persistent disk these are copied from the baked-in SEED so the app works immediately.
 _SHARED_SEED = ["screeners.json", "universe.json", "themes.json", "sectors.json",
                 "market.json", "sector_heat.json", "news.json", "suspicious.json",
-                "premarket.json", "suggestions.json"]
+                "premarket.json", "suggestions.json", "grade_stats.json"]
 
 
 def seed_shared():
@@ -735,6 +738,16 @@ def run_detect_groups():
     except Exception as e:
         GROUPS.update(current="error: " + str(e))
     GROUPS.update(running=False, current="")
+
+
+def _file_older_min(path, mins):
+    """True when `path` is missing or its mtime is older than `mins` minutes — the cheap, tz-free
+    freshness probe the post-scan context refresh uses (timestamps INSIDE the files are written in
+    each machine's local clock format, so comparing those across local/Render would lie)."""
+    try:
+        return (time.time() - Path(path).stat().st_mtime) / 60.0 > mins
+    except OSError:
+        return True
 
 
 def _market_stale(mk):
@@ -1564,7 +1577,12 @@ def grade_suggestions(items, settings, posture=None, heat=None):
             it["group_leader"] = rank == 1 and n >= 2
 
     # ---- composite grade: rate every name best->worst using ALL the data ----
-    bysetup = compute_stats().get("by_setup", {})
+    # GRADE PARITY (2026-06-12): the realized-results nudge must come from the OWNER's journal on
+    # EVERY site. Hosted workspaces have no (or a friend's) trades, so compute_stats() there made
+    # hosted grades systematically one notch sunnier than local (A+ vs A across the whole armed
+    # lane). Hosted reads the shipped owner snapshot instead; local computes live (and persists it).
+    bysetup = (read_json(grade_stats_f(), {}).get("by_setup", {}) if HOSTED
+               else compute_stats().get("by_setup", {}))
     posture = posture if posture is not None else read_json(market_f(), {}).get("posture", 55)  # 0-100 regime (or as-of)
     # Patient AT-SUPPORT setups — exempt from the regime-factor discount (the user's backtest validated
     # these as the workhorse in BOTH corrections; they belong with the limit pullbacks, not with breakouts).
@@ -1900,6 +1918,19 @@ def _data_stale(s):
     if _us_regular_open():
         age = _scan_age_min(s)
         return age is None or age > HOSTED_FRESH_MIN
+    # POST-CLOSE (2026-06-12, the evening local↔hosted divergence): a scan taken BEFORE the most
+    # recent close was built on FORMING intraday bars — once the session settles it is a frozen
+    # random pre-close moment, not the closing picture, and it must not be served as live all
+    # evening (the hosted site sat on a 15:58 ET scan all night while local re-scanned at the
+    # close). Stale → the hosted frontend auto-triggers one fresh (settled-bar) re-scan.
+    age = _scan_age_min(s)
+    if age is not None:
+        try:
+            lc = scanner._last_close_ts(scanner.mcfg(market())["ref"])
+            if lc and (time.time() - age * 60.0) < lc:
+                return True
+        except Exception:
+            pass
     return False
 
 
@@ -2167,7 +2198,10 @@ def _forward_eod_loop():
                 bots.run_bots_eod()
             except Exception:
                 pass
-        time.sleep(1800)
+        # 10-min heartbeat (was 30): the post-close fresh scan is what reconciles local with the
+        # hosted site every evening — a 30-min lag left local serving pre-close forming bars while
+        # hosted had already re-scanned settled ones (or vice versa). Idle ticks are ~1 Yahoo probe.
+        time.sleep(600)
 
 
 def _sim_forward(bars, trade_date, entry, stop, entry_type, setup_type=None):
@@ -2720,6 +2754,32 @@ def run_scan(screener_id, max_age=12):
                                           # which would regenerate the frozen record with intraday data
         except Exception:
             pass
+        # ── SCAN LEAVES A COHERENT INPUT SET (2026-06-12, the local↔hosted divergence fix) ──
+        # Grades are computed at READ time from market.json (posture) + sector_heat.json (theme trend)
+        # + news.json — so a scan that refreshes only the BARS leaves fresh setups graded against a
+        # stale regime/sector/news context. That was the hosted site's whole life: its on-demand scan
+        # never recomputed any of these, so it graded live bars against the build-shipped snapshot
+        # while local recomputed them intraday → systematically different grades for the same scan.
+        # Recompute them HERE, after the bars cache is fresh, on BOTH sites:
+        #   • regime — always (seconds; breadth reads the just-refreshed cache → settled after close),
+        #   • sector heat / news — only when actually old (file mtime), to keep re-scans fast.
+        SCAN.update(current="market regime…")
+        try:
+            run_market_regime()
+        except Exception:
+            pass
+        try:
+            if not SECTORH.get("running") and _file_older_min(sector_heat_f(), 30):
+                SCAN.update(current="sector heat…")
+                run_sector_heat()
+        except Exception:
+            pass
+        try:
+            if not NEWS.get("running") and _file_older_min(news_f(), 60):
+                SCAN.update(current="news…")
+                run_news_refresh()
+        except Exception:
+            pass
     finally:
         SCAN.update(running=False, current="")          # ALWAYS clear the flag — success or error
         if _scanned_at:
@@ -2820,6 +2880,17 @@ def compute_stats():
                          for stp, v in out["by_setup"].items()}
     out["activation_threshold"] = 5
     _STATS_CACHE["t"], _STATS_CACHE["v"] = time.time(), out
+    # GRADE PARITY (2026-06-12): persist the owner's per-setup realized stats as a shared snapshot.
+    # The grade nudge reads THIS file on the hosted site (which has no/other journals), so both sites
+    # nudge grades off the SAME record — the empty hosted journal was silently grading everything one
+    # notch sunnier than local. Local-only writer; ships via make-build. Written only on change.
+    if not HOSTED:
+        try:
+            snap = {"by_setup": out["by_setup"]}
+            if read_json(grade_stats_f(), None) != snap:
+                write_json(grade_stats_f(), snap)
+        except Exception:
+            pass
     return out
 
 

@@ -23,6 +23,10 @@ journal/trades.md
 # On-demand demo data — friends run this scan themselves (kept out to avoid shipping a stale sample).
 data/suspicious.json
 
+# Forward-test log — local-only research artifact; a post-close scan on a hosted/test instance can
+# create one (run_scan freezes the snapshot after the close), and it must never ship.
+data/forward_log.json
+
 # NOTE: these ARE committed as a WARM SNAPSHOT (shipped by make-build) so the hosted site shows the
 # SAME graded setups as local the instant it boots — the server re-grades + re-sizes per user on each
 # read, and suggestions.json is sanitized of the owner's per-user sizing before shipping:

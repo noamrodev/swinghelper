@@ -1,42 +1,50 @@
 {
-  "computed_at": "2026-06-12 17:55",
+  "computed_at": "2026-06-12 23:14",
   "sectors": [
     {
       "sector": "AI Equipment",
       "count": 7,
-      "perf_1d": 4.82,
-      "perf_1w": 18.64,
-      "perf_1mo": 20.44,
-      "perf_3mo": 67.15,
-      "perf_6mo": 155.75,
+      "perf_1d": 6.16,
+      "perf_1w": 20.26,
+      "perf_1mo": 22.04,
+      "perf_3mo": 69.24,
+      "perf_6mo": 158.24,
       "breadth": 100,
       "streak": 4,
       "trend": "Rising",
       "fresh": true,
-      "score": 17.05,
+      "score": 18.45,
       "members": [
         {
           "ticker": "KLAC",
-          "close": 247.37,
-          "perf_1d": 2.58,
-          "perf_1w": 28.22,
-          "perf_1mo": 33.74,
+          "close": 254.54,
+          "perf_1d": 5.55,
+          "perf_1w": 31.94,
+          "perf_1mo": 37.61,
           "above20": true
         },
         {
           "ticker": "AMAT",
-          "close": 553.25,
-          "perf_1d": 0.11,
-          "perf_1w": 22.13,
-          "perf_1mo": 26.71,
+          "close": 567.25,
+          "perf_1d": 2.64,
+          "perf_1w": 25.22,
+          "perf_1mo": 29.92,
           "above20": true
         },
         {
           "ticker": "LRCX",
-          "close": 363.64,
-          "perf_1d": 0.31,
-          "perf_1w": 19.9,
-          "perf_1mo": 23.08,
+          "close": 366.81,
+          "perf_1d": 1.18,
+          "perf_1w": 20.95,
+          "perf_1mo": 24.16,
+          "above20": true
+        },
+        {
+          "ticker": "ENTG",
+          "close": 150.54,
+          "perf_1d": 3.88,
+          "perf_1w": 20.04,
+          "perf_1mo": 3.79,
           "above20": true
         },
         {
@@ -48,19 +56,11 @@
           "above20": true
         },
         {
-          "ticker": "ENTG",
-          "close": 146.36,
-          "perf_1d": 0.99,
-          "perf_1w": 16.71,
-          "perf_1mo": 0.91,
-          "above20": true
-        },
-        {
           "ticker": "ASML",
-          "close": 1861.0,
-          "perf_1d": -2.03,
-          "perf_1w": 13.36,
-          "perf_1mo": 17.67,
+          "close": 1863.55,
+          "perf_1d": -1.89,
+          "perf_1w": 13.51,
+          "perf_1mo": 17.83,
           "above20": true
         },
         {
@@ -76,147 +76,89 @@
       "tier": "Hot"
     },
     {
-      "sector": "Steel",
-      "count": 5,
-      "perf_1d": 1.2,
-      "perf_1w": 8.61,
-      "perf_1mo": 22.4,
-      "perf_3mo": 58.26,
-      "perf_6mo": 62.93,
-      "breadth": 100,
-      "streak": 16,
-      "trend": "Rising",
-      "fresh": false,
-      "score": 12.9,
-      "members": [
-        {
-          "ticker": "CRS",
-          "close": 566.65,
-          "perf_1d": 0.75,
-          "perf_1w": 17.17,
-          "perf_1mo": 29.86,
-          "above20": true
-        },
-        {
-          "ticker": "ATI",
-          "close": 200.59,
-          "perf_1d": 0.55,
-          "perf_1w": 13.03,
-          "perf_1mo": 21.7,
-          "above20": true
-        },
-        {
-          "ticker": "STLD",
-          "close": 283.62,
-          "perf_1d": 1.46,
-          "perf_1w": 5.63,
-          "perf_1mo": 19.63,
-          "above20": true
-        },
-        {
-          "ticker": "NUE",
-          "close": 266.96,
-          "perf_1d": 2.32,
-          "perf_1w": 4.94,
-          "perf_1mo": 14.9,
-          "above20": true
-        },
-        {
-          "ticker": "CLF",
-          "close": 13.84,
-          "perf_1d": 0.95,
-          "perf_1w": 2.29,
-          "perf_1mo": 25.93,
-          "above20": true
-        }
-      ],
-      "rank": 2,
-      "tier": "Hot"
-    },
-    {
       "sector": "Semi Testing",
       "count": 10,
-      "perf_1d": 4.46,
-      "perf_1w": 14.64,
-      "perf_1mo": 8.11,
-      "perf_3mo": 76.27,
-      "perf_6mo": 126.18,
+      "perf_1d": 5.75,
+      "perf_1w": 16.14,
+      "perf_1mo": 9.49,
+      "perf_3mo": 78.25,
+      "perf_6mo": 128.3,
       "breadth": 100,
       "streak": 2,
       "trend": "Rising",
       "fresh": true,
-      "score": 11.68,
+      "score": 12.95,
       "members": [
         {
-          "ticker": "ONTO",
-          "close": 317.98,
-          "perf_1d": 4.76,
-          "perf_1w": 25.56,
-          "perf_1mo": 14.81,
+          "ticker": "AMKR",
+          "close": 82.82,
+          "perf_1d": 8.76,
+          "perf_1w": 27.51,
+          "perf_1mo": 11.0,
           "above20": true
         },
         {
-          "ticker": "AMKR",
-          "close": 78.94,
-          "perf_1d": 3.66,
-          "perf_1w": 21.54,
-          "perf_1mo": 5.8,
+          "ticker": "ONTO",
+          "close": 322.9,
+          "perf_1d": 6.38,
+          "perf_1w": 27.51,
+          "perf_1mo": 16.58,
           "above20": true
         },
         {
           "ticker": "NVMI",
-          "close": 566.3,
-          "perf_1d": 1.19,
-          "perf_1w": 19.03,
-          "perf_1mo": 12.44,
+          "close": 585.44,
+          "perf_1d": 4.61,
+          "perf_1w": 23.05,
+          "perf_1mo": 16.24,
           "above20": true
         },
         {
           "ticker": "FORM",
-          "close": 137.12,
-          "perf_1d": 5.28,
-          "perf_1w": 17.5,
-          "perf_1mo": 6.04,
+          "close": 138.97,
+          "perf_1d": 6.7,
+          "perf_1w": 19.08,
+          "perf_1mo": 7.47,
           "above20": true
         },
         {
           "ticker": "MKSI",
-          "close": 352.86,
-          "perf_1d": 2.18,
-          "perf_1w": 16.98,
-          "perf_1mo": 11.2,
-          "above20": true
-        },
-        {
-          "ticker": "VIAV",
-          "close": 54.81,
-          "perf_1d": 9.1,
-          "perf_1w": 15.24,
-          "perf_1mo": 2.2,
+          "close": 356.23,
+          "perf_1d": 3.16,
+          "perf_1w": 18.09,
+          "perf_1mo": 12.27,
           "above20": true
         },
         {
           "ticker": "TER",
-          "close": 397.01,
-          "perf_1d": 4.09,
-          "perf_1w": 10.92,
-          "perf_1mo": 9.25,
+          "close": 403.2,
+          "perf_1d": 5.72,
+          "perf_1w": 12.65,
+          "perf_1mo": 10.96,
+          "above20": true
+        },
+        {
+          "ticker": "VIAV",
+          "close": 53.4,
+          "perf_1d": 6.29,
+          "perf_1w": 12.28,
+          "perf_1mo": -0.43,
           "above20": true
         },
         {
           "ticker": "AEHR",
-          "close": 108.0,
-          "perf_1d": 4.82,
-          "perf_1w": 9.7,
-          "perf_1mo": 4.6,
+          "close": 108.47,
+          "perf_1d": 5.28,
+          "perf_1w": 10.18,
+          "perf_1mo": 5.06,
           "above20": true
         },
         {
           "ticker": "KEYS",
-          "close": 346.73,
-          "perf_1d": 1.97,
-          "perf_1w": 5.12,
-          "perf_1mo": -4.0,
+          "close": 350.36,
+          "perf_1d": 3.04,
+          "perf_1w": 6.22,
+          "perf_1mo": -3.0,
           "above20": true
         },
         {
@@ -228,85 +170,143 @@
           "above20": true
         }
       ],
+      "rank": 2,
+      "tier": "Hot"
+    },
+    {
+      "sector": "Steel",
+      "count": 5,
+      "perf_1d": 0.51,
+      "perf_1w": 7.85,
+      "perf_1mo": 21.56,
+      "perf_3mo": 57.2,
+      "perf_6mo": 61.71,
+      "breadth": 100,
+      "streak": 16,
+      "trend": "Rising",
+      "fresh": false,
+      "score": 12.21,
+      "members": [
+        {
+          "ticker": "CRS",
+          "close": 560.03,
+          "perf_1d": -0.43,
+          "perf_1w": 15.8,
+          "perf_1mo": 28.35,
+          "above20": true
+        },
+        {
+          "ticker": "ATI",
+          "close": 198.21,
+          "perf_1d": -0.65,
+          "perf_1w": 11.69,
+          "perf_1mo": 20.25,
+          "above20": true
+        },
+        {
+          "ticker": "STLD",
+          "close": 282.75,
+          "perf_1d": 1.14,
+          "perf_1w": 5.31,
+          "perf_1mo": 19.26,
+          "above20": true
+        },
+        {
+          "ticker": "NUE",
+          "close": 265.52,
+          "perf_1d": 1.77,
+          "perf_1w": 4.38,
+          "perf_1mo": 14.28,
+          "above20": true
+        },
+        {
+          "ticker": "CLF",
+          "close": 13.81,
+          "perf_1d": 0.73,
+          "perf_1w": 2.07,
+          "perf_1mo": 25.66,
+          "above20": true
+        }
+      ],
       "rank": 3,
       "tier": "Hot"
     },
     {
       "sector": "AI Networking/Hardware",
       "count": 8,
-      "perf_1d": 0.72,
-      "perf_1w": -0.29,
-      "perf_1mo": 34.58,
-      "perf_3mo": 102.15,
-      "perf_6mo": 80.16,
+      "perf_1d": 0.39,
+      "perf_1w": -0.62,
+      "perf_1mo": 34.1,
+      "perf_3mo": 101.44,
+      "perf_6mo": 79.57,
       "breadth": 75,
       "streak": 2,
       "trend": "Slowing",
       "fresh": false,
-      "score": 11.65,
+      "score": 11.31,
       "members": [
         {
           "ticker": "ALAB",
-          "close": 373.39,
-          "perf_1d": 1.61,
-          "perf_1w": 17.77,
-          "perf_1mo": 66.63,
-          "above20": true
-        },
-        {
-          "ticker": "ANET",
-          "close": 163.98,
-          "perf_1d": 4.85,
-          "perf_1w": 6.29,
-          "perf_1mo": 16.55,
+          "close": 367.15,
+          "perf_1d": -0.09,
+          "perf_1w": 15.8,
+          "perf_1mo": 63.84,
           "above20": true
         },
         {
           "ticker": "MRVL",
-          "close": 277.45,
-          "perf_1d": -1.16,
-          "perf_1w": 5.31,
-          "perf_1mo": 55.91,
+          "close": 279.7,
+          "perf_1d": -0.36,
+          "perf_1w": 6.16,
+          "perf_1mo": 57.18,
+          "above20": true
+        },
+        {
+          "ticker": "ANET",
+          "close": 163.25,
+          "perf_1d": 4.38,
+          "perf_1w": 5.82,
+          "perf_1mo": 16.04,
           "above20": true
         },
         {
           "ticker": "DELL",
-          "close": 399.35,
-          "perf_1d": 2.02,
-          "perf_1w": 1.26,
-          "perf_1mo": 63.76,
+          "close": 395.58,
+          "perf_1d": 1.06,
+          "perf_1w": 0.3,
+          "perf_1mo": 62.21,
           "above20": true
         },
         {
           "ticker": "AVGO",
-          "close": 380.04,
-          "perf_1d": -1.43,
-          "perf_1w": -1.48,
-          "perf_1mo": -8.82,
+          "close": 382.07,
+          "perf_1d": -0.91,
+          "perf_1w": -0.95,
+          "perf_1mo": -8.33,
           "above20": false
         },
         {
           "ticker": "HPE",
-          "close": 48.12,
-          "perf_1d": 2.82,
-          "perf_1w": -2.2,
-          "perf_1mo": 50.05,
+          "close": 48.18,
+          "perf_1d": 2.95,
+          "perf_1w": -2.07,
+          "perf_1mo": 50.23,
           "above20": true
         },
         {
           "ticker": "NTAP",
-          "close": 161.51,
-          "perf_1d": 0.65,
-          "perf_1w": -3.31,
-          "perf_1mo": 36.2,
+          "close": 161.78,
+          "perf_1d": 0.82,
+          "perf_1w": -3.15,
+          "perf_1mo": 36.43,
           "above20": true
         },
         {
           "ticker": "SMCI",
-          "close": 30.83,
-          "perf_1d": -3.57,
-          "perf_1w": -25.96,
-          "perf_1mo": -3.66,
+          "close": 30.46,
+          "perf_1d": -4.72,
+          "perf_1w": -26.85,
+          "perf_1mo": -4.81,
           "above20": false
         }
       ],
@@ -316,157 +316,43 @@
     {
       "sector": "Foundry",
       "count": 3,
-      "perf_1d": 1.29,
-      "perf_1w": 5.78,
-      "perf_1mo": 15.87,
-      "perf_3mo": 82.77,
-      "perf_6mo": 100.99,
+      "perf_1d": 2.1,
+      "perf_1w": 6.63,
+      "perf_1mo": 16.91,
+      "perf_3mo": 84.53,
+      "perf_6mo": 103.01,
       "breadth": 100,
       "streak": 2,
       "trend": "Rising",
       "fresh": true,
-      "score": 9.83,
+      "score": 10.64,
       "members": [
         {
           "ticker": "UMC",
-          "close": 21.23,
-          "perf_1d": 2.66,
-          "perf_1w": 7.77,
-          "perf_1mo": 33.35,
+          "close": 21.68,
+          "perf_1d": 4.84,
+          "perf_1w": 10.05,
+          "perf_1mo": 36.18,
           "above20": true
         },
         {
           "ticker": "GFS",
-          "close": 81.28,
-          "perf_1d": 0.67,
-          "perf_1w": 7.61,
-          "perf_1mo": 8.39,
+          "close": 81.39,
+          "perf_1d": 0.81,
+          "perf_1w": 7.76,
+          "perf_1mo": 8.53,
           "above20": true
         },
         {
           "ticker": "TSM",
-          "close": 423.32,
-          "perf_1d": 0.53,
-          "perf_1w": 1.96,
-          "perf_1mo": 5.88,
+          "close": 423.82,
+          "perf_1d": 0.65,
+          "perf_1w": 2.08,
+          "perf_1mo": 6.01,
           "above20": true
         }
       ],
       "rank": 5,
-      "tier": "Hot"
-    },
-    {
-      "sector": "HPC",
-      "count": 12,
-      "perf_1d": 5.39,
-      "perf_1w": 4.93,
-      "perf_1mo": 14.47,
-      "perf_3mo": 84.36,
-      "perf_6mo": 63.58,
-      "breadth": 83,
-      "streak": 1,
-      "trend": "Rising",
-      "fresh": true,
-      "score": 9.04,
-      "members": [
-        {
-          "ticker": "APLD",
-          "close": 44.33,
-          "perf_1d": 6.9,
-          "perf_1w": 11.89,
-          "perf_1mo": -2.53,
-          "above20": true
-        },
-        {
-          "ticker": "RIOT",
-          "close": 27.18,
-          "perf_1d": 3.98,
-          "perf_1w": 10.22,
-          "perf_1mo": 9.07,
-          "above20": true
-        },
-        {
-          "ticker": "IREN",
-          "close": 59.64,
-          "perf_1d": 5.17,
-          "perf_1w": 9.73,
-          "perf_1mo": 8.1,
-          "above20": true
-        },
-        {
-          "ticker": "CIFR",
-          "close": 24.59,
-          "perf_1d": 8.66,
-          "perf_1w": 9.53,
-          "perf_1mo": 15.77,
-          "above20": true
-        },
-        {
-          "ticker": "CORZ",
-          "close": 28.11,
-          "perf_1d": 3.27,
-          "perf_1w": 8.74,
-          "perf_1mo": 17.12,
-          "above20": true
-        },
-        {
-          "ticker": "HUT",
-          "close": 121.86,
-          "perf_1d": 4.77,
-          "perf_1w": 8.57,
-          "perf_1mo": 12.5,
-          "above20": true
-        },
-        {
-          "ticker": "WULF",
-          "close": 25.91,
-          "perf_1d": 2.21,
-          "perf_1w": 7.96,
-          "perf_1mo": 12.07,
-          "above20": true
-        },
-        {
-          "ticker": "CLSK",
-          "close": 16.72,
-          "perf_1d": 3.4,
-          "perf_1w": 7.25,
-          "perf_1mo": 25.71,
-          "above20": true
-        },
-        {
-          "ticker": "NBIS",
-          "close": 237.01,
-          "perf_1d": 6.65,
-          "perf_1w": 4.04,
-          "perf_1mo": 14.35,
-          "above20": true
-        },
-        {
-          "ticker": "CRWV",
-          "close": 101.78,
-          "perf_1d": 6.31,
-          "perf_1w": 1.38,
-          "perf_1mo": -8.56,
-          "above20": false
-        },
-        {
-          "ticker": "KEEL",
-          "close": 5.52,
-          "perf_1d": 5.14,
-          "perf_1w": -6.91,
-          "perf_1mo": 35.63,
-          "above20": true
-        },
-        {
-          "ticker": "HIVE",
-          "close": 3.79,
-          "perf_1d": 8.29,
-          "perf_1w": -13.27,
-          "perf_1mo": 34.4,
-          "above20": false
-        }
-      ],
-      "rank": 6,
       "tier": "Hot"
     },
     {
@@ -524,53 +410,209 @@
           "above20": true
         }
       ],
+      "rank": 6,
+      "tier": "Hot"
+    },
+    {
+      "sector": "Compute (CPU/GPU)",
+      "count": 3,
+      "perf_1d": 5.19,
+      "perf_1w": 11.12,
+      "perf_1mo": 5.9,
+      "perf_3mo": 133.26,
+      "perf_6mo": 117.57,
+      "breadth": 67,
+      "streak": 2,
+      "trend": "Rising",
+      "fresh": true,
+      "score": 8.11,
+      "members": [
+        {
+          "ticker": "INTC",
+          "close": 124.57,
+          "perf_1d": 6.51,
+          "perf_1w": 25.61,
+          "perf_1mo": 3.56,
+          "above20": true
+        },
+        {
+          "ticker": "AMD",
+          "close": 511.57,
+          "perf_1d": 4.73,
+          "perf_1w": 9.69,
+          "perf_1mo": 14.83,
+          "above20": true
+        },
+        {
+          "ticker": "QCOM",
+          "close": 211.72,
+          "perf_1d": 4.32,
+          "perf_1w": -1.95,
+          "perf_1mo": -0.68,
+          "above20": false
+        }
+      ],
       "rank": 7,
+      "tier": "Hot"
+    },
+    {
+      "sector": "HPC",
+      "count": 12,
+      "perf_1d": 4.16,
+      "perf_1w": 3.66,
+      "perf_1mo": 13.2,
+      "perf_3mo": 82.14,
+      "perf_6mo": 61.44,
+      "breadth": 75,
+      "streak": 1,
+      "trend": "Rising",
+      "fresh": true,
+      "score": 7.51,
+      "members": [
+        {
+          "ticker": "IREN",
+          "close": 59.77,
+          "perf_1d": 5.4,
+          "perf_1w": 9.97,
+          "perf_1mo": 8.34,
+          "above20": true
+        },
+        {
+          "ticker": "CIFR",
+          "close": 24.53,
+          "perf_1d": 8.4,
+          "perf_1w": 9.27,
+          "perf_1mo": 15.49,
+          "above20": true
+        },
+        {
+          "ticker": "WULF",
+          "close": 26.14,
+          "perf_1d": 3.12,
+          "perf_1w": 8.92,
+          "perf_1mo": 13.06,
+          "above20": true
+        },
+        {
+          "ticker": "RIOT",
+          "close": 26.66,
+          "perf_1d": 1.99,
+          "perf_1w": 8.11,
+          "perf_1mo": 6.98,
+          "above20": true
+        },
+        {
+          "ticker": "APLD",
+          "close": 42.71,
+          "perf_1d": 2.99,
+          "perf_1w": 7.8,
+          "perf_1mo": -6.09,
+          "above20": false
+        },
+        {
+          "ticker": "CORZ",
+          "close": 27.49,
+          "perf_1d": 0.99,
+          "perf_1w": 6.34,
+          "perf_1mo": 14.54,
+          "above20": true
+        },
+        {
+          "ticker": "CLSK",
+          "close": 16.51,
+          "perf_1d": 2.1,
+          "perf_1w": 5.9,
+          "perf_1mo": 24.14,
+          "above20": true
+        },
+        {
+          "ticker": "HUT",
+          "close": 118.54,
+          "perf_1d": 1.92,
+          "perf_1w": 5.61,
+          "perf_1mo": 9.44,
+          "above20": true
+        },
+        {
+          "ticker": "NBIS",
+          "close": 232.36,
+          "perf_1d": 4.55,
+          "perf_1w": 2.0,
+          "perf_1mo": 12.1,
+          "above20": true
+        },
+        {
+          "ticker": "CRWV",
+          "close": 100.55,
+          "perf_1d": 5.02,
+          "perf_1w": 0.16,
+          "perf_1mo": -9.67,
+          "above20": false
+        },
+        {
+          "ticker": "KEEL",
+          "close": 5.52,
+          "perf_1d": 5.14,
+          "perf_1w": -6.91,
+          "perf_1mo": 35.63,
+          "above20": true
+        },
+        {
+          "ticker": "HIVE",
+          "close": 3.79,
+          "perf_1d": 8.29,
+          "perf_1w": -13.27,
+          "perf_1mo": 34.4,
+          "above20": false
+        }
+      ],
+      "rank": 8,
       "tier": "Hot"
     },
     {
       "sector": "Memory",
       "count": 7,
-      "perf_1d": 4.97,
-      "perf_1w": 5.82,
-      "perf_1mo": 8.26,
-      "perf_3mo": 133.77,
-      "perf_6mo": 261.06,
+      "perf_1d": 4.85,
+      "perf_1w": 5.69,
+      "perf_1mo": 8.11,
+      "perf_3mo": 133.53,
+      "perf_6mo": 260.79,
       "breadth": 86,
       "streak": 1,
       "trend": "Rising",
       "fresh": true,
-      "score": 7.6,
+      "score": 7.48,
       "members": [
         {
           "ticker": "SNDK",
-          "close": 1974.7,
-          "perf_1d": 4.95,
-          "perf_1w": 26.64,
-          "perf_1mo": 36.45,
+          "close": 1980.1,
+          "perf_1d": 5.24,
+          "perf_1w": 26.98,
+          "perf_1mo": 36.82,
           "above20": true
         },
         {
           "ticker": "MU",
-          "close": 993.84,
-          "perf_1d": -0.2,
-          "perf_1w": 15.03,
-          "perf_1mo": 23.67,
+          "close": 981.61,
+          "perf_1d": -1.43,
+          "perf_1w": 13.61,
+          "perf_1mo": 22.15,
           "above20": true
         },
         {
           "ticker": "WDC",
-          "close": 563.06,
-          "perf_1d": 6.38,
-          "perf_1w": 10.03,
-          "perf_1mo": 13.96,
+          "close": 562.92,
+          "perf_1d": 6.35,
+          "perf_1w": 10.01,
+          "perf_1mo": 13.93,
           "above20": true
         },
         {
           "ticker": "STX",
-          "close": 929.52,
-          "perf_1d": 7.08,
-          "perf_1w": 9.68,
-          "perf_1mo": 13.72,
+          "close": 931.04,
+          "perf_1d": 7.25,
+          "perf_1w": 9.86,
+          "perf_1mo": 13.91,
           "above20": true
         },
         {
@@ -598,95 +640,53 @@
           "above20": false
         }
       ],
-      "rank": 8,
-      "tier": "Hot"
-    },
-    {
-      "sector": "Compute (CPU/GPU)",
-      "count": 3,
-      "perf_1d": 4.02,
-      "perf_1w": 9.83,
-      "perf_1mo": 4.8,
-      "perf_3mo": 130.76,
-      "perf_6mo": 114.93,
-      "breadth": 67,
-      "streak": 2,
-      "trend": "Rising",
-      "fresh": true,
-      "score": 7.03,
-      "members": [
-        {
-          "ticker": "INTC",
-          "close": 121.41,
-          "perf_1d": 3.8,
-          "perf_1w": 22.43,
-          "perf_1mo": 0.93,
-          "above20": true
-        },
-        {
-          "ticker": "AMD",
-          "close": 514.9,
-          "perf_1d": 5.42,
-          "perf_1w": 10.4,
-          "perf_1mo": 15.58,
-          "above20": true
-        },
-        {
-          "ticker": "QCOM",
-          "close": 208.7,
-          "perf_1d": 2.83,
-          "perf_1w": -3.35,
-          "perf_1mo": -2.1,
-          "above20": false
-        }
-      ],
       "rank": 9,
       "tier": "Hot"
     },
     {
       "sector": "Copper",
       "count": 4,
-      "perf_1d": 3.32,
-      "perf_1w": 7.7,
-      "perf_1mo": -0.58,
-      "perf_3mo": 24.58,
-      "perf_6mo": 45.42,
+      "perf_1d": 3.24,
+      "perf_1w": 7.62,
+      "perf_1mo": -0.65,
+      "perf_3mo": 24.45,
+      "perf_6mo": 45.29,
       "breadth": 100,
       "streak": 2,
       "trend": "Rising",
       "fresh": true,
-      "score": 6.07,
+      "score": 6.0,
       "members": [
         {
           "ticker": "SCCO",
-          "close": 188.68,
-          "perf_1d": 3.58,
-          "perf_1w": 9.08,
-          "perf_1mo": -1.67,
+          "close": 189.36,
+          "perf_1d": 3.95,
+          "perf_1w": 9.48,
+          "perf_1mo": -1.32,
           "above20": true
         },
         {
           "ticker": "HBM",
-          "close": 27.7,
-          "perf_1d": 3.98,
-          "perf_1w": 7.95,
-          "perf_1mo": -0.14,
+          "close": 27.78,
+          "perf_1d": 4.28,
+          "perf_1w": 8.26,
+          "perf_1mo": 0.14,
           "above20": true
         },
         {
           "ticker": "FCX",
-          "close": 68.06,
-          "perf_1d": 2.59,
-          "perf_1w": 7.4,
-          "perf_1mo": 1.34,
+          "close": 68.4,
+          "perf_1d": 3.11,
+          "perf_1w": 7.94,
+          "perf_1mo": 1.85,
           "above20": true
         },
         {
           "ticker": "TECK",
-          "close": 65.6,
-          "perf_1d": 3.14,
-          "perf_1w": 6.37,
-          "perf_1mo": -1.86,
+          "close": 64.64,
+          "perf_1d": 1.64,
+          "perf_1w": 4.82,
+          "perf_1mo": -3.29,
           "above20": true
         }
       ],
@@ -696,63 +696,63 @@
     {
       "sector": "Other Small Semi",
       "count": 10,
-      "perf_1d": 4.25,
-      "perf_1w": -1.54,
-      "perf_1mo": 14.1,
-      "perf_3mo": 152.3,
-      "perf_6mo": 138.03,
+      "perf_1d": 4.44,
+      "perf_1w": -1.37,
+      "perf_1mo": 14.2,
+      "perf_3mo": 153.51,
+      "perf_6mo": 139.08,
       "breadth": 60,
       "streak": 1,
       "trend": "Slowing",
       "fresh": false,
-      "score": 4.96,
+      "score": 5.1,
       "members": [
         {
           "ticker": "SITM",
-          "close": 726.01,
-          "perf_1d": 0.66,
-          "perf_1w": 16.04,
-          "perf_1mo": -13.08,
-          "above20": true
-        },
-        {
-          "ticker": "SMTC",
-          "close": 167.37,
-          "perf_1d": 2.32,
-          "perf_1w": 10.83,
-          "perf_1mo": 19.77,
+          "close": 727.43,
+          "perf_1d": 0.86,
+          "perf_1w": 16.26,
+          "perf_1mo": -12.91,
           "above20": true
         },
         {
           "ticker": "MTSI",
-          "close": 381.44,
-          "perf_1d": 1.78,
-          "perf_1w": 10.43,
-          "perf_1mo": -0.03,
+          "close": 380.52,
+          "perf_1d": 1.54,
+          "perf_1w": 10.17,
+          "perf_1mo": -0.27,
+          "above20": true
+        },
+        {
+          "ticker": "SMTC",
+          "close": 166.26,
+          "perf_1d": 1.64,
+          "perf_1w": 10.09,
+          "perf_1mo": 18.98,
           "above20": true
         },
         {
           "ticker": "PENG",
-          "close": 65.18,
-          "perf_1d": 1.32,
-          "perf_1w": 8.89,
-          "perf_1mo": 35.03,
+          "close": 64.26,
+          "perf_1d": -0.11,
+          "perf_1w": 7.35,
+          "perf_1mo": 33.13,
           "above20": true
         },
         {
           "ticker": "LSCC",
-          "close": 144.3,
-          "perf_1d": 1.01,
-          "perf_1w": 6.44,
-          "perf_1mo": 14.84,
+          "close": 144.7,
+          "perf_1d": 1.29,
+          "perf_1w": 6.73,
+          "perf_1mo": 15.16,
           "above20": true
         },
         {
           "ticker": "MXL",
-          "close": 81.42,
-          "perf_1d": 0.41,
-          "perf_1w": 0.62,
-          "perf_1mo": -7.19,
+          "close": 84.48,
+          "perf_1d": 4.18,
+          "perf_1w": 4.4,
+          "perf_1mo": -3.7,
           "above20": false
         },
         {
@@ -794,72 +794,72 @@
     {
       "sector": "Analog/Power Semi",
       "count": 7,
-      "perf_1d": 0.03,
-      "perf_1w": 3.31,
-      "perf_1mo": 6.22,
-      "perf_3mo": 73.86,
-      "perf_6mo": 72.82,
+      "perf_1d": 1.36,
+      "perf_1w": 4.67,
+      "perf_1mo": 7.96,
+      "perf_3mo": 77.32,
+      "perf_6mo": 76.42,
       "breadth": 57,
       "streak": 2,
       "trend": "Rising",
       "fresh": true,
-      "score": 3.55,
+      "score": 4.88,
       "members": [
         {
-          "ticker": "MPWR",
-          "close": 1580.7,
-          "perf_1d": -0.56,
-          "perf_1w": 6.73,
-          "perf_1mo": -4.22,
+          "ticker": "MCHP",
+          "close": 95.32,
+          "perf_1d": 2.56,
+          "perf_1w": 7.9,
+          "perf_1mo": -1.44,
           "above20": true
         },
         {
-          "ticker": "MCHP",
-          "close": 93.88,
-          "perf_1d": 1.01,
-          "perf_1w": 6.27,
-          "perf_1mo": -2.93,
+          "ticker": "MPWR",
+          "close": 1577.32,
+          "perf_1d": -0.77,
+          "perf_1w": 6.5,
+          "perf_1mo": -4.43,
           "above20": true
         },
         {
           "ticker": "TXN",
-          "close": 300.67,
-          "perf_1d": 1.2,
-          "perf_1w": 5.48,
-          "perf_1mo": -1.85,
-          "above20": false
-        },
-        {
-          "ticker": "ADI",
-          "close": 415.72,
-          "perf_1d": 0.87,
-          "perf_1w": 3.57,
-          "perf_1mo": -3.86,
-          "above20": true
-        },
-        {
-          "ticker": "NXPI",
-          "close": 303.42,
-          "perf_1d": 0.29,
-          "perf_1w": 2.52,
-          "perf_1mo": 1.68,
-          "above20": false
-        },
-        {
-          "ticker": "SWKS",
-          "close": 73.12,
-          "perf_1d": 0.54,
-          "perf_1w": -0.61,
-          "perf_1mo": 7.31,
+          "close": 301.12,
+          "perf_1d": 1.35,
+          "perf_1w": 5.63,
+          "perf_1mo": -1.7,
           "above20": false
         },
         {
           "ticker": "VSH",
-          "close": 56.74,
-          "perf_1d": -3.17,
-          "perf_1w": -0.8,
-          "perf_1mo": 47.38,
+          "close": 59.97,
+          "perf_1d": 2.34,
+          "perf_1w": 4.84,
+          "perf_1mo": 55.77,
           "above20": true
+        },
+        {
+          "ticker": "ADI",
+          "close": 417.79,
+          "perf_1d": 1.37,
+          "perf_1w": 4.09,
+          "perf_1mo": -3.38,
+          "above20": true
+        },
+        {
+          "ticker": "NXPI",
+          "close": 304.86,
+          "perf_1d": 0.76,
+          "perf_1w": 3.01,
+          "perf_1mo": 2.16,
+          "above20": false
+        },
+        {
+          "ticker": "SWKS",
+          "close": 74.1,
+          "perf_1d": 1.88,
+          "perf_1w": 0.72,
+          "perf_1mo": 8.75,
+          "above20": false
         }
       ],
       "rank": 12,
@@ -868,23 +868,23 @@
     {
       "sector": "Leasing",
       "count": 2,
-      "perf_1d": -0.5,
-      "perf_1w": 1.86,
-      "perf_1mo": 6.12,
-      "perf_3mo": 56.85,
-      "perf_6mo": 15.9,
+      "perf_1d": -0.13,
+      "perf_1w": 2.25,
+      "perf_1mo": 6.58,
+      "perf_3mo": 57.53,
+      "perf_6mo": 16.41,
       "breadth": 50,
       "streak": 14,
-      "trend": "Steady",
+      "trend": "Rising",
       "fresh": false,
-      "score": 2.48,
+      "score": 2.85,
       "members": [
         {
           "ticker": "CAR",
-          "close": 185.44,
-          "perf_1d": -2.2,
-          "perf_1w": 4.89,
-          "perf_1mo": 24.59,
+          "close": 186.82,
+          "perf_1d": -1.47,
+          "perf_1w": 5.67,
+          "perf_1mo": 25.52,
           "above20": true
         },
         {
@@ -902,63 +902,63 @@
     {
       "sector": "Cybersecurity",
       "count": 10,
-      "perf_1d": -0.21,
-      "perf_1w": -3.81,
-      "perf_1mo": 13.83,
-      "perf_3mo": 26.29,
-      "perf_6mo": 6.78,
+      "perf_1d": -0.03,
+      "perf_1w": -3.65,
+      "perf_1mo": 13.97,
+      "perf_3mo": 26.39,
+      "perf_6mo": 6.93,
       "breadth": 40,
       "streak": 0,
       "trend": "Falling",
       "fresh": false,
-      "score": 2.08,
+      "score": 2.23,
       "members": [
         {
-          "ticker": "CRWD",
-          "close": 692.9,
-          "perf_1d": 0.2,
-          "perf_1w": 3.26,
-          "perf_1mo": 23.17,
+          "ticker": "PANW",
+          "close": 279.62,
+          "perf_1d": 0.03,
+          "perf_1w": 2.78,
+          "perf_1mo": 22.75,
           "above20": true
         },
         {
-          "ticker": "PANW",
-          "close": 279.52,
-          "perf_1d": -0.0,
-          "perf_1w": 2.75,
-          "perf_1mo": 22.71,
+          "ticker": "CRWD",
+          "close": 682.8,
+          "perf_1d": -1.26,
+          "perf_1w": 1.76,
+          "perf_1mo": 21.37,
           "above20": true
         },
         {
           "ticker": "FTNT",
-          "close": 144.41,
-          "perf_1d": -0.45,
-          "perf_1w": -0.19,
-          "perf_1mo": 22.7,
-          "above20": true
-        },
-        {
-          "ticker": "OKTA",
-          "close": 117.01,
-          "perf_1d": -0.42,
-          "perf_1w": -1.44,
-          "perf_1mo": 49.63,
+          "close": 146.19,
+          "perf_1d": 0.78,
+          "perf_1w": 1.04,
+          "perf_1mo": 24.22,
           "above20": true
         },
         {
           "ticker": "ZS",
-          "close": 127.56,
-          "perf_1d": 1.15,
-          "perf_1w": -2.46,
-          "perf_1mo": -16.32,
+          "close": 128.99,
+          "perf_1d": 2.28,
+          "perf_1w": -1.37,
+          "perf_1mo": -15.38,
           "above20": false
         },
         {
+          "ticker": "OKTA",
+          "close": 116.38,
+          "perf_1d": -0.95,
+          "perf_1w": -1.97,
+          "perf_1mo": 48.82,
+          "above20": true
+        },
+        {
           "ticker": "RBRK",
-          "close": 69.4,
-          "perf_1d": -2.87,
-          "perf_1w": -5.46,
-          "perf_1mo": 16.68,
+          "close": 68.54,
+          "perf_1d": -4.07,
+          "perf_1w": -6.63,
+          "perf_1mo": 15.23,
           "above20": false
         },
         {
@@ -971,26 +971,26 @@
         },
         {
           "ticker": "GEN",
-          "close": 24.2,
-          "perf_1d": 1.09,
-          "perf_1w": -7.91,
-          "perf_1mo": 3.91,
+          "close": 24.26,
+          "perf_1d": 1.34,
+          "perf_1w": -7.69,
+          "perf_1mo": 4.16,
           "above20": false
         },
         {
           "ticker": "CHKP",
-          "close": 123.09,
-          "perf_1d": -0.02,
-          "perf_1w": -9.37,
-          "perf_1mo": 6.88,
+          "close": 124.73,
+          "perf_1d": 1.31,
+          "perf_1w": -8.17,
+          "perf_1mo": 8.3,
           "above20": false
         },
         {
           "ticker": "NET",
-          "close": 226.06,
-          "perf_1d": -0.61,
-          "perf_1w": -9.62,
-          "perf_1mo": 17.36,
+          "close": 228.53,
+          "perf_1d": 0.48,
+          "perf_1w": -8.63,
+          "perf_1mo": 18.64,
           "above20": false
         }
       ],
@@ -998,499 +998,49 @@
       "tier": "Warm"
     },
     {
-      "sector": "Quantum",
-      "count": 6,
-      "perf_1d": 1.92,
-      "perf_1w": -0.76,
-      "perf_1mo": 11.27,
-      "perf_3mo": 43.66,
-      "perf_6mo": -14.29,
-      "breadth": 17,
-      "streak": 0,
-      "trend": "Slowing",
-      "fresh": false,
-      "score": 1.81,
-      "members": [
-        {
-          "ticker": "RGTI",
-          "close": 21.36,
-          "perf_1d": 3.54,
-          "perf_1w": 3.29,
-          "perf_1mo": 15.96,
-          "above20": false
-        },
-        {
-          "ticker": "IONQ",
-          "close": 58.5,
-          "perf_1d": 0.88,
-          "perf_1w": 3.03,
-          "perf_1mo": 5.86,
-          "above20": false
-        },
-        {
-          "ticker": "QUBT",
-          "close": 10.22,
-          "perf_1d": 3.13,
-          "perf_1w": 2.71,
-          "perf_1mo": -7.34,
-          "above20": false
-        },
-        {
-          "ticker": "QBTS",
-          "close": 23.57,
-          "perf_1d": -1.05,
-          "perf_1w": -1.17,
-          "perf_1mo": 9.93,
-          "above20": false
-        },
-        {
-          "ticker": "INFQ",
-          "close": 14.05,
-          "perf_1d": -0.5,
-          "perf_1w": -3.5,
-          "perf_1mo": 5.72,
-          "above20": false
-        },
-        {
-          "ticker": "BTQ",
-          "close": 4.4,
-          "perf_1d": 5.52,
-          "perf_1w": -8.9,
-          "perf_1mo": 37.5,
-          "above20": true
-        }
-      ],
-      "rank": 15,
-      "tier": "Warm"
-    },
-    {
-      "sector": "Crypto",
-      "count": 8,
-      "perf_1d": 1.5,
-      "perf_1w": 9.07,
-      "perf_1mo": -7.92,
-      "perf_3mo": 7.11,
-      "perf_6mo": -25.51,
-      "breadth": 38,
-      "streak": 2,
-      "trend": "Rising",
-      "fresh": true,
-      "score": 0.95,
-      "members": [
-        {
-          "ticker": "GLXY",
-          "close": 35.19,
-          "perf_1d": 5.77,
-          "perf_1w": 39.98,
-          "perf_1mo": 14.22,
-          "above20": true
-        },
-        {
-          "ticker": "MARA",
-          "close": 14.23,
-          "perf_1d": 4.56,
-          "perf_1w": 15.5,
-          "perf_1mo": 11.61,
-          "above20": true
-        },
-        {
-          "ticker": "HOOD",
-          "close": 92.77,
-          "perf_1d": 0.59,
-          "perf_1w": 12.49,
-          "perf_1mo": 20.87,
-          "above20": true
-        },
-        {
-          "ticker": "COIN",
-          "close": 162.05,
-          "perf_1d": 1.01,
-          "perf_1w": 6.33,
-          "perf_1mo": -19.7,
-          "above20": false
-        },
-        {
-          "ticker": "MSTR",
-          "close": 124.92,
-          "perf_1d": 3.97,
-          "perf_1w": 3.72,
-          "perf_1mo": -29.83,
-          "above20": false
-        },
-        {
-          "ticker": "BMNR",
-          "close": 16.34,
-          "perf_1d": -1.09,
-          "perf_1w": 2.77,
-          "perf_1mo": -22.85,
-          "above20": false
-        },
-        {
-          "ticker": "CRCL",
-          "close": 80.29,
-          "perf_1d": -2.83,
-          "perf_1w": 0.01,
-          "perf_1mo": -36.56,
-          "above20": false
-        },
-        {
-          "ticker": "ORBS",
-          "close": 0.89,
-          "perf_1d": 0.0,
-          "perf_1w": -8.25,
-          "perf_1mo": -1.11,
-          "above20": false
-        }
-      ],
-      "rank": 16,
-      "tier": "Warm"
-    },
-    {
-      "sector": "Space",
-      "count": 17,
-      "perf_1d": 5.06,
-      "perf_1w": -1.31,
-      "perf_1mo": 5.0,
-      "perf_3mo": 61.33,
-      "perf_6mo": 137.74,
-      "breadth": 29,
-      "streak": 0,
-      "trend": "Slowing",
-      "fresh": false,
-      "score": 0.94,
-      "members": [
-        {
-          "ticker": "ATEX",
-          "close": 81.44,
-          "perf_1d": 25.72,
-          "perf_1w": 19.85,
-          "perf_1mo": 50.12,
-          "above20": true
-        },
-        {
-          "ticker": "YSS",
-          "close": 33.72,
-          "perf_1d": 22.09,
-          "perf_1w": 13.65,
-          "perf_1mo": 5.47,
-          "above20": true
-        },
-        {
-          "ticker": "VSAT",
-          "close": 74.66,
-          "perf_1d": 2.68,
-          "perf_1w": 11.13,
-          "perf_1mo": 5.78,
-          "above20": true
-        },
-        {
-          "ticker": "FEIM",
-          "close": 77.15,
-          "perf_1d": 15.79,
-          "perf_1w": 6.53,
-          "perf_1mo": 27.94,
-          "above20": true
-        },
-        {
-          "ticker": "SATS",
-          "close": 115.72,
-          "perf_1d": -9.69,
-          "perf_1w": -0.48,
-          "perf_1mo": -13.14,
-          "above20": false
-        },
-        {
-          "ticker": "SPIR",
-          "close": 19.79,
-          "perf_1d": 20.89,
-          "perf_1w": -1.25,
-          "perf_1mo": 12.19,
-          "above20": false
-        },
-        {
-          "ticker": "PL",
-          "close": 31.73,
-          "perf_1d": -7.14,
-          "perf_1w": -1.52,
-          "perf_1mo": -22.12,
-          "above20": false
-        },
-        {
-          "ticker": "RKLB",
-          "close": 105.99,
-          "perf_1d": -7.66,
-          "perf_1w": -3.72,
-          "perf_1mo": -14.63,
-          "above20": false
-        },
-        {
-          "ticker": "GILT",
-          "close": 15.37,
-          "perf_1d": 13.35,
-          "perf_1w": -3.76,
-          "perf_1mo": -22.8,
-          "above20": false
-        },
-        {
-          "ticker": "IRDM",
-          "close": 49.91,
-          "perf_1d": 9.43,
-          "perf_1w": -4.15,
-          "perf_1mo": 19.8,
-          "above20": true
-        },
-        {
-          "ticker": "FLY",
-          "close": 34.21,
-          "perf_1d": -13.11,
-          "perf_1w": -5.24,
-          "perf_1mo": -13.11,
-          "above20": false
-        },
-        {
-          "ticker": "LUNR",
-          "close": 27.53,
-          "perf_1d": -10.15,
-          "perf_1w": -6.23,
-          "perf_1mo": -22.84,
-          "above20": false
-        },
-        {
-          "ticker": "SIDU",
-          "close": 4.39,
-          "perf_1d": 11.42,
-          "perf_1w": -6.6,
-          "perf_1mo": 32.23,
-          "above20": false
-        },
-        {
-          "ticker": "SATL",
-          "close": 7.52,
-          "perf_1d": 19.75,
-          "perf_1w": -7.62,
-          "perf_1mo": -0.4,
-          "above20": false
-        },
-        {
-          "ticker": "ASTS",
-          "close": 85.75,
-          "perf_1d": -12.11,
-          "perf_1w": -8.39,
-          "perf_1mo": 14.62,
-          "above20": false
-        },
-        {
-          "ticker": "BKSY",
-          "close": 35.97,
-          "perf_1d": 13.15,
-          "perf_1w": -9.3,
-          "perf_1mo": -10.77,
-          "above20": false
-        },
-        {
-          "ticker": "RDW",
-          "close": 15.65,
-          "perf_1d": -8.43,
-          "perf_1w": -15.18,
-          "perf_1mo": 36.56,
-          "above20": false
-        }
-      ],
-      "rank": 17,
-      "tier": "Warm"
-    },
-    {
-      "sector": "Aluminum",
-      "count": 4,
-      "perf_1d": 4.3,
-      "perf_1w": -3.88,
-      "perf_1mo": 2.02,
-      "perf_3mo": 27.68,
-      "perf_6mo": 84.11,
-      "breadth": 50,
-      "streak": 0,
-      "trend": "Falling",
-      "fresh": false,
-      "score": -0.09,
-      "members": [
-        {
-          "ticker": "KALU",
-          "close": 187.7,
-          "perf_1d": 7.36,
-          "perf_1w": 0.45,
-          "perf_1mo": 6.43,
-          "above20": true
-        },
-        {
-          "ticker": "AA",
-          "close": 69.12,
-          "perf_1d": 0.2,
-          "perf_1w": -3.85,
-          "perf_1mo": 0.99,
-          "above20": false
-        },
-        {
-          "ticker": "CSTM",
-          "close": 34.75,
-          "perf_1d": 6.43,
-          "perf_1w": -3.87,
-          "perf_1mo": 4.32,
-          "above20": true
-        },
-        {
-          "ticker": "CENX",
-          "close": 60.94,
-          "perf_1d": 3.22,
-          "perf_1w": -8.26,
-          "perf_1mo": -3.68,
-          "above20": false
-        }
-      ],
-      "rank": 18,
-      "tier": "Warm"
-    },
-    {
-      "sector": "Cooling",
-      "count": 10,
-      "perf_1d": 0.56,
-      "perf_1w": 1.09,
-      "perf_1mo": -3.85,
-      "perf_3mo": 26.2,
-      "perf_6mo": 40.88,
-      "breadth": 60,
-      "streak": 1,
-      "trend": "Steady",
-      "fresh": false,
-      "score": -0.11,
-      "members": [
-        {
-          "ticker": "WSO",
-          "close": 386.61,
-          "perf_1d": 0.59,
-          "perf_1w": 4.1,
-          "perf_1mo": -7.51,
-          "above20": true
-        },
-        {
-          "ticker": "NVT",
-          "close": 168.55,
-          "perf_1d": 2.45,
-          "perf_1w": 3.49,
-          "perf_1mo": -2.52,
-          "above20": true
-        },
-        {
-          "ticker": "CARR",
-          "close": 69.09,
-          "perf_1d": -0.93,
-          "perf_1w": 2.87,
-          "perf_1mo": 5.37,
-          "above20": true
-        },
-        {
-          "ticker": "FIX",
-          "close": 1887.23,
-          "perf_1d": 2.38,
-          "perf_1w": 2.35,
-          "perf_1mo": -7.24,
-          "above20": true
-        },
-        {
-          "ticker": "JCI",
-          "close": 145.38,
-          "perf_1d": 0.95,
-          "perf_1w": 1.2,
-          "perf_1mo": 1.1,
-          "above20": true
-        },
-        {
-          "ticker": "LII",
-          "close": 510.78,
-          "perf_1d": -1.21,
-          "perf_1w": 0.46,
-          "perf_1mo": 0.65,
-          "above20": true
-        },
-        {
-          "ticker": "VRT",
-          "close": 300.26,
-          "perf_1d": 0.8,
-          "perf_1w": -0.08,
-          "perf_1mo": -18.85,
-          "above20": false
-        },
-        {
-          "ticker": "TT",
-          "close": 456.04,
-          "perf_1d": -0.89,
-          "perf_1w": -0.18,
-          "perf_1mo": -3.18,
-          "above20": false
-        },
-        {
-          "ticker": "MOD",
-          "close": 273.05,
-          "perf_1d": 0.57,
-          "perf_1w": -1.25,
-          "perf_1mo": -2.2,
-          "above20": false
-        },
-        {
-          "ticker": "AAON",
-          "close": 129.82,
-          "perf_1d": 0.92,
-          "perf_1w": -2.11,
-          "perf_1mo": -4.1,
-          "above20": false
-        }
-      ],
-      "rank": 19,
-      "tier": "Warm"
-    },
-    {
       "sector": "Software/Cloud/Cyber",
       "count": 11,
-      "perf_1d": -0.26,
-      "perf_1w": -6.79,
-      "perf_1mo": 9.86,
-      "perf_3mo": 77.93,
-      "perf_6mo": 59.8,
-      "breadth": 36,
+      "perf_1d": 1.52,
+      "perf_1w": -5.11,
+      "perf_1mo": 11.53,
+      "perf_3mo": 79.63,
+      "perf_6mo": 61.12,
+      "breadth": 45,
       "streak": 0,
       "trend": "Falling",
       "fresh": false,
-      "score": -0.51,
+      "score": 1.47,
       "members": [
         {
+          "ticker": "ROKU",
+          "close": 144.43,
+          "perf_1d": 20.72,
+          "perf_1w": 18.13,
+          "perf_1mo": 14.92,
+          "above20": true
+        },
+        {
           "ticker": "DOCN",
-          "close": 173.45,
-          "perf_1d": -0.74,
-          "perf_1w": 2.11,
-          "perf_1mo": 8.96,
+          "close": 171.13,
+          "perf_1d": -2.07,
+          "perf_1w": 0.74,
+          "perf_1mo": 7.51,
           "above20": true
         },
         {
           "ticker": "INOD",
-          "close": 103.69,
-          "perf_1d": -1.59,
-          "perf_1w": 1.69,
-          "perf_1mo": 15.28,
-          "above20": true
+          "close": 101.03,
+          "perf_1d": -4.11,
+          "perf_1w": -0.92,
+          "perf_1mo": 12.32,
+          "above20": false
         },
         {
           "ticker": "DDOG",
-          "close": 233.43,
-          "perf_1d": -0.35,
-          "perf_1w": -0.29,
-          "perf_1mo": 13.7,
-          "above20": true
-        },
-        {
-          "ticker": "ROKU",
-          "close": 121.0,
-          "perf_1d": 1.14,
-          "perf_1w": -1.03,
-          "perf_1mo": -3.72,
+          "close": 229.9,
+          "perf_1d": -1.85,
+          "perf_1w": -1.8,
+          "perf_1mo": 11.98,
           "above20": false
         },
         {
@@ -1503,27 +1053,27 @@
         },
         {
           "ticker": "FROG",
-          "close": 77.68,
-          "perf_1d": -1.02,
-          "perf_1w": -7.52,
-          "perf_1mo": 21.03,
+          "close": 78.02,
+          "perf_1d": -0.59,
+          "perf_1w": -7.12,
+          "perf_1mo": 21.56,
+          "above20": true
+        },
+        {
+          "ticker": "NOW",
+          "close": 102.19,
+          "perf_1d": -0.86,
+          "perf_1w": -9.12,
+          "perf_1mo": 17.39,
           "above20": false
         },
         {
           "ticker": "TWLO",
-          "close": 202.46,
-          "perf_1d": -2.01,
-          "perf_1w": -10.41,
-          "perf_1mo": 5.11,
-          "above20": false
-        },
-        {
-          "ticker": "NOW",
-          "close": 100.4,
-          "perf_1d": -2.6,
-          "perf_1w": -10.72,
-          "perf_1mo": 15.34,
-          "above20": false
+          "close": 204.38,
+          "perf_1d": -1.08,
+          "perf_1w": -9.56,
+          "perf_1mo": 6.11,
+          "above20": true
         },
         {
           "ticker": "BAND",
@@ -1534,249 +1084,267 @@
           "above20": true
         },
         {
+          "ticker": "FIG",
+          "close": 18.75,
+          "perf_1d": -3.05,
+          "perf_1w": -13.79,
+          "perf_1mo": -1.0,
+          "above20": false
+        },
+        {
           "ticker": "RNG",
           "close": 37.67,
           "perf_1d": -2.74,
           "perf_1w": -14.44,
           "perf_1mo": -10.03,
           "above20": false
-        },
-        {
-          "ticker": "FIG",
-          "close": 18.31,
-          "perf_1d": -5.33,
-          "perf_1w": -15.82,
-          "perf_1mo": -3.33,
-          "above20": false
         }
       ],
-      "rank": 20,
+      "rank": 15,
       "tier": "Warm"
     },
     {
-      "sector": "Defence & Drones",
-      "count": 11,
-      "perf_1d": 0.79,
-      "perf_1w": -7.1,
-      "perf_1mo": 7.89,
-      "perf_3mo": -13.4,
-      "perf_6mo": 10.97,
-      "breadth": 45,
+      "sector": "Quantum",
+      "count": 6,
+      "perf_1d": 0.76,
+      "perf_1w": -1.91,
+      "perf_1mo": 10.09,
+      "perf_3mo": 41.99,
+      "perf_6mo": -14.93,
+      "breadth": 17,
       "streak": 0,
-      "trend": "Falling",
+      "trend": "Slowing",
       "fresh": false,
-      "score": -0.56,
+      "score": 0.76,
       "members": [
         {
-          "ticker": "ESLT",
-          "close": 913.2,
-          "perf_1d": 11.51,
-          "perf_1w": 8.98,
-          "perf_1mo": 13.84,
+          "ticker": "RGTI",
+          "close": 21.25,
+          "perf_1d": 3.01,
+          "perf_1w": 2.76,
+          "perf_1mo": 15.36,
+          "above20": false
+        },
+        {
+          "ticker": "IONQ",
+          "close": 57.84,
+          "perf_1d": -0.26,
+          "perf_1w": 1.87,
+          "perf_1mo": 4.67,
+          "above20": false
+        },
+        {
+          "ticker": "QUBT",
+          "close": 10.01,
+          "perf_1d": 1.01,
+          "perf_1w": 0.6,
+          "perf_1mo": -9.25,
+          "above20": false
+        },
+        {
+          "ticker": "QBTS",
+          "close": 23.62,
+          "perf_1d": -0.84,
+          "perf_1w": -0.96,
+          "perf_1mo": 10.17,
+          "above20": false
+        },
+        {
+          "ticker": "INFQ",
+          "close": 13.57,
+          "perf_1d": -3.9,
+          "perf_1w": -6.8,
+          "perf_1mo": 2.11,
+          "above20": false
+        },
+        {
+          "ticker": "BTQ",
+          "close": 4.4,
+          "perf_1d": 5.52,
+          "perf_1w": -8.9,
+          "perf_1mo": 37.5,
           "above20": true
-        },
-        {
-          "ticker": "CW",
-          "close": 760.86,
-          "perf_1d": 0.48,
-          "perf_1w": 3.78,
-          "perf_1mo": 1.31,
-          "above20": true
-        },
-        {
-          "ticker": "KTOS",
-          "close": 58.69,
-          "perf_1d": -0.15,
-          "perf_1w": 0.29,
-          "perf_1mo": 11.81,
-          "above20": true
-        },
-        {
-          "ticker": "AVAV",
-          "close": 175.61,
-          "perf_1d": -4.4,
-          "perf_1w": -5.55,
-          "perf_1mo": 9.08,
-          "above20": false
-        },
-        {
-          "ticker": "UMAC",
-          "close": 25.15,
-          "perf_1d": -2.22,
-          "perf_1w": -5.81,
-          "perf_1mo": 68.0,
-          "above20": true
-        },
-        {
-          "ticker": "KRMN",
-          "close": 49.58,
-          "perf_1d": 8.09,
-          "perf_1w": -8.84,
-          "perf_1mo": -20.65,
-          "above20": false
-        },
-        {
-          "ticker": "RCAT",
-          "close": 11.5,
-          "perf_1d": -4.25,
-          "perf_1w": -9.31,
-          "perf_1mo": 22.34,
-          "above20": false
-        },
-        {
-          "ticker": "AXON",
-          "close": 438.92,
-          "perf_1d": -1.63,
-          "perf_1w": -9.71,
-          "perf_1mo": 16.48,
-          "above20": true
-        },
-        {
-          "ticker": "ONDS",
-          "close": 9.4,
-          "perf_1d": -4.37,
-          "perf_1w": -9.88,
-          "perf_1mo": 6.09,
-          "above20": false
-        },
-        {
-          "ticker": "JOBY",
-          "close": 9.36,
-          "perf_1d": 5.64,
-          "perf_1w": -15.98,
-          "perf_1mo": -10.77,
-          "above20": false
-        },
-        {
-          "ticker": "EH",
-          "close": 6.82,
-          "perf_1d": 0.0,
-          "perf_1w": -26.11,
-          "perf_1mo": -30.76,
-          "above20": false
         }
       ],
-      "rank": 21,
+      "rank": 16,
       "tier": "Warm"
     },
     {
-      "sector": "Solar",
-      "count": 8,
-      "perf_1d": 2.66,
-      "perf_1w": -8.61,
-      "perf_1mo": 11.31,
-      "perf_3mo": 27.25,
-      "perf_6mo": 33.04,
-      "breadth": 25,
-      "streak": 0,
-      "trend": "Falling",
+      "sector": "Other Chemicals",
+      "count": 3,
+      "perf_1d": 5.66,
+      "perf_1w": 1.32,
+      "perf_1mo": -7.12,
+      "perf_3mo": 25.88,
+      "perf_6mo": 68.5,
+      "breadth": 67,
+      "streak": 1,
+      "trend": "Steady",
       "fresh": false,
-      "score": -0.77,
+      "score": 0.37,
       "members": [
         {
-          "ticker": "SEI",
-          "close": 77.66,
-          "perf_1d": 2.13,
-          "perf_1w": 11.92,
-          "perf_1mo": 0.61,
+          "ticker": "SOLS",
+          "close": 83.04,
+          "perf_1d": 2.3,
+          "perf_1w": 2.49,
+          "perf_1mo": -6.24,
           "above20": true
         },
         {
-          "ticker": "FSLR",
-          "close": 273.23,
-          "perf_1d": 0.76,
-          "perf_1w": -2.07,
-          "perf_1mo": 16.47,
+          "ticker": "ESI",
+          "close": 42.92,
+          "perf_1d": 8.71,
+          "perf_1w": 2.17,
+          "perf_1mo": -2.34,
           "above20": true
         },
         {
-          "ticker": "SEDG",
-          "close": 60.84,
-          "perf_1d": 4.11,
-          "perf_1w": -3.69,
-          "perf_1mo": 42.25,
-          "above20": false
-        },
-        {
-          "ticker": "ENPH",
-          "close": 53.72,
-          "perf_1d": -2.2,
-          "perf_1w": -4.19,
-          "perf_1mo": 27.9,
-          "above20": false
-        },
-        {
-          "ticker": "NXT",
-          "close": 122.68,
-          "perf_1d": 2.51,
-          "perf_1w": -6.76,
-          "perf_1mo": -10.04,
-          "above20": false
-        },
-        {
-          "ticker": "RUN",
-          "close": 12.55,
-          "perf_1d": 5.46,
-          "perf_1w": -15.32,
-          "perf_1mo": -10.99,
-          "above20": false
-        },
-        {
-          "ticker": "PLUG",
-          "close": 2.83,
-          "perf_1d": -1.05,
-          "perf_1w": -21.39,
-          "perf_1mo": -20.51,
-          "above20": false
-        },
-        {
-          "ticker": "TE",
-          "close": 8.47,
-          "perf_1d": 9.57,
-          "perf_1w": -27.36,
-          "perf_1mo": 44.79,
+          "ticker": "CC",
+          "close": 21.52,
+          "perf_1d": 5.96,
+          "perf_1w": -0.69,
+          "perf_1mo": -12.77,
           "above20": false
         }
       ],
-      "rank": 22,
+      "rank": 17,
+      "tier": "Warm"
+    },
+    {
+      "sector": "Cooling",
+      "count": 10,
+      "perf_1d": 0.26,
+      "perf_1w": 0.78,
+      "perf_1mo": -4.14,
+      "perf_3mo": 25.83,
+      "perf_6mo": 40.53,
+      "breadth": 70,
+      "streak": 1,
+      "trend": "Steady",
+      "fresh": false,
+      "score": 0.12,
+      "members": [
+        {
+          "ticker": "CARR",
+          "close": 69.39,
+          "perf_1d": -0.5,
+          "perf_1w": 3.32,
+          "perf_1mo": 5.83,
+          "above20": true
+        },
+        {
+          "ticker": "WSO",
+          "close": 379.91,
+          "perf_1d": -1.15,
+          "perf_1w": 2.3,
+          "perf_1mo": -9.11,
+          "above20": true
+        },
+        {
+          "ticker": "FIX",
+          "close": 1885.67,
+          "perf_1d": 2.29,
+          "perf_1w": 2.26,
+          "perf_1mo": -7.32,
+          "above20": true
+        },
+        {
+          "ticker": "NVT",
+          "close": 166.22,
+          "perf_1d": 1.03,
+          "perf_1w": 2.06,
+          "perf_1mo": -3.87,
+          "above20": true
+        },
+        {
+          "ticker": "VRT",
+          "close": 302.71,
+          "perf_1d": 1.62,
+          "perf_1w": 0.73,
+          "perf_1mo": -18.18,
+          "above20": false
+        },
+        {
+          "ticker": "LII",
+          "close": 509.74,
+          "perf_1d": -1.41,
+          "perf_1w": 0.26,
+          "perf_1mo": 0.44,
+          "above20": true
+        },
+        {
+          "ticker": "JCI",
+          "close": 143.97,
+          "perf_1d": -0.03,
+          "perf_1w": 0.22,
+          "perf_1mo": 0.12,
+          "above20": true
+        },
+        {
+          "ticker": "TT",
+          "close": 456.9,
+          "perf_1d": -0.7,
+          "perf_1w": 0.01,
+          "perf_1mo": -3.0,
+          "above20": true
+        },
+        {
+          "ticker": "MOD",
+          "close": 272.95,
+          "perf_1d": 0.53,
+          "perf_1w": -1.29,
+          "perf_1mo": -2.24,
+          "above20": false
+        },
+        {
+          "ticker": "AAON",
+          "close": 129.82,
+          "perf_1d": 0.92,
+          "perf_1w": -2.11,
+          "perf_1mo": -4.1,
+          "above20": false
+        }
+      ],
+      "rank": 18,
       "tier": "Warm"
     },
     {
       "sector": "Photonics/Optics",
       "count": 19,
-      "perf_1d": 4.81,
-      "perf_1w": -1.03,
-      "perf_1mo": -2.73,
-      "perf_3mo": 62.78,
-      "perf_6mo": 159.36,
-      "breadth": 37,
+      "perf_1d": 5.21,
+      "perf_1w": -0.61,
+      "perf_1mo": -2.34,
+      "perf_3mo": 63.36,
+      "perf_6mo": 159.75,
+      "breadth": 42,
       "streak": 1,
       "trend": "Steady",
       "fresh": false,
-      "score": -0.92,
+      "score": -0.3,
       "members": [
         {
           "ticker": "CRDO",
-          "close": 248.15,
-          "perf_1d": -6.27,
-          "perf_1w": 19.94,
-          "perf_1mo": 31.05,
+          "close": 250.81,
+          "perf_1d": -5.27,
+          "perf_1w": 21.23,
+          "perf_1mo": 32.45,
+          "above20": true
+        },
+        {
+          "ticker": "TSEM",
+          "close": 263.79,
+          "perf_1d": 2.11,
+          "perf_1w": 12.02,
+          "perf_1mo": -2.58,
           "above20": true
         },
         {
           "ticker": "AXTI",
-          "close": 98.32,
-          "perf_1d": 11.3,
-          "perf_1w": 10.42,
-          "perf_1mo": -19.37,
-          "above20": false
-        },
-        {
-          "ticker": "TSEM",
-          "close": 259.31,
-          "perf_1d": 0.38,
-          "perf_1w": 10.12,
-          "perf_1mo": -4.23,
+          "close": 97.18,
+          "perf_1d": 10.01,
+          "perf_1w": 9.14,
+          "perf_1mo": -20.31,
           "above20": false
         },
         {
@@ -1789,51 +1357,59 @@
         },
         {
           "ticker": "LITE",
-          "close": 908.93,
-          "perf_1d": 2.17,
-          "perf_1w": 5.24,
-          "perf_1mo": -11.79,
+          "close": 921.56,
+          "perf_1d": 3.59,
+          "perf_1w": 6.7,
+          "perf_1mo": -10.56,
           "above20": true
         },
         {
           "ticker": "CLS",
-          "close": 389.08,
-          "perf_1d": 0.83,
-          "perf_1w": 4.67,
-          "perf_1mo": 4.44,
+          "close": 394.48,
+          "perf_1d": 2.23,
+          "perf_1w": 6.13,
+          "perf_1mo": 5.89,
           "above20": true
         },
         {
           "ticker": "POET",
-          "close": 12.33,
-          "perf_1d": 9.6,
-          "perf_1w": 3.96,
-          "perf_1mo": -14.2,
+          "close": 12.52,
+          "perf_1d": 11.29,
+          "perf_1w": 5.56,
+          "perf_1mo": -12.87,
           "above20": false
         },
         {
           "ticker": "COHR",
-          "close": 383.5,
-          "perf_1d": 5.48,
-          "perf_1w": 1.73,
-          "perf_1mo": -5.01,
+          "close": 385.21,
+          "perf_1d": 5.95,
+          "perf_1w": 2.18,
+          "perf_1mo": -4.58,
           "above20": true
         },
         {
           "ticker": "GLW",
-          "close": 178.09,
-          "perf_1d": 0.87,
-          "perf_1w": 0.29,
-          "perf_1mo": -13.76,
+          "close": 179.38,
+          "perf_1d": 1.6,
+          "perf_1w": 1.01,
+          "perf_1mo": -13.14,
           "above20": false
         },
         {
           "ticker": "FLEX",
-          "close": 151.91,
-          "perf_1d": -0.05,
-          "perf_1w": -0.01,
-          "perf_1mo": 5.64,
+          "close": 149.71,
+          "perf_1d": -1.5,
+          "perf_1w": -1.45,
+          "perf_1mo": 4.11,
           "above20": true
+        },
+        {
+          "ticker": "FN",
+          "close": 610.58,
+          "perf_1d": 4.87,
+          "perf_1w": -1.72,
+          "perf_1mo": -12.28,
+          "above20": false
         },
         {
           "ticker": "PLAB",
@@ -1844,19 +1420,11 @@
           "above20": false
         },
         {
-          "ticker": "FN",
-          "close": 597.49,
-          "perf_1d": 2.62,
-          "perf_1w": -3.82,
-          "perf_1mo": -14.16,
-          "above20": false
-        },
-        {
           "ticker": "AAOI",
-          "close": 168.51,
-          "perf_1d": -2.47,
-          "perf_1w": -4.8,
-          "perf_1mo": -24.47,
+          "close": 169.05,
+          "perf_1d": -2.16,
+          "perf_1w": -4.49,
+          "perf_1mo": -24.23,
           "above20": false
         },
         {
@@ -1869,10 +1437,10 @@
         },
         {
           "ticker": "CIEN",
-          "close": 448.83,
-          "perf_1d": 0.81,
-          "perf_1w": -8.07,
-          "perf_1mo": -22.33,
+          "close": 445.78,
+          "perf_1d": 0.13,
+          "perf_1w": -8.69,
+          "perf_1mo": -22.86,
           "above20": false
         },
         {
@@ -1908,165 +1476,451 @@
           "above20": false
         }
       ],
-      "rank": 23,
+      "rank": 19,
+      "tier": "Warm"
+    },
+    {
+      "sector": "Aluminum",
+      "count": 4,
+      "perf_1d": 3.95,
+      "perf_1w": -4.22,
+      "perf_1mo": 1.66,
+      "perf_3mo": 27.3,
+      "perf_6mo": 83.56,
+      "breadth": 50,
+      "streak": 0,
+      "trend": "Falling",
+      "fresh": false,
+      "score": -0.4,
+      "members": [
+        {
+          "ticker": "KALU",
+          "close": 187.7,
+          "perf_1d": 7.36,
+          "perf_1w": 0.45,
+          "perf_1mo": 6.43,
+          "above20": true
+        },
+        {
+          "ticker": "CSTM",
+          "close": 34.75,
+          "perf_1d": 6.43,
+          "perf_1w": -3.87,
+          "perf_1mo": 4.32,
+          "above20": true
+        },
+        {
+          "ticker": "AA",
+          "close": 68.14,
+          "perf_1d": -1.22,
+          "perf_1w": -5.22,
+          "perf_1mo": -0.44,
+          "above20": false
+        },
+        {
+          "ticker": "CENX",
+          "close": 60.94,
+          "perf_1d": 3.22,
+          "perf_1w": -8.26,
+          "perf_1mo": -3.68,
+          "above20": false
+        }
+      ],
+      "rank": 20,
+      "tier": "Warm"
+    },
+    {
+      "sector": "Crypto",
+      "count": 8,
+      "perf_1d": -0.06,
+      "perf_1w": 7.26,
+      "perf_1mo": -9.3,
+      "perf_3mo": 5.35,
+      "perf_6mo": -26.98,
+      "breadth": 38,
+      "streak": 2,
+      "trend": "Rising",
+      "fresh": true,
+      "score": -0.5,
+      "members": [
+        {
+          "ticker": "GLXY",
+          "close": 33.41,
+          "perf_1d": 0.42,
+          "perf_1w": 32.9,
+          "perf_1mo": 8.44,
+          "above20": true
+        },
+        {
+          "ticker": "MARA",
+          "close": 14.06,
+          "perf_1d": 3.31,
+          "perf_1w": 14.12,
+          "perf_1mo": 10.27,
+          "above20": true
+        },
+        {
+          "ticker": "HOOD",
+          "close": 93.19,
+          "perf_1d": 1.04,
+          "perf_1w": 13.0,
+          "perf_1mo": 21.42,
+          "above20": true
+        },
+        {
+          "ticker": "COIN",
+          "close": 159.78,
+          "perf_1d": -0.41,
+          "perf_1w": 4.84,
+          "perf_1mo": -20.82,
+          "above20": false
+        },
+        {
+          "ticker": "MSTR",
+          "close": 123.97,
+          "perf_1d": 3.18,
+          "perf_1w": 2.93,
+          "perf_1mo": -30.37,
+          "above20": false
+        },
+        {
+          "ticker": "BMNR",
+          "close": 16.16,
+          "perf_1d": -2.18,
+          "perf_1w": 1.64,
+          "perf_1mo": -23.7,
+          "above20": false
+        },
+        {
+          "ticker": "CRCL",
+          "close": 77.8,
+          "perf_1d": -5.85,
+          "perf_1w": -3.09,
+          "perf_1mo": -38.53,
+          "above20": false
+        },
+        {
+          "ticker": "ORBS",
+          "close": 0.89,
+          "perf_1d": 0.0,
+          "perf_1w": -8.25,
+          "perf_1mo": -1.11,
+          "above20": false
+        }
+      ],
+      "rank": 21,
+      "tier": "Warm"
+    },
+    {
+      "sector": "Space",
+      "count": 17,
+      "perf_1d": 3.44,
+      "perf_1w": -3.01,
+      "perf_1mo": 3.26,
+      "perf_3mo": 58.82,
+      "perf_6mo": 134.38,
+      "breadth": 24,
+      "streak": 0,
+      "trend": "Falling",
+      "fresh": false,
+      "score": -0.84,
+      "members": [
+        {
+          "ticker": "ATEX",
+          "close": 81.44,
+          "perf_1d": 25.72,
+          "perf_1w": 19.85,
+          "perf_1mo": 50.12,
+          "above20": true
+        },
+        {
+          "ticker": "YSS",
+          "close": 33.72,
+          "perf_1d": 22.09,
+          "perf_1w": 13.65,
+          "perf_1mo": 5.47,
+          "above20": true
+        },
+        {
+          "ticker": "FEIM",
+          "close": 77.15,
+          "perf_1d": 15.79,
+          "perf_1w": 6.53,
+          "perf_1mo": 27.94,
+          "above20": true
+        },
+        {
+          "ticker": "VSAT",
+          "close": 70.46,
+          "perf_1d": -3.09,
+          "perf_1w": 4.88,
+          "perf_1mo": -0.17,
+          "above20": false
+        },
+        {
+          "ticker": "SPIR",
+          "close": 19.79,
+          "perf_1d": 20.89,
+          "perf_1w": -1.25,
+          "perf_1mo": 12.19,
+          "above20": false
+        },
+        {
+          "ticker": "SATS",
+          "close": 113.39,
+          "perf_1d": -11.5,
+          "perf_1w": -2.49,
+          "perf_1mo": -14.89,
+          "above20": false
+        },
+        {
+          "ticker": "PL",
+          "close": 31.08,
+          "perf_1d": -9.04,
+          "perf_1w": -3.54,
+          "perf_1mo": -23.71,
+          "above20": false
+        },
+        {
+          "ticker": "GILT",
+          "close": 15.37,
+          "perf_1d": 13.35,
+          "perf_1w": -3.76,
+          "perf_1mo": -22.8,
+          "above20": false
+        },
+        {
+          "ticker": "IRDM",
+          "close": 49.91,
+          "perf_1d": 9.43,
+          "perf_1w": -4.15,
+          "perf_1mo": 19.8,
+          "above20": true
+        },
+        {
+          "ticker": "SIDU",
+          "close": 4.39,
+          "perf_1d": 11.42,
+          "perf_1w": -6.6,
+          "perf_1mo": 32.23,
+          "above20": false
+        },
+        {
+          "ticker": "RKLB",
+          "close": 102.39,
+          "perf_1d": -10.79,
+          "perf_1w": -6.99,
+          "perf_1mo": -17.53,
+          "above20": false
+        },
+        {
+          "ticker": "SATL",
+          "close": 7.52,
+          "perf_1d": 19.75,
+          "perf_1w": -7.62,
+          "perf_1mo": -0.4,
+          "above20": false
+        },
+        {
+          "ticker": "LUNR",
+          "close": 26.67,
+          "perf_1d": -12.96,
+          "perf_1w": -9.16,
+          "perf_1mo": -25.25,
+          "above20": false
+        },
+        {
+          "ticker": "BKSY",
+          "close": 35.97,
+          "perf_1d": 13.15,
+          "perf_1w": -9.3,
+          "perf_1mo": -10.77,
+          "above20": false
+        },
+        {
+          "ticker": "FLY",
+          "close": 32.16,
+          "perf_1d": -18.31,
+          "perf_1w": -10.91,
+          "perf_1mo": -18.31,
+          "above20": false
+        },
+        {
+          "ticker": "ASTS",
+          "close": 82.41,
+          "perf_1d": -15.53,
+          "perf_1w": -11.96,
+          "perf_1mo": 10.16,
+          "above20": false
+        },
+        {
+          "ticker": "RDW",
+          "close": 15.06,
+          "perf_1d": -11.88,
+          "perf_1w": -18.37,
+          "perf_1mo": 31.41,
+          "above20": false
+        }
+      ],
+      "rank": 22,
       "tier": "Warm"
     },
     {
       "sector": "AI Power",
       "count": 21,
-      "perf_1d": 3.08,
-      "perf_1w": -0.69,
-      "perf_1mo": -2.63,
-      "perf_3mo": 45.48,
-      "perf_6mo": 75.38,
+      "perf_1d": 2.81,
+      "perf_1w": -0.96,
+      "perf_1mo": -2.93,
+      "perf_3mo": 44.96,
+      "perf_6mo": 74.9,
       "breadth": 38,
       "streak": 1,
       "trend": "Steady",
       "fresh": false,
-      "score": -1.05,
+      "score": -1.3,
       "members": [
         {
           "ticker": "AEIS",
-          "close": 351.91,
-          "perf_1d": 3.38,
-          "perf_1w": 19.37,
-          "perf_1mo": 3.75,
+          "close": 354.19,
+          "perf_1d": 4.05,
+          "perf_1w": 20.14,
+          "perf_1mo": 4.42,
           "above20": true
         },
         {
           "ticker": "VICR",
-          "close": 305.98,
-          "perf_1d": 2.66,
-          "perf_1w": 12.89,
-          "perf_1mo": -1.06,
-          "above20": true
-        },
-        {
-          "ticker": "POWL",
-          "close": 302.43,
-          "perf_1d": 4.11,
-          "perf_1w": 6.16,
-          "perf_1mo": 0.53,
+          "close": 303.56,
+          "perf_1d": 1.85,
+          "perf_1w": 12.0,
+          "perf_1mo": -1.85,
           "above20": true
         },
         {
           "ticker": "IESC",
-          "close": 754.0,
-          "perf_1d": 3.1,
-          "perf_1w": 4.62,
-          "perf_1mo": 11.25,
+          "close": 752.43,
+          "perf_1d": 2.89,
+          "perf_1w": 4.4,
+          "perf_1mo": 11.01,
           "above20": true
         },
         {
-          "ticker": "FPS",
-          "close": 60.28,
-          "perf_1d": 3.56,
-          "perf_1w": 1.94,
-          "perf_1mo": 32.43,
+          "ticker": "POWL",
+          "close": 294.88,
+          "perf_1d": 1.51,
+          "perf_1w": 3.51,
+          "perf_1mo": -1.98,
           "above20": true
         },
         {
-          "ticker": "DY",
-          "close": 474.7,
-          "perf_1d": 2.18,
-          "perf_1w": 1.81,
-          "perf_1mo": 6.72,
+          "ticker": "LFUS",
+          "close": 471.83,
+          "perf_1d": 1.91,
+          "perf_1w": 3.17,
+          "perf_1mo": -1.91,
           "above20": true
         },
         {
           "ticker": "PWR",
-          "close": 704.46,
-          "perf_1d": 3.1,
-          "perf_1w": 1.35,
-          "perf_1mo": -8.95,
+          "close": 706.46,
+          "perf_1d": 3.39,
+          "perf_1w": 1.63,
+          "perf_1mo": -8.69,
           "above20": false
         },
         {
-          "ticker": "LFUS",
-          "close": 462.39,
-          "perf_1d": -0.13,
-          "perf_1w": 1.1,
-          "perf_1mo": -3.87,
+          "ticker": "DY",
+          "close": 470.71,
+          "perf_1d": 1.32,
+          "perf_1w": 0.95,
+          "perf_1mo": 5.82,
           "above20": true
         },
         {
-          "ticker": "EME",
-          "close": 824.07,
-          "perf_1d": 1.55,
-          "perf_1w": 0.81,
-          "perf_1mo": -10.72,
+          "ticker": "GEV",
+          "close": 939.92,
+          "perf_1d": 3.65,
+          "perf_1w": 0.68,
+          "perf_1mo": -11.54,
           "above20": false
         },
         {
+          "ticker": "EME",
+          "close": 821.51,
+          "perf_1d": 1.23,
+          "perf_1w": 0.5,
+          "perf_1mo": -11.0,
+          "above20": false
+        },
+        {
+          "ticker": "FPS",
+          "close": 59.1,
+          "perf_1d": 1.53,
+          "perf_1w": -0.05,
+          "perf_1mo": 29.83,
+          "above20": true
+        },
+        {
           "ticker": "GNRC",
-          "close": 262.81,
-          "perf_1d": 2.13,
-          "perf_1w": 0.49,
-          "perf_1mo": -1.66,
+          "close": 260.89,
+          "perf_1d": 1.38,
+          "perf_1w": -0.25,
+          "perf_1mo": -2.38,
           "above20": false
         },
         {
           "ticker": "MTZ",
-          "close": 363.88,
-          "perf_1d": 1.5,
-          "perf_1w": -0.0,
-          "perf_1mo": -14.14,
-          "above20": false
-        },
-        {
-          "ticker": "GEV",
-          "close": 930.17,
-          "perf_1d": 2.58,
-          "perf_1w": -0.37,
-          "perf_1mo": -12.46,
-          "above20": false
-        },
-        {
-          "ticker": "BE",
-          "close": 262.45,
-          "perf_1d": 5.45,
-          "perf_1w": -0.44,
-          "perf_1mo": -9.43,
-          "above20": false
-        },
-        {
-          "ticker": "ETN",
-          "close": 393.7,
-          "perf_1d": 0.02,
-          "perf_1w": -0.57,
-          "perf_1mo": -3.25,
+          "close": 362.1,
+          "perf_1d": 1.0,
+          "perf_1w": -0.49,
+          "perf_1mo": -14.56,
           "above20": false
         },
         {
           "ticker": "HUBB",
-          "close": 473.28,
-          "perf_1d": 0.84,
-          "perf_1w": -0.74,
-          "perf_1mo": -2.17,
+          "close": 474.16,
+          "perf_1d": 1.03,
+          "perf_1w": -0.56,
+          "perf_1mo": -1.99,
+          "above20": false
+        },
+        {
+          "ticker": "ETN",
+          "close": 391.51,
+          "perf_1d": -0.54,
+          "perf_1w": -1.12,
+          "perf_1mo": -3.79,
+          "above20": false
+        },
+        {
+          "ticker": "BE",
+          "close": 260.28,
+          "perf_1d": 4.58,
+          "perf_1w": -1.26,
+          "perf_1mo": -10.17,
           "above20": false
         },
         {
           "ticker": "WCC",
-          "close": 348.85,
-          "perf_1d": 1.35,
-          "perf_1w": -1.54,
-          "perf_1mo": -3.23,
+          "close": 346.41,
+          "perf_1d": 0.64,
+          "perf_1w": -2.23,
+          "perf_1mo": -3.91,
           "above20": false
         },
         {
           "ticker": "STRL",
-          "close": 867.14,
-          "perf_1d": 3.41,
-          "perf_1w": -1.73,
-          "perf_1mo": 1.51,
+          "close": 859.36,
+          "perf_1d": 2.48,
+          "perf_1w": -2.61,
+          "perf_1mo": 0.59,
           "above20": true
         },
         {
           "ticker": "AGX",
-          "close": 635.51,
-          "perf_1d": 1.9,
-          "perf_1w": -8.52,
-          "perf_1mo": -11.72,
+          "close": 643.52,
+          "perf_1d": 3.18,
+          "perf_1w": -7.37,
+          "perf_1mo": -10.61,
           "above20": false
         },
         {
@@ -2087,10 +1941,68 @@
         },
         {
           "ticker": "PRIM",
-          "close": 98.81,
-          "perf_1d": 4.56,
-          "perf_1w": -18.9,
-          "perf_1mo": -12.51,
+          "close": 98.7,
+          "perf_1d": 4.44,
+          "perf_1w": -18.99,
+          "perf_1mo": -12.61,
+          "above20": false
+        }
+      ],
+      "rank": 23,
+      "tier": "Warm"
+    },
+    {
+      "sector": "AI Software/Apps",
+      "count": 5,
+      "perf_1d": -1.07,
+      "perf_1w": -4.86,
+      "perf_1mo": 7.67,
+      "perf_3mo": 3.23,
+      "perf_6mo": -31.1,
+      "breadth": 20,
+      "streak": 0,
+      "trend": "Falling",
+      "fresh": false,
+      "score": -1.36,
+      "members": [
+        {
+          "ticker": "TEM",
+          "close": 47.73,
+          "perf_1d": -3.75,
+          "perf_1w": 2.8,
+          "perf_1mo": 3.99,
+          "above20": false
+        },
+        {
+          "ticker": "IOT",
+          "close": 33.47,
+          "perf_1d": 3.75,
+          "perf_1w": -3.82,
+          "perf_1mo": 21.62,
+          "above20": true
+        },
+        {
+          "ticker": "PLTR",
+          "close": 127.99,
+          "perf_1d": -2.36,
+          "perf_1w": -5.56,
+          "perf_1mo": -1.58,
+          "above20": false
+        },
+        {
+          "ticker": "RDDT",
+          "close": 161.52,
+          "perf_1d": -6.78,
+          "perf_1w": -6.88,
+          "perf_1mo": 4.8,
+          "above20": false
+        },
+        {
+          "ticker": "APP",
+          "close": 496.77,
+          "perf_1d": 3.8,
+          "perf_1w": -10.85,
+          "perf_1mo": 9.53,
           "above20": false
         }
       ],
@@ -2098,41 +2010,81 @@
       "tier": "Warm"
     },
     {
-      "sector": "Other Chemicals",
-      "count": 3,
-      "perf_1d": 5.53,
-      "perf_1w": 1.19,
-      "perf_1mo": -7.24,
-      "perf_3mo": 25.74,
-      "perf_6mo": 68.29,
-      "breadth": 33,
-      "streak": 1,
-      "trend": "Steady",
+      "sector": "Solar",
+      "count": 8,
+      "perf_1d": 2.3,
+      "perf_1w": -9.04,
+      "perf_1mo": 10.99,
+      "perf_3mo": 26.62,
+      "perf_6mo": 32.65,
+      "breadth": 12,
+      "streak": 0,
+      "trend": "Falling",
       "fresh": false,
-      "score": -1.44,
+      "score": -1.76,
       "members": [
         {
-          "ticker": "ESI",
-          "close": 42.92,
-          "perf_1d": 8.71,
-          "perf_1w": 2.17,
-          "perf_1mo": -2.34,
+          "ticker": "SEI",
+          "close": 74.14,
+          "perf_1d": -2.5,
+          "perf_1w": 6.85,
+          "perf_1mo": -3.95,
           "above20": true
         },
         {
-          "ticker": "SOLS",
-          "close": 82.73,
-          "perf_1d": 1.92,
-          "perf_1w": 2.11,
-          "perf_1mo": -6.59,
+          "ticker": "ENPH",
+          "close": 54.78,
+          "perf_1d": -0.27,
+          "perf_1w": -2.3,
+          "perf_1mo": 30.43,
           "above20": false
         },
         {
-          "ticker": "CC",
-          "close": 21.52,
-          "perf_1d": 5.96,
-          "perf_1w": -0.69,
-          "perf_1mo": -12.77,
+          "ticker": "FSLR",
+          "close": 269.73,
+          "perf_1d": -0.53,
+          "perf_1w": -3.33,
+          "perf_1mo": 14.97,
+          "above20": false
+        },
+        {
+          "ticker": "SEDG",
+          "close": 60.87,
+          "perf_1d": 4.16,
+          "perf_1w": -3.64,
+          "perf_1mo": 42.32,
+          "above20": false
+        },
+        {
+          "ticker": "NXT",
+          "close": 123.91,
+          "perf_1d": 3.53,
+          "perf_1w": -5.82,
+          "perf_1mo": -9.14,
+          "above20": false
+        },
+        {
+          "ticker": "RUN",
+          "close": 12.55,
+          "perf_1d": 5.46,
+          "perf_1w": -15.32,
+          "perf_1mo": -10.99,
+          "above20": false
+        },
+        {
+          "ticker": "PLUG",
+          "close": 2.83,
+          "perf_1d": -1.05,
+          "perf_1w": -21.39,
+          "perf_1mo": -20.51,
+          "above20": false
+        },
+        {
+          "ticker": "TE",
+          "close": 8.47,
+          "perf_1d": 9.57,
+          "perf_1w": -27.36,
+          "perf_1mo": 44.79,
           "above20": false
         }
       ],
@@ -2140,111 +2092,109 @@
       "tier": "Warm"
     },
     {
-      "sector": "Silicon Carbide",
-      "count": 4,
-      "perf_1d": 1.38,
-      "perf_1w": -3.61,
-      "perf_1mo": 1.95,
-      "perf_3mo": 134.61,
-      "perf_6mo": 145.03,
-      "breadth": 25,
+      "sector": "Defence & Drones",
+      "count": 11,
+      "perf_1d": -0.07,
+      "perf_1w": -7.94,
+      "perf_1mo": 6.69,
+      "perf_3mo": -14.23,
+      "perf_6mo": 9.58,
+      "breadth": 36,
       "streak": 0,
       "trend": "Falling",
       "fresh": false,
-      "score": -1.83,
+      "score": -1.88,
       "members": [
         {
-          "ticker": "STM",
-          "close": 77.48,
-          "perf_1d": -0.82,
-          "perf_1w": 9.56,
-          "perf_1mo": 22.23,
+          "ticker": "ESLT",
+          "close": 913.2,
+          "perf_1d": 11.51,
+          "perf_1w": 8.98,
+          "perf_1mo": 13.84,
           "above20": true
         },
         {
-          "ticker": "ON",
-          "close": 116.39,
-          "perf_1d": 0.37,
-          "perf_1w": -0.74,
-          "perf_1mo": 0.59,
+          "ticker": "CW",
+          "close": 758.6,
+          "perf_1d": 0.18,
+          "perf_1w": 3.47,
+          "perf_1mo": 1.01,
+          "above20": true
+        },
+        {
+          "ticker": "KTOS",
+          "close": 57.89,
+          "perf_1d": -1.51,
+          "perf_1w": -1.08,
+          "perf_1mo": 10.29,
           "above20": false
         },
         {
-          "ticker": "NVTS",
-          "close": 24.28,
-          "perf_1d": 9.32,
-          "perf_1w": -3.19,
-          "perf_1mo": 14.69,
+          "ticker": "AVAV",
+          "close": 172.1,
+          "perf_1d": -6.31,
+          "perf_1w": -7.43,
+          "perf_1mo": 6.9,
           "above20": false
         },
         {
-          "ticker": "WOLF",
-          "close": 44.01,
-          "perf_1d": -3.36,
-          "perf_1w": -20.07,
-          "perf_1mo": -29.7,
+          "ticker": "KRMN",
+          "close": 49.58,
+          "perf_1d": 8.09,
+          "perf_1w": -8.84,
+          "perf_1mo": -20.65,
+          "above20": false
+        },
+        {
+          "ticker": "UMAC",
+          "close": 24.25,
+          "perf_1d": -5.72,
+          "perf_1w": -9.18,
+          "perf_1mo": 61.99,
+          "above20": true
+        },
+        {
+          "ticker": "AXON",
+          "close": 441.46,
+          "perf_1d": -1.06,
+          "perf_1w": -9.19,
+          "perf_1mo": 17.15,
+          "above20": true
+        },
+        {
+          "ticker": "ONDS",
+          "close": 9.4,
+          "perf_1d": -4.37,
+          "perf_1w": -9.88,
+          "perf_1mo": 6.09,
+          "above20": false
+        },
+        {
+          "ticker": "RCAT",
+          "close": 11.14,
+          "perf_1d": -7.24,
+          "perf_1w": -12.15,
+          "perf_1mo": 18.51,
+          "above20": false
+        },
+        {
+          "ticker": "JOBY",
+          "close": 9.36,
+          "perf_1d": 5.64,
+          "perf_1w": -15.98,
+          "perf_1mo": -10.77,
+          "above20": false
+        },
+        {
+          "ticker": "EH",
+          "close": 6.82,
+          "perf_1d": 0.0,
+          "perf_1w": -26.11,
+          "perf_1mo": -30.76,
           "above20": false
         }
       ],
       "rank": 26,
-      "tier": "Cool"
-    },
-    {
-      "sector": "AI Software/Apps",
-      "count": 5,
-      "perf_1d": -1.91,
-      "perf_1w": -5.52,
-      "perf_1mo": 6.7,
-      "perf_3mo": 2.22,
-      "perf_6mo": -31.72,
-      "breadth": 20,
-      "streak": 0,
-      "trend": "Falling",
-      "fresh": false,
-      "score": -2.08,
-      "members": [
-        {
-          "ticker": "TEM",
-          "close": 49.47,
-          "perf_1d": -0.24,
-          "perf_1w": 6.55,
-          "perf_1mo": 7.78,
-          "above20": true
-        },
-        {
-          "ticker": "PLTR",
-          "close": 128.64,
-          "perf_1d": -1.86,
-          "perf_1w": -5.08,
-          "perf_1mo": -1.08,
-          "above20": false
-        },
-        {
-          "ticker": "IOT",
-          "close": 32.59,
-          "perf_1d": 1.02,
-          "perf_1w": -6.35,
-          "perf_1mo": 18.42,
-          "above20": false
-        },
-        {
-          "ticker": "RDDT",
-          "close": 158.68,
-          "perf_1d": -8.42,
-          "perf_1w": -8.52,
-          "perf_1mo": 2.96,
-          "above20": false
-        },
-        {
-          "ticker": "APP",
-          "close": 478.21,
-          "perf_1d": -0.08,
-          "perf_1w": -14.18,
-          "perf_1mo": 5.44,
-          "above20": false
-        }
-      ],
-      "rank": 27,
       "tier": "Cool"
     },
     {
@@ -2294,53 +2244,111 @@
           "above20": false
         }
       ],
-      "rank": 28,
+      "rank": 27,
       "tier": "Cool"
     },
     {
       "sector": "Power Producers",
       "count": 4,
-      "perf_1d": 1.59,
-      "perf_1w": -2.11,
-      "perf_1mo": -2.21,
-      "perf_3mo": -7.49,
-      "perf_6mo": -16.99,
+      "perf_1d": 2.65,
+      "perf_1w": -1.08,
+      "perf_1mo": -1.21,
+      "perf_3mo": -6.53,
+      "perf_6mo": -16.15,
       "breadth": 0,
       "streak": 0,
       "trend": "Steady",
       "fresh": false,
-      "score": -3.69,
+      "score": -2.77,
       "members": [
         {
           "ticker": "VST",
-          "close": 148.52,
-          "perf_1d": 1.46,
-          "perf_1w": -0.16,
-          "perf_1mo": 4.14,
+          "close": 148.59,
+          "perf_1d": 1.51,
+          "perf_1w": -0.11,
+          "perf_1mo": 4.19,
           "above20": false
         },
         {
           "ticker": "CEG",
-          "close": 249.39,
-          "perf_1d": 1.09,
-          "perf_1w": -2.13,
-          "perf_1mo": -9.28,
+          "close": 253.54,
+          "perf_1d": 2.77,
+          "perf_1w": -0.51,
+          "perf_1mo": -7.77,
           "above20": false
         },
         {
           "ticker": "TLN",
-          "close": 355.67,
-          "perf_1d": 3.15,
-          "perf_1w": -2.49,
-          "perf_1mo": 1.32,
+          "close": 360.17,
+          "perf_1d": 4.46,
+          "perf_1w": -1.25,
+          "perf_1mo": 2.6,
           "above20": false
         },
         {
           "ticker": "NRG",
-          "close": 124.5,
-          "perf_1d": 0.65,
-          "perf_1w": -3.64,
-          "perf_1mo": -5.02,
+          "close": 126.03,
+          "perf_1d": 1.88,
+          "perf_1w": -2.45,
+          "perf_1mo": -3.85,
+          "above20": false
+        }
+      ],
+      "rank": 28,
+      "tier": "Cool"
+    },
+    {
+      "sector": "LNG / Nat Gas",
+      "count": 5,
+      "perf_1d": 1.51,
+      "perf_1w": -1.29,
+      "perf_1mo": -3.75,
+      "perf_3mo": -11.29,
+      "perf_6mo": 20.08,
+      "breadth": 20,
+      "streak": 0,
+      "trend": "Steady",
+      "fresh": false,
+      "score": -2.84,
+      "members": [
+        {
+          "ticker": "VG",
+          "close": 13.06,
+          "perf_1d": 2.43,
+          "perf_1w": 2.03,
+          "perf_1mo": 0.46,
+          "above20": false
+        },
+        {
+          "ticker": "LNG",
+          "close": 241.32,
+          "perf_1d": 0.49,
+          "perf_1w": 1.05,
+          "perf_1mo": 0.81,
+          "above20": true
+        },
+        {
+          "ticker": "AR",
+          "close": 34.75,
+          "perf_1d": 1.55,
+          "perf_1w": -2.28,
+          "perf_1mo": -5.42,
+          "above20": false
+        },
+        {
+          "ticker": "EQT",
+          "close": 51.84,
+          "perf_1d": 1.25,
+          "perf_1w": -3.55,
+          "perf_1mo": -7.31,
+          "above20": false
+        },
+        {
+          "ticker": "EXE",
+          "close": 88.68,
+          "perf_1d": 1.84,
+          "perf_1w": -3.68,
+          "perf_1mo": -7.29,
           "above20": false
         }
       ],
@@ -2348,25 +2356,75 @@
       "tier": "Cool"
     },
     {
+      "sector": "Silicon Carbide",
+      "count": 4,
+      "perf_1d": -0.42,
+      "perf_1w": -5.14,
+      "perf_1mo": 0.35,
+      "perf_3mo": 130.18,
+      "perf_6mo": 140.88,
+      "breadth": 25,
+      "streak": 0,
+      "trend": "Falling",
+      "fresh": false,
+      "score": -3.29,
+      "members": [
+        {
+          "ticker": "STM",
+          "close": 77.48,
+          "perf_1d": -0.82,
+          "perf_1w": 9.56,
+          "perf_1mo": 22.23,
+          "above20": true
+        },
+        {
+          "ticker": "ON",
+          "close": 116.79,
+          "perf_1d": 0.72,
+          "perf_1w": -0.4,
+          "perf_1mo": 0.93,
+          "above20": false
+        },
+        {
+          "ticker": "NVTS",
+          "close": 23.39,
+          "perf_1d": 5.31,
+          "perf_1w": -6.74,
+          "perf_1mo": 10.49,
+          "above20": false
+        },
+        {
+          "ticker": "WOLF",
+          "close": 42.41,
+          "perf_1d": -6.87,
+          "perf_1w": -22.97,
+          "perf_1mo": -32.25,
+          "above20": false
+        }
+      ],
+      "rank": 30,
+      "tier": "Cool"
+    },
+    {
       "sector": "Lithium Miners",
       "count": 4,
-      "perf_1d": 9.74,
-      "perf_1w": 0.96,
-      "perf_1mo": -20.41,
-      "perf_3mo": 16.46,
-      "perf_6mo": 36.0,
+      "perf_1d": 10.05,
+      "perf_1w": 1.28,
+      "perf_1mo": -20.17,
+      "perf_3mo": 16.77,
+      "perf_6mo": 36.37,
       "breadth": 50,
       "streak": 1,
       "trend": "Steady",
       "fresh": false,
-      "score": -3.79,
+      "score": -3.53,
       "members": [
         {
           "ticker": "ALB",
-          "close": 168.77,
-          "perf_1d": 6.1,
-          "perf_1w": 8.58,
-          "perf_1mo": -16.01,
+          "close": 170.74,
+          "perf_1d": 7.34,
+          "perf_1w": 9.84,
+          "perf_1mo": -15.03,
           "above20": true
         },
         {
@@ -2391,112 +2449,6 @@
           "perf_1d": 11.11,
           "perf_1w": -8.26,
           "perf_1mo": -21.19,
-          "above20": false
-        }
-      ],
-      "rank": 30,
-      "tier": "Cool"
-    },
-    {
-      "sector": "Gas/Oil",
-      "count": 11,
-      "perf_1d": 0.01,
-      "perf_1w": -1.46,
-      "perf_1mo": -5.38,
-      "perf_3mo": 8.11,
-      "perf_6mo": 39.27,
-      "breadth": 18,
-      "streak": 0,
-      "trend": "Steady",
-      "fresh": false,
-      "score": -3.8,
-      "members": [
-        {
-          "ticker": "FTI",
-          "close": 70.37,
-          "perf_1d": -0.33,
-          "perf_1w": 5.31,
-          "perf_1mo": -3.18,
-          "above20": true
-        },
-        {
-          "ticker": "WFRD",
-          "close": 102.29,
-          "perf_1d": 1.25,
-          "perf_1w": 5.27,
-          "perf_1mo": -6.22,
-          "above20": false
-        },
-        {
-          "ticker": "SLB",
-          "close": 56.4,
-          "perf_1d": 0.71,
-          "perf_1w": 2.79,
-          "perf_1mo": 1.84,
-          "above20": true
-        },
-        {
-          "ticker": "HAL",
-          "close": 39.72,
-          "perf_1d": -0.1,
-          "perf_1w": 1.38,
-          "perf_1mo": -3.17,
-          "above20": false
-        },
-        {
-          "ticker": "BKR",
-          "close": 63.15,
-          "perf_1d": -0.52,
-          "perf_1w": 0.89,
-          "perf_1mo": -3.46,
-          "above20": false
-        },
-        {
-          "ticker": "HP",
-          "close": 39.19,
-          "perf_1d": -0.46,
-          "perf_1w": -1.04,
-          "perf_1mo": 0.05,
-          "above20": false
-        },
-        {
-          "ticker": "FET",
-          "close": 52.39,
-          "perf_1d": 1.0,
-          "perf_1w": -2.33,
-          "perf_1mo": -5.76,
-          "above20": false
-        },
-        {
-          "ticker": "VAL",
-          "close": 89.78,
-          "perf_1d": 0.9,
-          "perf_1w": -3.37,
-          "perf_1mo": -7.63,
-          "above20": false
-        },
-        {
-          "ticker": "RIG",
-          "close": 6.03,
-          "perf_1d": 0.33,
-          "perf_1w": -3.52,
-          "perf_1mo": -7.8,
-          "above20": false
-        },
-        {
-          "ticker": "PUMP",
-          "close": 14.78,
-          "perf_1d": -1.92,
-          "perf_1w": -10.26,
-          "perf_1mo": -8.26,
-          "above20": false
-        },
-        {
-          "ticker": "LBRT",
-          "close": 28.03,
-          "perf_1d": -0.71,
-          "perf_1w": -11.19,
-          "perf_1mo": -15.65,
           "above20": false
         }
       ],
@@ -2594,57 +2546,105 @@
       "tier": "Cool"
     },
     {
-      "sector": "LNG / Nat Gas",
-      "count": 5,
-      "perf_1d": 1.35,
-      "perf_1w": -1.46,
-      "perf_1mo": -3.92,
-      "perf_3mo": -11.47,
-      "perf_6mo": 19.83,
-      "breadth": 0,
+      "sector": "Gas/Oil",
+      "count": 11,
+      "perf_1d": -0.0,
+      "perf_1w": -1.47,
+      "perf_1mo": -5.4,
+      "perf_3mo": 8.09,
+      "perf_6mo": 39.25,
+      "breadth": 9,
       "streak": 0,
       "trend": "Steady",
       "fresh": false,
-      "score": -3.99,
+      "score": -4.26,
       "members": [
         {
-          "ticker": "VG",
-          "close": 13.06,
-          "perf_1d": 2.43,
-          "perf_1w": 2.03,
-          "perf_1mo": 0.46,
+          "ticker": "FTI",
+          "close": 70.68,
+          "perf_1d": 0.11,
+          "perf_1w": 5.78,
+          "perf_1mo": -2.75,
+          "above20": true
+        },
+        {
+          "ticker": "WFRD",
+          "close": 102.29,
+          "perf_1d": 1.25,
+          "perf_1w": 5.27,
+          "perf_1mo": -6.22,
           "above20": false
         },
         {
-          "ticker": "LNG",
-          "close": 237.59,
-          "perf_1d": -1.06,
-          "perf_1w": -0.52,
-          "perf_1mo": -0.75,
+          "ticker": "SLB",
+          "close": 55.99,
+          "perf_1d": -0.02,
+          "perf_1w": 2.04,
+          "perf_1mo": 1.1,
           "above20": false
         },
         {
-          "ticker": "AR",
-          "close": 34.88,
-          "perf_1d": 1.93,
-          "perf_1w": -1.91,
-          "perf_1mo": -5.06,
+          "ticker": "BKR",
+          "close": 63.39,
+          "perf_1d": -0.14,
+          "perf_1w": 1.28,
+          "perf_1mo": -3.09,
           "above20": false
         },
         {
-          "ticker": "EQT",
-          "close": 52.03,
-          "perf_1d": 1.62,
-          "perf_1w": -3.2,
-          "perf_1mo": -6.97,
+          "ticker": "HAL",
+          "close": 39.62,
+          "perf_1d": -0.35,
+          "perf_1w": 1.12,
+          "perf_1mo": -3.41,
           "above20": false
         },
         {
-          "ticker": "EXE",
-          "close": 88.68,
-          "perf_1d": 1.84,
-          "perf_1w": -3.68,
-          "perf_1mo": -7.29,
+          "ticker": "HP",
+          "close": 39.19,
+          "perf_1d": -0.46,
+          "perf_1w": -1.04,
+          "perf_1mo": 0.05,
+          "above20": false
+        },
+        {
+          "ticker": "FET",
+          "close": 52.39,
+          "perf_1d": 1.0,
+          "perf_1w": -2.33,
+          "perf_1mo": -5.76,
+          "above20": false
+        },
+        {
+          "ticker": "VAL",
+          "close": 89.78,
+          "perf_1d": 0.9,
+          "perf_1w": -3.37,
+          "perf_1mo": -7.63,
+          "above20": false
+        },
+        {
+          "ticker": "RIG",
+          "close": 6.03,
+          "perf_1d": 0.33,
+          "perf_1w": -3.52,
+          "perf_1mo": -7.8,
+          "above20": false
+        },
+        {
+          "ticker": "PUMP",
+          "close": 14.78,
+          "perf_1d": -1.92,
+          "perf_1w": -10.26,
+          "perf_1mo": -8.26,
+          "above20": false
+        },
+        {
+          "ticker": "LBRT",
+          "close": 28.03,
+          "perf_1d": -0.71,
+          "perf_1w": -11.19,
+          "perf_1mo": -15.65,
           "above20": false
         }
       ],
@@ -2652,49 +2652,123 @@
       "tier": "Cool"
     },
     {
-      "sector": "Nuclear",
-      "count": 5,
-      "perf_1d": 2.01,
-      "perf_1w": 0.19,
-      "perf_1mo": -14.79,
-      "perf_3mo": -7.67,
-      "perf_6mo": -14.63,
-      "breadth": 20,
+      "sector": "Mega Caps",
+      "count": 7,
+      "perf_1d": -0.07,
+      "perf_1w": -2.43,
+      "perf_1mo": -7.72,
+      "perf_3mo": 8.42,
+      "perf_6mo": -1.51,
+      "breadth": 0,
       "streak": 0,
       "trend": "Steady",
       "fresh": false,
-      "score": -5.46,
+      "score": -5.8,
+      "members": [
+        {
+          "ticker": "TSLA",
+          "close": 406.43,
+          "perf_1d": 1.82,
+          "perf_1w": 3.95,
+          "perf_1mo": -8.72,
+          "above20": false
+        },
+        {
+          "ticker": "NVDA",
+          "close": 205.19,
+          "perf_1d": 0.16,
+          "perf_1w": 0.04,
+          "perf_1mo": -9.14,
+          "above20": false
+        },
+        {
+          "ticker": "GOOG",
+          "close": 358.16,
+          "perf_1d": 0.45,
+          "perf_1w": -2.08,
+          "perf_1mo": -10.24,
+          "above20": false
+        },
+        {
+          "ticker": "AMZN",
+          "close": 238.55,
+          "perf_1d": -1.23,
+          "perf_1w": -3.04,
+          "perf_1mo": -11.69,
+          "above20": false
+        },
+        {
+          "ticker": "META",
+          "close": 566.98,
+          "perf_1d": -0.26,
+          "perf_1w": -4.39,
+          "perf_1mo": -8.05,
+          "above20": false
+        },
+        {
+          "ticker": "AAPL",
+          "close": 291.13,
+          "perf_1d": -1.52,
+          "perf_1w": -5.27,
+          "perf_1mo": -2.59,
+          "above20": false
+        },
+        {
+          "ticker": "MSFT",
+          "close": 390.74,
+          "perf_1d": 0.1,
+          "perf_1w": -6.22,
+          "perf_1mo": -3.57,
+          "above20": false
+        }
+      ],
+      "rank": 34,
+      "tier": "Cool"
+    },
+    {
+      "sector": "Nuclear",
+      "count": 5,
+      "perf_1d": 1.42,
+      "perf_1w": -0.43,
+      "perf_1mo": -15.33,
+      "perf_3mo": -8.26,
+      "perf_6mo": -15.2,
+      "breadth": 0,
+      "streak": 0,
+      "trend": "Steady",
+      "fresh": false,
+      "score": -6.99,
       "members": [
         {
           "ticker": "BWXT",
-          "close": 197.8,
-          "perf_1d": 1.6,
-          "perf_1w": 6.37,
-          "perf_1mo": -4.37,
-          "above20": true
+          "close": 193.36,
+          "perf_1d": -0.68,
+          "perf_1w": 3.98,
+          "perf_1mo": -6.51,
+          "above20": false
         },
         {
           "ticker": "UUUU",
-          "close": 15.13,
-          "perf_1d": 0.33,
-          "perf_1w": 0.67,
-          "perf_1mo": -25.02,
+          "close": 15.09,
+          "perf_1d": 0.07,
+          "perf_1w": 0.4,
+          "perf_1mo": -25.22,
           "above20": false
         },
         {
           "ticker": "OKLO",
-          "close": 57.87,
-          "perf_1d": 0.02,
-          "perf_1w": -0.38,
-          "perf_1mo": -16.93,
+          "close": 57.49,
+          "perf_1d": -0.64,
+          "perf_1w": -1.03,
+          "perf_1mo": -17.47,
           "above20": false
         },
         {
           "ticker": "CCJ",
-          "close": 100.58,
-          "perf_1d": 1.63,
-          "perf_1w": -2.76,
-          "perf_1mo": -12.83,
+          "close": 100.81,
+          "perf_1d": 1.86,
+          "perf_1w": -2.54,
+          "perf_1mo": -12.64,
           "above20": false
         },
         {
@@ -2703,80 +2777,6 @@
           "perf_1d": 6.48,
           "perf_1w": -2.95,
           "perf_1mo": -14.8,
-          "above20": false
-        }
-      ],
-      "rank": 34,
-      "tier": "Cool"
-    },
-    {
-      "sector": "Mega Caps",
-      "count": 7,
-      "perf_1d": -0.85,
-      "perf_1w": -3.21,
-      "perf_1mo": -8.44,
-      "perf_3mo": 7.62,
-      "perf_6mo": -2.2,
-      "breadth": 0,
-      "streak": 0,
-      "trend": "Falling",
-      "fresh": false,
-      "score": -6.49,
-      "members": [
-        {
-          "ticker": "TSLA",
-          "close": 394.84,
-          "perf_1d": -1.08,
-          "perf_1w": 0.98,
-          "perf_1mo": -11.33,
-          "above20": false
-        },
-        {
-          "ticker": "NVDA",
-          "close": 205.46,
-          "perf_1d": 0.29,
-          "perf_1w": 0.18,
-          "perf_1mo": -9.02,
-          "above20": false
-        },
-        {
-          "ticker": "GOOG",
-          "close": 359.13,
-          "perf_1d": 0.72,
-          "perf_1w": -1.81,
-          "perf_1mo": -10.0,
-          "above20": false
-        },
-        {
-          "ticker": "AMZN",
-          "close": 236.39,
-          "perf_1d": -2.12,
-          "perf_1w": -3.92,
-          "perf_1mo": -12.49,
-          "above20": false
-        },
-        {
-          "ticker": "META",
-          "close": 565.05,
-          "perf_1d": -0.59,
-          "perf_1w": -4.71,
-          "perf_1mo": -8.36,
-          "above20": false
-        },
-        {
-          "ticker": "AAPL",
-          "close": 290.37,
-          "perf_1d": -1.78,
-          "perf_1w": -5.52,
-          "perf_1mo": -2.84,
-          "above20": false
-        },
-        {
-          "ticker": "MSFT",
-          "close": 384.86,
-          "perf_1d": -1.4,
-          "perf_1w": -7.63,
-          "perf_1mo": -5.02,
           "above20": false
         }
       ],
@@ -2924,39 +2924,39 @@
     {
       "sector": "Rare Earth",
       "count": 8,
-      "perf_1d": 4.75,
-      "perf_1w": -8.0,
-      "perf_1mo": -14.41,
-      "perf_3mo": -4.09,
-      "perf_6mo": -7.55,
+      "perf_1d": 4.4,
+      "perf_1w": -8.35,
+      "perf_1mo": -14.72,
+      "perf_3mo": -4.47,
+      "perf_6mo": -7.98,
       "breadth": 0,
       "streak": 0,
       "trend": "Falling",
       "fresh": false,
-      "score": -9.07,
+      "score": -9.38,
       "members": [
         {
           "ticker": "LEU",
-          "close": 163.49,
-          "perf_1d": 3.03,
-          "perf_1w": 1.06,
-          "perf_1mo": -14.99,
+          "close": 162.53,
+          "perf_1d": 2.43,
+          "perf_1w": 0.46,
+          "perf_1mo": -15.49,
           "above20": false
         },
         {
           "ticker": "USAR",
-          "close": 22.48,
-          "perf_1d": -0.35,
-          "perf_1w": 0.04,
-          "perf_1mo": -11.57,
+          "close": 21.94,
+          "perf_1d": -2.75,
+          "perf_1w": -2.36,
+          "perf_1mo": -13.69,
           "above20": false
         },
         {
           "ticker": "MP",
-          "close": 57.15,
-          "perf_1d": -0.05,
-          "perf_1w": -3.43,
-          "perf_1mo": -10.32,
+          "close": 57.25,
+          "perf_1d": 0.12,
+          "perf_1w": -3.26,
+          "perf_1mo": -10.17,
           "above20": false
         },
         {
@@ -3006,111 +3006,111 @@
     {
       "sector": "Precious Metals",
       "count": 17,
-      "perf_1d": 3.03,
-      "perf_1w": -4.04,
-      "perf_1mo": -23.39,
-      "perf_3mo": -19.04,
-      "perf_6mo": 6.93,
+      "perf_1d": 4.12,
+      "perf_1w": -2.97,
+      "perf_1mo": -22.54,
+      "perf_3mo": -18.15,
+      "perf_6mo": 8.0,
       "breadth": 0,
       "streak": 0,
-      "trend": "Falling",
+      "trend": "Steady",
       "fresh": false,
-      "score": -10.53,
+      "score": -9.63,
       "members": [
         {
           "ticker": "CDE",
-          "close": 16.75,
-          "perf_1d": 2.13,
-          "perf_1w": 2.32,
-          "perf_1mo": -15.15,
-          "above20": false
-        },
-        {
-          "ticker": "AU",
-          "close": 85.91,
-          "perf_1d": 3.28,
-          "perf_1w": 2.13,
-          "perf_1mo": -16.08,
-          "above20": false
-        },
-        {
-          "ticker": "HL",
-          "close": 14.96,
-          "perf_1d": -0.2,
-          "perf_1w": 1.22,
-          "perf_1mo": -28.93,
+          "close": 17.17,
+          "perf_1d": 4.7,
+          "perf_1w": 4.89,
+          "perf_1mo": -13.02,
           "above20": false
         },
         {
           "ticker": "AG",
-          "close": 17.11,
-          "perf_1d": 1.12,
-          "perf_1w": 0.71,
-          "perf_1mo": -28.65,
+          "close": 17.64,
+          "perf_1d": 4.26,
+          "perf_1w": 3.83,
+          "perf_1mo": -26.44,
           "above20": false
         },
         {
-          "ticker": "RGLD",
-          "close": 207.05,
-          "perf_1d": 1.21,
-          "perf_1w": 0.48,
-          "perf_1mo": -15.49,
+          "ticker": "HL",
+          "close": 15.27,
+          "perf_1d": 1.87,
+          "perf_1w": 3.32,
+          "perf_1mo": -27.46,
+          "above20": false
+        },
+        {
+          "ticker": "AU",
+          "close": 85.95,
+          "perf_1d": 3.33,
+          "perf_1w": 2.18,
+          "perf_1mo": -16.04,
           "above20": false
         },
         {
           "ticker": "B",
-          "close": 39.25,
-          "perf_1d": 0.38,
-          "perf_1w": -0.53,
-          "perf_1mo": -12.53,
+          "close": 40.22,
+          "perf_1d": 2.86,
+          "perf_1w": 1.93,
+          "perf_1mo": -10.36,
           "above20": false
         },
         {
           "ticker": "PAAS",
-          "close": 46.98,
-          "perf_1d": 0.97,
-          "perf_1w": -1.26,
-          "perf_1mo": -26.2,
+          "close": 48.13,
+          "perf_1d": 3.44,
+          "perf_1w": 1.16,
+          "perf_1mo": -24.4,
           "above20": false
         },
         {
-          "ticker": "WPM",
-          "close": 114.68,
-          "perf_1d": 1.79,
-          "perf_1w": -1.33,
-          "perf_1mo": -19.36,
-          "above20": false
-        },
-        {
-          "ticker": "AEM",
-          "close": 160.76,
-          "perf_1d": 1.9,
-          "perf_1w": -1.77,
-          "perf_1mo": -17.97,
+          "ticker": "RGLD",
+          "close": 206.94,
+          "perf_1d": 1.16,
+          "perf_1w": 0.42,
+          "perf_1mo": -15.53,
           "above20": false
         },
         {
           "ticker": "NEM",
-          "close": 97.91,
-          "perf_1d": 0.33,
-          "perf_1w": -1.81,
-          "perf_1mo": -17.7,
+          "close": 99.86,
+          "perf_1d": 2.33,
+          "perf_1w": 0.15,
+          "perf_1mo": -16.06,
+          "above20": false
+        },
+        {
+          "ticker": "WPM",
+          "close": 116.09,
+          "perf_1d": 3.04,
+          "perf_1w": -0.12,
+          "perf_1mo": -18.37,
+          "above20": false
+        },
+        {
+          "ticker": "AEM",
+          "close": 162.6,
+          "perf_1d": 3.07,
+          "perf_1w": -0.65,
+          "perf_1mo": -17.03,
           "above20": false
         },
         {
           "ticker": "KGC",
-          "close": 25.22,
-          "perf_1d": 1.45,
-          "perf_1w": -3.81,
-          "perf_1mo": -19.35,
+          "close": 25.41,
+          "perf_1d": 2.21,
+          "perf_1w": -3.09,
+          "perf_1mo": -18.74,
           "above20": false
         },
         {
           "ticker": "FNV",
-          "close": 208.45,
-          "perf_1d": 0.26,
-          "perf_1w": -4.7,
-          "perf_1mo": -13.43,
+          "close": 209.66,
+          "perf_1d": 0.84,
+          "perf_1w": -4.15,
+          "perf_1mo": -12.93,
           "above20": false
         },
         {
