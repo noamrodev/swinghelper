@@ -3698,6 +3698,32 @@ def compute_now(shared=False):
             if not legs:
                 continue
             best = sorted(legs, key=lambda e: e.get("rating", 0), reverse=True)[0]
+            # ── RAN-UP ⇒ PREFER THE PULLBACK LEG OVER THE BREAKOUT LEG (user 2026-06-12, the LITE case) ──────
+            # A consolidation/breakout leader that has already RUN today (≥0.3× ADR off yesterday's close) is a
+            # CHASE if we arm its breakout — the entry sits ABOVE current price. The same name often carries a
+            # GOOD pullback leg (LITE: breakout stop $925 vs a grade-B pullback limit $867 at the 50-EMA). When
+            # the name has run AND the best leg is the breakout, prefer the pullback: never arm a chase above
+            # the live price. `legs` is already grade-filtered (A/A+/B-if-healthy/patient), so any pullback leg
+            # here is "good" — satisfying the trader's "only arm the pullback if it's good." FAIL-OPEN: if
+            # prior_close/adr is missing we skip the rule (behave as today). EP is EXEMPT (it gaps on news by
+            # definition). If the name ran on its breakout leg with NO good pullback leg → DROP it (continue):
+            # do NOT force the breakout (a chase), do NOT fabricate a pullback. When we DO switch, we TAG the
+            # candidate (_ranup_pullback) so the per-cand loop arms it WATCH-ONLY at the pullback support and
+            # NEVER recomputes/fires a breakout entry above current price (see the routing note at the loop).
+            _pc, _adr = s.get("prior_close"), s.get("adr")
+            _ran_up = bool(_pc and _adr and (s.get("close") or 0)
+                           and (s["close"] / _pc - 1) >= 0.30 * (_adr / 100.0))
+            # Gate on the SETUP TYPE that FORCES a breakout confirm (Breakout / Consolidation route to the plain
+            # ORH/resistance path, which recomputes a breakout entry REGARDLESS of which leg is `best` — so
+            # keying on best.kind misses a Consolidation whose best leg is already the pullback, the LITE bug).
+            # Deep-Pullback / AVWAP setups already confirm AS pullbacks, so they need no switch; EP is exempt.
+            if (_ran_up and (s.get("setup_type") or "") in ("Breakout", "Consolidation")):
+                _pulls = [x for x in legs if x.get("kind") == "pullback"]
+                if _pulls:
+                    best = dict(sorted(_pulls, key=lambda e: e.get("rating", 0), reverse=True)[0])
+                    best["_ranup_pullback"] = True                  # arm WATCH-ONLY at the pullback support (flag on a COPY)
+                else:
+                    continue                                        # ran-up breakout, no good pullback → drop (no chase)
             cands.append((s, best))
     cands.sort(key=lambda se: se[1].get("rating", 0), reverse=True)
     cands = cands[:18]                                     # shortlist cap — watch more names (5m bars are 2min-cached)
@@ -3733,6 +3759,47 @@ def compute_now(shared=False):
         _processed_fkeys.add(fkey)
         sbuf = settings.get("stop_buffer_pct", 0.5) or 0
         ebuf = settings.get("entry_buffer_pct", 0.1)
+        # ── RAN-UP PULLBACK WATCH (user 2026-06-12, the LITE case) — ROUTING NOTE ────────────────────────────
+        # In the cands loop above we SWITCHED a ran-up breakout-best name to its (good) pullback leg and tagged
+        # the leg `_ranup_pullback`. We CANNOT just let it flow into the confirm engine: that engine routes by
+        # `setup_type`, and for a "Consolidation"/"Breakout" setup the plain path recomputes a BREAKOUT entry
+        # (res_entry via _resistance_entry, then `entry = res_entry or leg_entry`) REGARDLESS of which leg is in
+        # `e` — so it would still fire a breakout ABOVE current price (the exact chase we're avoiding). So we
+        # SHORT-CIRCUIT here: surface the name WATCH-ONLY (armed, never fires) at the PULLBACK leg's support
+        # (entry = pullback entry, stop = pullback stop). It fires NOTHING today — the trader waits for price to
+        # pull back to support and reclaim it. CHOICE: arm watch-only at the pullback zone (NOT wired through the
+        # is_avwap/is_deep reclaim branch) because those branches are setup_type-gated (only Deep Pullback / the
+        # AVWAP family route there); a "Consolidation"/"Breakout" name would fall back to the breakout path no
+        # matter what leg we pass. Watch-only at the pullback support is the robust, setup_type-agnostic option
+        # and honours the HARD INVARIANT: a ran-up name NEVER arms/fires a breakout entry above current price.
+        if e.get("_ranup_pullback"):
+            _pl_entry, _pl_stop = e.get("entry"), e.get("stop")
+            _pl_price = s.get("close") or _pl_entry
+            _dr = round((_pl_price / s["prior_close"] - 1) * 100, 1) if s.get("prior_close") else None
+            _drtxt = f"ran +{_dr}% today" if _dr is not None else "ran up today"
+            _sized = _size_leg(_pl_entry, _pl_stop)
+            _cmsg = (f"{_drtxt} — not chasing the breakout. Wait for the pullback to ${_f(_pl_entry)} "
+                     f"and the reclaim (buyers stepping in); stop ${_f(_pl_stop)} just under support.")
+            armed.append({
+                "ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                "theme": s.get("theme"), "entry": _pl_entry, "stop": _pl_stop,
+                "entry_type": e.get("entry_type"), "kind": "pullback",
+                "trigger": _pl_entry, "break_level": None, "res_trendline": None,
+                "orh": None, "lod": None, "too_extended": False, "vol_wait": False,
+                "deep_wait": True, "buyers_wait": False, "zone": _pl_entry,
+                "buyable_now": False, "trigger_note": s.get("trigger_note"),
+                "shares": _sized.get("shares"), "dollar_risk": _sized.get("dollar_risk"),
+                "risk_pct_actual": _sized.get("risk_pct_actual"), "pct_acct": _sized.get("pct_acct"),
+                "why": s.get("why"), "confirmed": False, "confirm": _cmsg,
+                "plan": {**_plan_for(s.get("setup_type"), _pl_entry, None, None, _sized, False, False),
+                         "why": s.get("why")},
+                "p1m": s.get("p1m"), "p6m": s.get("p6m"),
+                "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
+                "confirm_menu": lexicon.get_confirm_menu(s.get("setup_type") or ""),
+                "confirm_trigger": "RANUP_PULLBACK_WATCH", "overhead": None,
+                "ranup_pullback": True,
+            })
+            continue                                            # fkey already in _processed_fkeys (set above)
         # THE ENTRY = a break ABOVE the overhead EMA cluster (clear all the near resistance), tight stop just
         # under it, room above — NOT a reclaim below the EMAs (the user's AAOI/VRT rule: once price left the
         # 50, going back down means buyers lost power; the next entry is THROUGH the 9/21 — VRT ~$328,
@@ -4222,11 +4289,15 @@ def compute_now(shared=False):
                     # AVWAP we'll buy), NOT just a stop-width note — tighten it to 0.5× ADR. Trips → stay ARMED for
                     # a retest closer to the AVWAP, no chase. (Path A's EMA-clear cap at ~app.py:3935 stays 1.0× ADR:
                     # the EMA-clear entry legitimately sits up near the cleared EMA — don't touch it.)
-                    elif not frozen and adr_px and raw_risk and raw_risk > 0.5 * adr_px:
+                    # ABSOLUTE 2.5% BACKSTOP (user 2026-06-12, the TSEM case): 0.5× ADR is too loose at 8–10% ADR.
+                    # TSEM (8.3% ADR) fired $266.45 = +2.46% above its AVWAP $260.06 (raw_risk 7.69 vs 0.5×adr_px
+                    # 11.05 → passed). Cap = min(0.5×adr_px, 2.5% of the entry) so a high-ADR name can't drift 2.5%+
+                    # above the line; for low-ADR names the 0.5× ADR term still binds (backstop only tightens).
+                    elif not frozen and adr_px and raw_risk and raw_risk > min(0.5 * adr_px, 0.025 * cand_entry):
                         too_extended = True                      # too far above the AVWAP → no chase, wait for a closer retest
-                        cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but ${_f(cand_entry)} is already >0.5× ADR ABOVE "
-                                f"the AVWAP — too far above it to buy. Staying armed for a retest closer to the AVWAP "
-                                f"(${_f(_avwap_sup)}); no chase up here.")
+                        cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but ${_f(cand_entry)} is already more than "
+                                f"2.5% / 0.5× ADR ABOVE the AVWAP — too far above it to buy. Staying armed for a retest "
+                                f"closer to the AVWAP (${_f(_avwap_sup)}); no chase up here.")
                     elif not buyers_ok:
                         buyers_wait = True
                         cmsg = (f"Tested the AVWAP (${_f(_avwap_sup)}) and turning up, but {buyers_why} — no call yet "
@@ -4377,10 +4448,14 @@ def compute_now(shared=False):
             # fire INSIDE its zone. If the live entry has already run more than ½× ADR above the planned buy
             # zone, the dip is gone — stay ARMED, never freeze a chase. Breakout/EP fire ON the break so they
             # are exempt; a frozen call is a standing in-zone confirm and isn't re-gated.
+            # ABSOLUTE 2.5% BACKSTOP on the zone-drift cap (user 2026-06-12): same lesson as the near-AVWAP cap —
+            # 0.5× ADR is too loose at 8–10% ADR. cap = min(0.5×adr_px, 2.5% of _zref) so a high-ADR name can't
+            # drift 2.5%+ above the buy zone; low-ADR names keep the 0.5× ADR cap (backstop only tightens).
             _zref = s.get("zone_top") or leg_entry
             zone_drift = bool(setup_type in ("Pullback", "Pullback @ AVWAP", "AVWAP reclaim (ATH)",
                                              "AVWAP reclaim (earnings)", "Consolidation")
-                              and not frozen and _zref and adr_px and cand_entry > _zref + 0.5 * adr_px)
+                              and not frozen and _zref and adr_px
+                              and cand_entry > _zref + min(0.5 * adr_px, 0.025 * _zref))
             # DESCENDING-TRENDLINE GATE (the DOCN case) — a near descending resistance line overhead the
             # breakout/pullback entry, not yet cleared on a COMPLETED 5-min close → stay armed. Frozen
             # bypasses it (a standing confirm). Mirrors the 50-reclaim CLEAR_TREND gate.

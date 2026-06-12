@@ -53,6 +53,21 @@ lessons, newest insights merged in (not an endless list of duplicates).
   the 0.5× ADR cap is scaled off the AVWAP support, so for very wide-ADR names (GLXY ADR 8.6%) it's generous —
   Fix 1 (no B-arm) is the primary stop for GLXY; Fix 2 catches the more-extended breakout-pivot leg. Restart +
   rescan to see it live; **forward-test before trusting (no backtest).** Tests: `tests/test_avwap_reclaim_gates.py`.
+- **High-ADR chase escapees: prefer the pullback leg + an absolute 2.5% near-support backstop (2026-06-12, LITE +
+  TSEM).** Two chases the 0.5× ADR day-run gate missed. Arming-layer only (grades untouched). (A) A consolidation/
+  breakout leader that has **already run ≥0.3× ADR off yesterday's close** while its best leg is the **breakout**
+  would arm a chase above the live price (LITE: armed breakout $925 over a grade-B pullback $867 at the 50). It now
+  **switches to its best pullback leg and arms WATCH-ONLY at that support** ("ran +X% — not chasing the breakout;
+  wait for the pullback to $<support> + the reclaim"); no good pullback leg → **drop the name** (never force the
+  breakout, never fabricate a pullback). EP exempt; fail-open on missing data. CRITICAL: the confirm engine
+  recomputes a BREAKOUT entry by `setup_type` regardless of the leg in `best`, so a mere leg-swap still fires a
+  breakout — the fix tags `_ranup_pullback` and **short-circuits to a watch-only record before any routing**. Hard
+  invariant: a ran-up name NEVER arms a breakout above current price. (B) The near-support caps were pure-ADR-scaled
+  (0.5× ADR), **too loose at 8–10% ADR** — TSEM (8.3% ADR) fired +2.46% above its AVWAP. Both near-support caps
+  (Path-B near-AVWAP and the ORH-path zone-drift) are now **min(0.5× adr_px, 2.5% of the ref)**: the backstop binds
+  for high-ADR names, the 0.5× ADR term still binds for low-ADR (backstop only tightens). Path A's 1.0× ADR
+  EMA-clear cap left alone. Restart + rescan to go live; **forward-test (no backtest).** Tests:
+  `tests/test_ranup_pullback.py` + `tests/test_avwap_reclaim_gates.py` (lockstep).
 - **Under a DESCENDING trendline = WAIT for the break, never buy beneath it (2026-06-09, DOCN; relaxed v2).**
   The sloped sibling of the IREN overhead-EMA + AXTI horizontal-wall "clear the wall" gates. When a genuine
   descending resistance line (lower highs off a recent peak) sits just overhead the entry, a confirm fired

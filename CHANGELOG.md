@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-06-12 (night) — ran-up ⇒ prefer pullback over breakout + high-ADR near-support cap (LITE/TSEM)
+
+**Trigger:** friends site showed "BUY TSEM A+ Pullback @ AVWAP" (confirmed $266.45, +2.5% above the AVWAP) and
+armed "LITE A+ Consolidation — break $932" — both **high-ADR chases that ESCAPED the 0.5× ADR day-run gate**
+(LITE +3.0%/9.7% ADR = 0.3× ADR; TSEM +3.1%/8.3% ADR). (Also: the friends site was the OLD build — chase gate +
+today's grades aren't live there until the trader pushes; the A+ is stale grading.) Trader: "when a stock already
+ran up today, don't force a breakout step — better to arm a pullback (only if good)."
+
+**Feature A — ran-up ⇒ prefer the PULLBACK leg (decision: ≥0.3× ADR).** In `compute_now`'s cands loop: if a name
+ran ≥0.3× ADR off yesterday's close AND its setup_type is **Breakout/Consolidation** (the types whose plain
+ORH/resistance confirm FORCES a breakout entry regardless of leg — keying on `best.kind` first missed a
+Consolidation whose best leg was already the pullback, the LITE bug), switch to the best **pullback** leg and arm
+it **WATCH-ONLY** at the support ("ran +X% today — not chasing the breakout; wait for the pullback to $Y and the
+reclaim"); if there's **no good pullback leg → DROP it** (no chase, no fabricated pullback). EP exempt. Silent
+(armed, never beeps). LITE → watch at $867 (the 50-EMA); AMKR (+7.8%) → watch at $79.23.
+
+**Feature B — 2.5% absolute backstop on the near-support caps (high-ADR).** The 0.5× ADR near-AVWAP / zone-drift
+caps are too loose at 8-10% ADR. Now `min(0.5× adr_px, 2.5%)` — only bites names >5% ADR. TSEM reclaim $266.45
+(raw_risk 7.69 > 2.5%=$6.66) now **stays armed** for a closer retest; low-ADR reclaims unchanged.
+
+**Build/verify:** quant built both, Burry verified PASS (grades byte-for-byte — scanner SHA256 identical, golden
+intact; the hard invariant holds — a ran-up name never arms/fires a breakout; watch-only is silent; Feature B
+crossover exactly 5% ADR). **Caught a live-scope bug Burry's replica-tests missed:** quant used a bare `setup_type`
+in the cands loop where it's undefined → `UnboundLocalError` crashed every `compute_now` call (/api/now, /api/autopilot
+returned closed-connection). Fixed (read `s.get("setup_type")`), restarted, **/api/now serves clean**. Tests:
+178 → **192 passing** (+13 ran-up, +1 INOD backstop). Restart done; NOT rebuilt/pushed yet.
+
 ## 2026-06-12 (evening) — GLOBAL day-run chase gate + suggestions.json recovery + EARLY test coverage
 
 **1) Data-integrity fix (urgent — the app was BLIND).** `data/suggestions.json` was corrupted: a non-atomic,
