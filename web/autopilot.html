@@ -607,12 +607,42 @@ const AP = {
         </div>`;
       });
     }
+    // ── Pullback Watch — ran-up names waiting for the dip (silent, NO grade; out of the armed list) ──────
+    const pw = d.pullback_watch || [];
+    if (pw.length) {
+      html += `<div class="sec-l" style="color:#ffb53d">🟡 Watching for pullback — ran up today</div>`;
+      html += `<div style="font-size:12px;color:#9aa8c2;margin:-4px 0 8px">Strong leaders that already ran today — NOT buys. Wait for the dip back to support, then the reclaim.</div>`;
+      pw.forEach((w, i) => {
+        const dist = w.dist_pct != null ? '+' + w.dist_pct.toFixed(1) + '% above the buy zone' : 'above the buy zone';
+        const zoneTxt = (w.zone != null ? w.zone : w.entry) != null ? '→ $' + (w.zone != null ? w.zone : w.entry) : '';
+        const zoneVal = (w.zone != null ? w.zone : w.entry) != null ? '$' + (w.zone != null ? w.zone : w.entry) : '?';
+        const stopTxt = w.stop != null ? '$' + w.stop : '?';
+        html += `<div class="armed" style="background:rgba(255,181,61,.07);border-color:rgba(255,181,61,.22)">
+          <div class="armed-h" onclick="AP.togglePw(${i})">
+            <span style="font-size:11px">📋</span>
+            <span class="tk" style="color:#ffd591;width:58px">${e(w.ticker)}</span>
+            <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(255,181,61,.15);color:#ffc843;border:1px solid rgba(255,181,61,.3);flex:none">RS ${e(w.rs_score)}</span>
+            <span class="mut" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(dist)}</span>
+            <span style="font-size:12px;color:#ffb53d">${e(zoneTxt)}</span>
+            <span class="dim" id="pwarw${i}" style="font-size:10px">▼</span>
+          </div>
+          ${w.confirm ? `<div style="padding:3px 11px 7px;font-size:12px;color:#c8a840">${e(w.confirm)}</div>` : ''}
+          <div class="plan" id="pwplan${i}" style="display:none">
+            <div class="pr"><span class="pl">Pullback zone</span><span style="color:#ffd591;font-weight:700">${zoneVal}</span></div>
+            <div class="pr"><span class="pl">Stop</span><span style="color:#ff5a72;font-weight:700">${stopTxt}</span></div>
+            ${w.why ? `<div style="margin-top:6px;font-size:12px;color:#9aa8c2;line-height:1.55">${e(w.why)}</div>` : ''}
+          </div>
+        </div>`;
+      });
+    }
     document.getElementById('content').innerHTML = html;
     this.renderControls();
   },
   toggle(i){ const p=document.getElementById('plan'+i), a=document.getElementById('arw'+i);
     const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
   toggleBw(i){ const p=document.getElementById('bwplan'+i), a=document.getElementById('bwarw'+i);
+    const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
+  togglePw(i){ const p=document.getElementById('pwplan'+i), a=document.getElementById('pwarw'+i);
     const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
 
   start(){

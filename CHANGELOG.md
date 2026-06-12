@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-06-12 (night, 3) — ATOMIC writes + corruption-recovery read + scan serialization (the blind-engine bug)
+
+**Root cause of the earlier `data/suggestions.json` outage:** `write_json` used a truncating `write_text`; two
+overlapping scans wrote the same file and their byte streams interleaved → one writer's COMPLETE document + the
+other's trailing bytes ("valid prefix + garbage tail"). `read_json` then raised `JSONDecodeError` and returned
+`{}` → the engine saw 0 setups → the whole app went blind until manual recovery.
+
+**Fix (app.py, write-safety only — scan/grading logic untouched, Burry-verified PASS, grades byte-for-byte):**
+1. **Atomic `write_json`** — serialize to a UNIQUE temp (`tempfile.mkstemp` in the same dir) → fsync (best-effort)
+   → `os.replace` (atomic on NTFS/POSIX) with a retry on the Windows replace-window `PermissionError`. Concurrent
+   writers can no longer interleave; a reader always sees one COMPLETE document (old or new), never a torn mix.
+2. **Self-healing `read_json`** — retries the transient Windows replace-window lock; on `JSONDecodeError` RECOVERS
+   the first valid document (`raw_decode`) instead of blanking the engine; logs a warning. Degrades any future/
+   external corruption gracefully rather than going blind.
+3. **`_scan_claim` serialization** — all scan triggers claim the slot under the existing `_scan_lock` with the
+   stale-takeover self-heal; wired the previously-unguarded boot/refresh scan through it. (A hard lock was
+   rejected — it would have broken the orphan-scan takeover.)
+**Tests:** `tests/test_atomic_write.py` (11): round-trip, short-over-long, 20-writer/400-reader concurrency (0
+corrupt), recovery from a valid-prefix+tail file, BOM/whitespace, pure-garbage→default, missing→default, and
+`_scan_claim` grant/refuse/stale-takeover/single-winner-under-race. Suite **192 → 203 passing**. Backed up to
+`backups/2026-06-12_atomic-write/`. Restarted; not rebuilt/pushed (engine-only; the hosted site benefits on the
+next build).
+
+
 ## 2026-06-12 (night, 2) — LITE ran-up watch RENDERS as a pullback (was still dressed as a breakout)
 
 After the trader pushed the build, the hosted card STILL showed LITE as an "A+ Consolidation — BUY the break
@@ -9,9 +33,13 @@ the pullback to $867"), but the watch RECORD reused the Consolidation's breakout
 "confirms on:" from confirm_menu and the BUY hero from plan.trigger. So the card looked like a breakout chase.
 **Fix (`app.py` RANUP_PULLBACK_WATCH record):** confirm_menu → `['RECLAIM_50']` ("confirms on: reclaim of the 50
 EMA") and plan → `_plan_for("Deep Pullback", ...)` so the hero reads "BUY the BOUNCE off the 50 EMA — settle on the
-50 and turn up, tight stop just under it." LITE now renders identically to AAOI/AEHR pullback-watch cards. (The A+
-was a stale-scan grade; the live rescan grades LITE **B**.) 192 tests green; restarted; rebuilt to swinghelper
-(trader to push).
+50 and turn up, tight stop just under it." (The A+ was a stale-scan grade; the live rescan grades LITE **B**.)
+**Plus a frontend residual the screenshot caught:** the Target/Invalid chips are computed from `setup_type` via
+`planShortTarget/Invalid`, so they still showed the breakout defaults "trail 9" / "lose cluster". Fixed in
+`web/autopilot.html` + `web/app.js` (planHtml): a `ranup_pullback` record uses the Deep-Pullback labels → **"trail
+50" / "close<50"**. **VISUALLY VERIFIED** — rendered the real LITE record through the actual autopilot.html in the
+preview and screenshotted the card (confirms-on, hero, and both chips all correct; no breakout language). 192 tests
+green; JS parses clean; restarted; rebuilt to swinghelper (trader to push).
 
 ## 2026-06-12 (night) — ran-up ⇒ prefer pullback over breakout + high-ADR near-support cap (LITE/TSEM)
 

@@ -613,6 +613,35 @@
                     </div>
                   </div>
                 </template>
+                <!-- PULLBACK WATCH — ran-up names waiting for the dip (no grade, OUT of the armed list/verdict) -->
+                <template x-if="now.pullback_watch && now.pullback_watch.length">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-wide font-bold mb-0.5" style="color:#ffb53d">🟡 Watching for pullback — ran up today</div>
+                    <div class="text-[11px] text-slate-500 mb-2">Strong leaders that already ran today — NOT buys. Wait for the dip back to support, then the reclaim.</div>
+                    <div class="space-y-1">
+                      <template x-for="w in now.pullback_watch" :key="w.ticker">
+                        <div class="rounded-lg" style="background:rgba(255,181,61,.07);border:1px solid rgba(255,181,61,.22)">
+                          <div class="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer" @click="expandedPlan[w.ticker+'_pw']=!expandedPlan[w.ticker+'_pw']" title="Open the plan">
+                            <span class="shrink-0 text-[11px]">📋</span>
+                            <span class="font-bold w-16 shrink-0" style="color:#ffd591" x-text="w.ticker"></span>
+                            <span class="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background:rgba(255,181,61,.15);color:#ffc843;border:1px solid rgba(255,181,61,.3)" x-text="'RS '+w.rs_score"></span>
+                            <span class="text-slate-400 text-xs flex-1 truncate min-w-0" x-text="w.dist_pct!=null ? '+'+w.dist_pct.toFixed(1)+'% above the buy zone' : 'above the buy zone'"></span>
+                            <span class="text-xs shrink-0" style="color:#ffb53d" x-text="(w.zone!=null?w.zone:w.entry)!=null ? '→ $'+(w.zone!=null?w.zone:w.entry) : ''"></span>
+                            <span class="text-[10px] text-slate-500 shrink-0" x-text="expandedPlan[w.ticker+'_pw']?'▲':'▼'"></span>
+                          </div>
+                          <div class="text-[11px] px-2.5 pb-1" style="color:#c8a840" x-show="w.confirm" x-text="w.confirm"></div>
+                          <div x-show="expandedPlan[w.ticker+'_pw']" x-transition.opacity class="px-3 pb-2.5 pt-1 border-t" style="border-color:rgba(255,181,61,.15)">
+                            <div class="flex flex-wrap gap-3 text-xs mb-2">
+                              <span class="text-slate-400">pullback zone <b class="text-slate-200" x-text="'$'+(w.zone||w.entry||'?')"></b></span>
+                              <span class="text-slate-400">stop <b class="text-slate-200" x-text="'$'+(w.stop||'?')"></b></span>
+                            </div>
+                            <div class="text-[11px] text-slate-400 leading-relaxed" x-show="w.why" x-text="w.why"></div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
                 <div class="text-[11px] text-slate-500" x-text="'Watches only the ~12 best setups live (not the whole universe) · '+(now.computed_at||'')"></div>
               </div>
             </template>

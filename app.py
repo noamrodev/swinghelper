@@ -11,6 +11,7 @@ from JSON on every write so the Claude coach sees current data in chat.
 import json
 import os
 import shutil
+import tempfile
 import threading
 import time
 import gzip
@@ -819,7 +820,7 @@ def run_refresh_all():
         REFRESH.update(stage="Updating setups & ratings…", done=1)
         screeners = read_json(screeners_f(), [])
         default = next((s for s in screeners if s.get("is_default")), screeners[0] if screeners else None)
-        if default:
+        if default and _scan_claim("refresh scan"):            # claim so this refresh can't race another scan's write
             run_scan(default["id"])
         REFRESH.update(stage="Computing sector heat…", done=2)
         run_sector_heat()
@@ -834,16 +835,73 @@ def run_refresh_all():
 # JSON helpers
 # --------------------------------------------------------------------------- #
 def read_json(path, default):
+    # Read the bytes first, RETRYING a transient PermissionError: on Windows, the atomic write_json's
+    # os.replace briefly locks the destination, so a reader that opens during that window gets a sharing
+    # violation. Wait it out (a few ms) instead of blanking the engine — os.replace is content-atomic, so once
+    # the open succeeds we read either the OLD or the NEW complete file, never a torn mix. (2026-06-12.)
+    raw = None
+    for _ in range(15):
+        try:
+            raw = Path(path).read_text(encoding="utf-8")
+            break
+        except FileNotFoundError:
+            return default
+        except PermissionError:
+            time.sleep(0.02)
+        except OSError:
+            return default
+    if raw is None:
+        return default
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # CORRUPTION RECOVERY: a non-atomic write or external truncation can leave a VALID JSON document +
+        # trailing garbage. Recover the FIRST complete document rather than blanking the engine — the
+        # suggestions.json "valid prefix + tail" outage returned {} here → 0 setups → the app went blind.
+        # (write_json is now atomic, so this only ever fires on pre-existing / externally-corrupted files.)
+        try:
+            obj, _end = json.JSONDecoder().raw_decode(raw.lstrip("﻿ \t\r\n"))
+            print(f"[read_json] recovered first valid document from corrupt {Path(path).name} "
+                  f"(trailing garbage ignored) — write_json should prevent this going forward")
+            return obj
+        except Exception:
+            return default
     except Exception:
         return default
 
 
 def write_json(path, obj):
+    """ATOMIC write (2026-06-12): serialize to a UNIQUE temp file in the SAME dir, fsync, then os.replace onto
+    the target. os.replace is atomic on NTFS + POSIX, so (a) a reader NEVER sees a half-written file, and (b)
+    two concurrent writers can't interleave into a 'valid-prefix + garbage-tail' corruption — the last replace
+    wins with one complete document. The temp name is unique per call so concurrent writers never share a temp."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)   # IL namespace dir may not exist yet
-    p.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    data = json.dumps(obj, indent=2)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix="." + p.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.flush()
+            try:
+                os.fsync(f.fileno())          # durability; best-effort (don't risk a hang on odd filesystems)
+            except OSError:
+                pass
+        # os.replace can hit a transient sharing violation on Windows if a reader holds the dst open during its
+        # brief read window — retry a few times; the OLD file stays valid throughout (never corrupt).
+        for _ in range(10):
+            try:
+                os.replace(tmp, p)
+                return
+            except PermissionError:
+                time.sleep(0.02)
+        os.replace(tmp, p)                     # final try → propagate if it still fails (callers guard writes)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def now_date():
@@ -2577,6 +2635,24 @@ def update_rules_account(acct):
 # --------------------------------------------------------------------------- #
 # Background scan
 # --------------------------------------------------------------------------- #
+def _scan_claim(reason=""):
+    """Atomically claim the scan slot (the RACE-SAFE guard, 2026-06-12). Returns True if THIS caller may run
+    a scan, False if one is already running and not stale. Mirrors the /api/scan HTTP handler's claim so EVERY
+    trigger (boot scan, intraday rescan, manual) goes through one gate → two scans never both write
+    suggestions.json (the corruption). Honors the stale-takeover self-heal (a scan hung > SCAN_STALE_SEC can
+    be taken over). The claim is held only for the check-and-set, never across the scan, so a hung scan can
+    always be taken over."""
+    with _scan_lock:
+        if SCAN.get("running"):
+            _st = SCAN.get("started_at")
+            if not (_st and (time.time() - _st) > SCAN_STALE_SEC):
+                return False                       # a fresh scan is running → refuse the overlap
+            # else: stale/hung → fall through and take it over (self-heal)
+        SCAN.update(running=True, current=(reason or "starting…"), done=0, total=0,
+                    finished_at=None, started_at=time.time())
+        return True
+
+
 def run_scan(screener_id, max_age=12):
     global SCAN
     # SESSION-AWARE FRESHNESS CAP: during the trading day, NEVER serve badly-stale bars. The manual "Scan"
@@ -3747,6 +3823,7 @@ def compute_now(shared=False):
     # (if the day-low stop is wider than 1× ADR the name is too extended → skip, never widen). We pull 5-min
     # bars ONLY for the armed shortlist, ONLY in the regular session — never the whole universe.
     buys, armed, breakout_watch = [], [], []               # breakout_watch = the pre-arm lane (yellow, silent)
+    pullback_watch = []                                    # ran-up names: separate "waiting for a pullback" lane (no grade)
     _frz_day = _CONFIRM_FREEZE.setdefault(_today, {})       # today's locked confirmation prices
     for _d in [d for d in _CONFIRM_FREEZE if d != _today]:  # bound memory to the current session
         _CONFIRM_FREEZE.pop(_d, None)
@@ -3778,10 +3855,18 @@ def compute_now(shared=False):
             _dr = round((_pl_price / s["prior_close"] - 1) * 100, 1) if s.get("prior_close") else None
             _drtxt = f"ran +{_dr}% today" if _dr is not None else "ran up today"
             _sized = _size_leg(_pl_entry, _pl_stop)
+            _dist = round((_pl_price / _pl_entry - 1) * 100, 1) if _pl_entry else None   # % price sits ABOVE the zone
             _cmsg = (f"{_drtxt} — not chasing the breakout. Wait for the pullback to ${_f(_pl_entry)} "
                      f"and the reclaim (buyers stepping in); stop ${_f(_pl_stop)} just under support.")
-            armed.append({
-                "ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+            # SEPARATE LANE (user 2026-06-12, the LITE anger): a ran-up name is NOT an actionable armed setup —
+            # it's "wait for a ~N% pullback first". Keeping it in `armed` put it in the "best:" verdict + top of
+            # the list wearing an A+ chip = the app touting a chase. Route it to `pullback_watch` (its own yellow
+            # WATCH lane, NO letter grade — RS + %-to-zone instead, mirroring the Breakout-Watch lane) so it's out
+            # of the armed sort/verdict entirely. The A+ leg grade is correct but MISLEADING on a non-actionable
+            # watch, so it's not shown here (the lane convention, like breakout_watch).
+            pullback_watch.append({
+                "ticker": s["ticker"], "grade": None, "rs_score": s.get("rs_score"), "dist_pct": _dist,
+                "setup_type": s.get("setup_type"),
                 "theme": s.get("theme"), "entry": _pl_entry, "stop": _pl_stop,
                 "entry_type": e.get("entry_type"), "kind": "pullback",
                 "trigger": _pl_entry, "break_level": None, "res_trendline": None,
@@ -4609,6 +4694,7 @@ def compute_now(shared=False):
     buys.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
     armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
     breakout_watch.sort(key=lambda r: (r.get("rs_score") or 0, -(r.get("dist_pct") or 99)), reverse=True)
+    pullback_watch.sort(key=lambda r: (r.get("rs_score") or 0, -(r.get("dist_pct") or 99)), reverse=True)
 
     # MARKET CLOSED → no LIVE buy calls (user 2026-06-09, the after-hours DOCN spam). A buy that confirmed/
     # froze during the session lingers in `buys` after the close via the frozen-price reuse — falsely showing
@@ -4665,6 +4751,7 @@ def compute_now(shared=False):
     result = {"computed_at": time.strftime("%Y-%m-%d %H:%M"),
               "light": light, "stance": stance, "verdict": verdict,
               "todo": todo, "holds": holds, "buys": buys, "armed": armed, "breakout_watch": breakout_watch,
+              "pullback_watch": pullback_watch,
               "posture": posture, "label": label, "fear_greed": fg, "defend": defend,
               "tape_guard": tape_guard, "tape_turn": tape_turn,
               "market_state": market.get("market_state"),
@@ -4699,6 +4786,7 @@ def compute_autopilot():
     buys = [_autopilot_clean(b) for b in n.get("buys", [])]
     armed = [_autopilot_clean(a) for a in n.get("armed", [])]
     breakout_watch = [_autopilot_clean(w) for w in n.get("breakout_watch", [])]   # pre-arm lane (levels only)
+    pullback_watch = [_autopilot_clean(w) for w in n.get("pullback_watch", [])]   # ran-up "wait for the dip" lane
     # TAPE GUARD warning in Auto Pilot (user 2026-06-09 named Telegram + Auto Pilot specifically). LOCAL-ONLY:
     # compute_now(shared=True) suppresses tape_guard for the friends/hosted feed, so here we recompute it
     # directly ONLY when local (not HOSTED) and the toggle is on. Friends (HOSTED) never see this key → the
@@ -4749,7 +4837,7 @@ def compute_autopilot():
     _sid = _sug.get("screener_id") or next((sc.get("id") for sc in read_json(screeners_f(), [])), None)
     return {"computed_at": n.get("computed_at"), "updated_at": time.strftime("%H:%M:%S"),
             "light": n.get("light"), "stance": n.get("stance"), "verdict": verdict,
-            "buys": buys, "armed": armed, "breakout_watch": breakout_watch,
+            "buys": buys, "armed": armed, "breakout_watch": breakout_watch, "pullback_watch": pullback_watch,
             "posture": n.get("posture"), "label": n.get("label"),
             "tape_guard": tape_guard, "tape_turn": tape_turn,
             "fear_greed": n.get("fear_greed"), "market_state": n.get("market_state"),
@@ -7584,6 +7672,7 @@ def _tg_morning_brief():
         out.append("🛡️ " + (d.get("reason") or "Defend mode on."))
     buys, armed = n.get("buys") or [], n.get("armed") or []
     breakout_watch = n.get("breakout_watch") or []
+    pullback_watch = n.get("pullback_watch") or []
     # Show the TRUE count in the header and never silently truncate — the brief must match the Live-entries
     # panel (compute_now's full list), not hide the tail (2026-06-08: 11 armed showed as 6, dropping 5).
     # Generous caps so the normal book shows in full; only an unusually long tail collapses to "+N more".
@@ -7606,6 +7695,12 @@ def _tg_morning_brief():
         for w in breakout_watch[:8]:
             out.append(f"• *{w['ticker']}* RS {w.get('rs_score')} · {w.get('dist_pct')}% from pivot — "
                        f"breaks > ${_f(w.get('break_level') or w.get('trigger'))}")
+    if pullback_watch:
+        # RAN-UP lane: strong names that already ran today (no grade — not a buy, wait for the dip to support).
+        out.append(f"\n🟡 *Watching for pullback ({len(pullback_watch)})* — ran up today, wait for the dip:")
+        for w in pullback_watch[:8]:
+            out.append(f"• *{w['ticker']}* RS {w.get('rs_score')} · +{w.get('dist_pct')}% above the buy zone "
+                       f"(${_f(w.get('zone') or w.get('entry'))})")
     if not buys and not armed:
         top = _top_graded(5)
         if top:
