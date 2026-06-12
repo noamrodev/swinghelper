@@ -1,5 +1,159 @@
 # Changelog
 
+## 2026-06-12 (evening) — GLOBAL day-run chase gate + suggestions.json recovery + EARLY test coverage
+
+**1) Data-integrity fix (urgent — the app was BLIND).** `data/suggestions.json` was corrupted: a non-atomic,
+non-truncating scan write left one complete JSON document + 631 bytes of leftover tail from a previous longer
+write (two scan threads racing — boot scan vs intraday rescan). `read_json` silently returned `{}` → the live
+engine saw 0 setups → empty buys/armed. Recovered the first valid document (794 items), backed the corrupt copy
+to `backups/2026-06-12_suggestions-corrupt/`, rewrote atomically. **ROOT BUG STILL OPEN:** the scan writer isn't
+atomic / isn't serialized — spawned a task to fix `run_scan`'s write (temp-file + `os.replace`, and/or a scan
+lock) so it can't re-corrupt.
+
+**2) GLOBAL day-run chase gate (the CIFR case).** The app fired a "🟢 BUY CIFR · A — Pullback @ AVWAP" at $24.95
+near the high of a **+10.5% vertical candle** (ADR 10%). The setup PLAN was fine (AVWAP $24.06, tight stop) but
+the live confirm fired 3.7% above the AVWAP after the day already ran ~1× ADR — a chase the ADR-scaled near-zone
+caps were too loose to catch on a high-ADR name (the open GLXY caveat). Trader's rule: **"if the stock already
+rose more than half its daily ATR, it's a chase."** Built (quant) + verified (Burry): `_day_run_is_chase(setup,
+cur_px, prior_close, adr)` → a confirmation is a chase when price has risen **>0.5× ADR above YESTERDAY's close**.
+Decisions: reference = **prior close** (full daily move), **all setups except Episodic Pivot**, **frozen standing
+calls exempt** (gate runs BEFORE the freeze so a chase is NEVER frozen). Wired into all 4 fire paths (deep-pullback
+50-reclaim incl. the wall-clear `cand_entry` re-check, AVWAP Path A/B, plain breakout/ORH). Added `prior_close` to
+`scanner.analyze` (last settled daily close, no-lookahead). Firewalled from grades (Burry independently re-diffed
+the re-baselined `golden_analyze.json`: only `prior_close` added, every grade/score/level byte-for-byte). Live-
+verified after restart+rescan: CIFR (+10.5% > 5.0%) now **demotes to armed**; down/flat-day deep pullbacks
+(RDW/AAOI/RKLB/LUNR/QBTS) still fire. Tests: `tests/test_day_run_chase.py` (8).
+
+**3) EARLY tier — proven + locked (had ZERO tests).** Trader: "didn't catch any EARLY confirmation today, make sure
+it works." Code review: the EARLY path (Deep-Pullback 50-reclaim under an unbroken in-band wall, tight ≤1× ADR stop)
+is intact; my chase-gate edits only block it on a genuine chase (correct). It's a narrow confluence, so "none today"
+is plausibly just "nothing qualified live," not a bug. Added `tests/test_early_reclaim.py` (6) — a lockstep
+replica (mirrors test_avwap_reclaim_gates.py) proving EARLY fires under the confluence and is correctly suppressed
+by chase / no-buyers / wall-too-close / no-wall / too-wide-stop. **Suite 164 → 178 passing.** Restart+rescan done
+(prior_close populated on all 794); no commit/push/build.
+
+## 2026-06-12 (later) — Breakout Watch CHASE GUARD (distance-to-9-EMA gate)
+
+**Trigger:** the pre-arm lane surfaced SNDK as a "breakout watch" — but SNDK had run +4.65% vertical to $1969 with
+its 9-EMA at $1751 (**+12.7% / 1.4× ADR above the 9-EMA**). Trader: "these are terrible breakouts, 100% a chase —
+we can NOT allow breakouts where we're so far from the 9-EMA." Correct. The selection gated distance-to-PIVOT
+(`dist_hi` ≤ 2%) but never distance-to-the-9-EMA, so a name rubber-banded far above its short MA but near its
+high slipped through. (Removing the morning's `parabolic` filter is what let the chasers in.)
+
+**Fix (`app.py` `_breakout_watch_picks`):** added a CHASE GUARD — the breakout entry must sit within **1× ADR of
+the rising 9-EMA** (`_BW_MAX_EXT_9EMA_ADR = 1.0`; needs ema9 + adr + a sane entry or it's dropped). A genuine
+tight-base breakout fires NEAR the short MA; farther is a chase. Today's effect: of the 8 prior picks, only **GH**
+(0.6× ADR above its 9-EMA) survives — SNDK (1.4×), HUM (1.5×), AMAT (1.5×), M (1.6×), LRCX (1.3×) all correctly
+rejected. The near-empty lane is the HONEST read of a vertical tape: almost everything ran today → wait for the
+pullback to the 9-EMA. Tests: +2 chase-guard cases, fixtures given ema9/adr; suite **164 passing**. Server
+restarted (live-verified: API shows GH only, SNDK gone).
+
+## 2026-06-12 — Breakout Watch (pre-arm lane) for coiled leaders in a recovering tape
+
+**Trigger:** trader looking at QQQM reclaiming its 9/21 cluster (~296 line) off a sharp pullback (309→286): "market
+is rotating back healthy, we need breakout setups armed in Auto Pilot when it's close — even before it's fully
+there. Don't see them yet." Diagnosis (grading tonight's live `suggestions.json`): the tape is constructive
+(posture 68, light green) but the **rubric crushes breakout legs to C/D** in a fresh-off-a-pullback tape — SNDK
+RS100 0.7% from its pivot graded **C**, OSCR/HUM/LRCX **D**. 437/549 breakouts grade D, only 17 ≥ B. So the
+A/A+/B arm gate drops every coiled leader and the panel reads empty exactly when rotation starts. CAR (the lone A)
+was all that armed.
+
+**What shipped — a separate, grade-INDEPENDENT "Breakout Watch" pre-arm lane (`app.py`):**
+- `_breakout_watch_active(market, posture)` — lane is live ONLY in a RECOVERING tape: posture ≥ 60 AND ≥1 index
+  in state Recovery/Healthy uptrend (= reclaimed its 21-EMA). Off in pullback/correction/deep-correction tapes.
+- `_breakout_watch_picks(graded, in_cands, skip_buy)` — pure, unit-tested. Up to 8 Breakout setups, selected on
+  RAW strength: rs_score ≥ 90, within 0–2% of pivot (`dist_hi`), tight base (`tight_x` ≤ 8), above the 50, not
+  extended, not already armed/held. **`parabolic` deliberately NOT filtered** — it's a grade-cap, not a base
+  signal; the strongest coiled leaders (SNDK/HUM/LRCX) are all flagged parabolic. Today's picks: SNDK, HUM, SMTC,
+  SNX, LRCX, GH, AMAT, M.
+- Threaded through the SAME canonical confirm path (appended to `cands` after the 18-cap). While NOT triggered →
+  routed to a new `breakout_watch` list (yellow, **silent — no beep**, `grade=None` so it never conflicts with
+  the gameplan's one-truth). If a watched name actually breaks out (ORH + buyers-confirm + stop-≤1×ADR) it
+  **promotes into `buys`** and beeps like any other setup. FIRE gates byte-for-byte unchanged.
+
+**Decisions made:** (1) trigger = recovering regime (not always-on, not a manual toggle); (2) strict leaders-only
+bar (RS≥90, ≤2% from pivot); (3) a SEPARATE watch lane showing RS + %-from-pivot, NOT a forced grade-floor and
+NOT a rubric rewrite — keeps grades firewalled. The "why does a tight RS-100 leader grade C?" rubric question was
+explicitly deferred as separate (grade change → forward-test gated).
+
+**3 surfaces wired:** Dashboard (index.html) + Auto Pilot (autopilot.html/app.js) via the ux agent — amber, dimmer
+than armed, RS badge + "% from pivot", expandable, mobile-safe at 375px, renders nothing when empty; Telegram
+morning brief gets a "🟡 Breakout Watch (N)" block. **Caught on live-verify:** the ux agent's editor smart-quoted
+its autopilot.html block (curly `‘’` string delimiters across the render() empty-state + watch lane) — a JS syntax
+error that would've BLANKED the whole Auto Pilot tab. Fixed all delimiters → straight quotes, `node --check`-clean.
+(The "verify UI live, don't trust the agent's claim" rule earned its keep.) Card level falls back to `trigger` when
+`break_level` is null (these fire on today's-high breaks). **Burry (qa) verified: PASS** — no grade leak, one-truth holds,
+no FIRE loosening, watch lane can't beep, off in deep corrections. Tests: +`tests/test_breakout_watch.py` (5),
+suite 157→**162 passing**.
+
+**What's next:** trader must **restart the local server** for `app.py` to go live (no re-scan needed — reads the
+existing graded suggestions). NOT built to swinghelper, NOT pushed (git is the trader's). Open: (a) forward-test
+whether pre-armed leaders that promote actually pay; (b) the deferred rubric question — is C/D too harsh on a tight
+RS-100 leader at its pivot?
+
+## 2026-06-11 (late) — GLXY "BUY B on chop" bug fixed (2 AVWAP gates) + EARLY wired to ALL surfaces
+
+**Trigger:** trader got a "🟢 BUY GLXY · B" Pullback@AVWAP alert on a choppy non-leader (RS 62/63, trend_template
+False, Crypto, a year of 46→17→32 round-trips) — right after the coach said GLXY was a C/pass. Burry root-caused
+TWO real bugs (the None/C/B across surfaces was mostly expected: grades aren't persisted; forward_log is the
+EOD headline-avg at posture 44; armed_history is the intraday per-leg at higher posture).
+
+**Fix 1 — AVWAP patient-B leadership gate (`app.py:3609`):** the Deep-Pullback arm path requires rs_pct≥70 OR
+trend_template, but "Pullback @ AVWAP" had NO such gate — any AVWAP B armed in a weak/mixed tape. Now an AVWAP
+setup needs the SAME leadership (rs≥70 OR TT) to arm B (the green-tape `_healthy` escape hatch stands). GLXY no
+longer arms B; leaders (DOCN RS97/SNDK RS98/INTC RS93/ALAB RS99) still do; ~60 non-leader AVWAP names go quiet
+in non-green tape. `worth_waiting` can't bypass it (it's Deep Pullback/Consolidation only → AVWAP always False).
+
+**Fix 2 — Path B post-clear zone-drift gate (`app.py:4161`):** the CLEAR_WALL branch fired the post-clear entry
+with no re-check of drift from the AVWAP zone (the 0.5×ADR near-zone cap only ran on the PRE-clear entry) → a
+breakout entry under a pullback label (the CRDO/AAOI bug). Now stays ARMED if `_post` > 0.5×ADR above the
+pullback `zone_top`; in-zone wall-clears still fire; frozen bypasses. Honest caveat: GLXY's ADR is wide (8.6%),
+so Fix 1 is the primary stop for the $31.16 case; Fix 2 catches the more-extended legs — defense-in-depth.
+
+**EARLY tier wired to ALL surfaces (completing the morning's build):** Telegram bot now sends `🟡 EARLY BUY ·
+{grade}` + yellow light (vs `🟢 BUY`) for `early` recs (`app.py:6546`); Auto Pilot verdict headline goes yellow
+when the lead trigger is early (`app.py:4486`); autopilot.html + app.js nested `planHtml` buy boxes got the
+yellow `early` class (the ux agent left both green). Coverage: dashboard/app, autopilot, telegram, in-app feed,
+hosted (build-ready — make-build syncs app.py + index/app.js/styles.css/autopilot.html; Telegram stays local).
+
+**Proof:** 157 tests pass (6 new in test_avwap_reclaim_gates.py; the 2 tripwires fail-on-revert), golden grade
+snapshot **byte-for-byte** (both fixes are confirmation/arming layer, firewalled). Quant implemented, **Burry
+independently verified → SHIP** (6/6 items, no NameError, no over-suppression, no regression). Backup:
+`backups/2026-06-11_early-tier/app.py.pre-glxy-fix.bak`. lessons.md + strategy/swing-system.md updated.
+
+**What's next:** **restart** the local server (today's app.py changes: EARLY tier, EARLY Telegram/autopilot
+wiring, the 2 GLXY gates — no rescan needed). **Forward-test** EARLY + the GLXY gates before trusting live (no
+backtest). Say **"build"** to push EARLY + the GLXY fixes to the friends' site.
+
+## 2026-06-11 — EARLY (semi-confirm) tier for high-ADR deep pullbacks + day's trades logged
+
+**Trades (2026-06-11, all closed → net −$9.23 across 8, scratch in the flip):** CIFR +$32 & +$37 (the day's
+edge — the one clean RS leader, paid twice), RDW +$9.27 (2nd go), DOCN +$7.2, RDW −$42 (1st), SNDK −$16.7,
+SQQQ −$14 (intentional flip hedge), AXTI −$22. Discipline was good (defended CIFR/DOCN into the flip, hedged,
+sized small); leak was over-trading the chop. AXTI re-filed: the **read was right** (caught the 82.31 flush
+bottom, reversed ~+4%) — the −$22 was a **noise-tight stop on a ~5%+ ADR bottom-fish**, not the name. New
+lesson added (bottom-fish: stop UNDER the flush low + cut size, or buy the reclaim).
+
+**Feature — ADR-aware "EARLY" confirmation tier (trader's idea, the RDW case):** the deep-pullback "clear the
+wall" gate (right for breakouts) was **over-suppressing high-ADR deep-pullbacks AT support** — RDW reclaimed
+~$15.20 at the 50/support (tight stop ~$14.5) but the prior-day-high wall sat ~5% up, so waiting to clear it
+blew the stop past 1× ADR → engine dropped it to "too extended / no call", **losing the good entry**. Fix
+(`app.py` `compute_now`, `is_deep` block): when a genuine 50-reclaim (all knife gates passed) has a tight
+(≤1× ADR) support stop AND clearing the wall would be a real chase (>1× ADR from the wall), fire an **EARLY**
+buy now at the reclaim, tagged `RECLAIM_50_EARLY`, `early=True`, frozen for the day (stays EARLY on re-poll).
+Surfaced like a normal buy card but **yellow** (`.plan5 .buy.early` amber box + "Early" pill + "Early entry"
+badge) across all web surfaces (index/panel/autopilot → so Data Center + Coach window + hosted all inherit it).
+
+**Proof:** 151 tests pass; grader golden **byte-for-byte** (confirmation-layer, firewalled). Burry verified
+6/6: knives structurally can't reach EARLY (it's after reached_50/held_above/turning_up), chase-math None-safe,
+frozen re-poll stays yellow, no AVWAP-block regression, no NameError. Yellow rendering verified live via
+computed styles (amber border `rgba(255,181,61)` vs green `rgba(34,224,161)`; badge gradient `#ffc843→#ffb020`).
+Backup: `backups/2026-06-11_early-tier/app.py.bak`.
+
+**What's next:** **restart** the local server to go live (app.py change; no re-scan needed — `compute_now` is
+live). **Forward-test** EARLY before trusting it (not backtested). NOT synced to swinghelper — needs a `build`
+to reach the friends' site.
+
 ## 2026-06-10 (late⁴) — Tape alerts fully fixed: Guard re-spam + a DECOUPLED redesign (Burry caught a loop)
 
 **Bug chain:** After the Turn-spam fix, the trader still got "⚠️ TAPE GUARD armed" **6× in 2.5h** (every 30

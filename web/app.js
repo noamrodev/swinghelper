@@ -90,9 +90,9 @@ function dataCenter() {
     // landing redirect there, so its 5-min auto-refresh stays put (it is NOT an SPA view).
     tgMsg: '',                // telegram test-send status
     expandedPlan: {},         // per-ticker toggle for the 📋 setup plan in Live entries
-    nowByTicker() {           // ticker -> {state:'confirmed'|'armed', rec} for badging suggestion cards
+    nowByTicker() {           // ticker -> {state:'confirmed'|'early'|'armed', rec} for badging suggestion cards
       const m = {};
-      (this.now && this.now.buys || []).forEach(b => m[b.ticker] = { state: 'confirmed', rec: b });
+      (this.now && this.now.buys || []).forEach(b => m[b.ticker] = { state: b.early ? 'early' : 'confirmed', rec: b });
       (this.now && this.now.armed || []).forEach(a => { if (!m[a.ticker]) m[a.ticker] = { state: 'armed', rec: a }; });
       return m;
     },
@@ -791,7 +791,7 @@ function dataCenter() {
         : `${_lead} setting up${_dry}.`;
 
       return `<div class="plan5">
-        <div class="buy"><div class="buy-l">🎯 Buy</div><div class="buy-t">${buyTxt}</div></div>
+        <div class="buy${p && p.early ? ' early' : ''}"><div class="buy-l">🎯 Buy${p && p.early ? ' <span class="early-badge">Early</span>' : ''}</div><div class="buy-t">${buyTxt}</div></div>
         ${levels}
         <div class="why"><div class="why-h">Why this setup</div>${whyGrid}${thesis ? `<div class="thesis">${thesis}</div>` : ''}</div>
         <button class="chart-btn" onclick="window.__dc && window.__dc.showChart('${esc(p && p.ticker)}', {})">📈 View chart</button>
@@ -1687,6 +1687,8 @@ function dataCenter() {
     // 'Ran away' red for a stale dip; otherwise 'Waiting'. One label, never doubled.
     setupState(s, e) {
       if (e.stale) return { label: 'Ran away', cls: 'red' };
+      const nr = (this.nowByTicker()[s.ticker] || {});
+      if (nr.state === 'early' && e.buyable_now) return { label: 'Early entry', cls: 'early' };
       if (this.isConfirmedBuyable(s, e)) return { label: 'Buyable now', cls: 'grn' };
       if (e.buyable_now) return { label: 'In the zone', cls: '' };
       return { label: 'Waiting', cls: '' };

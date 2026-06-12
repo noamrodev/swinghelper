@@ -37,6 +37,22 @@ lessons, newest insights merged in (not an endless list of duplicates).
   0.6× ADR above the *entry*): in-band → require a 5-min close above the HIGHEST wall, else ARM. And if clearing
   the wall would push the stop (under the AVWAP) past 1× ADR, there's no clean entry → stay armed (don't chase the
   ran-away bounce). Confirmation-only — grades unchanged. Restart + rescan to see it live (engine: `app.compute_now`).
+- **A non-leader AVWAP must NOT arm a B, and a wall-clear must NOT fire a breakout on a pullback label
+  (2026-06-11, GLXY).** GLXY (RS 62, trend_template False, Crypto, a year of violent chop) wrongly fired a
+  "🟢 BUY GLXY · B" Pullback @ AVWAP alert. Two causes, both fixed in `app.compute_now` (confirmation/arming
+  layer — **grades unchanged**): (1) the AVWAP patient-B WATCH/arm path had **no relative-strength gate** — ANY
+  AVWAP setup scoring B armed in a weak/mixed tape. It now requires a real leader (**rs_pct≥70 OR
+  trend_template**, the SAME threshold the Deep-Pullback path self-gates on). A non-leader AVWAP only arms B in a
+  *green* tape (the existing `_healthy` clause). NOTE `worth_waiting` is `deep or consol` (Deep Pullback /
+  Consolidation) and setup_type is mutually exclusive, so an AVWAP name always has worth_waiting=False — the gate
+  can't be bypassed. (2) Path B's overhead-wall **CLEAR_WALL** branch fired the post-clear entry with **no
+  re-check** of how far it drifted from the AVWAP zone (the 0.5× ADR near-zone cap only ran on the *pre*-clear
+  entry) — so clearing a wall could buy a breakout entry under a *pullback* label (the CRDO/AAOI bug). A
+  **post-clear zone-drift gate** now stays ARMED if `_post` is >0.5× ADR above the pullback `zone_top` (the hard
+  ref); the breakout leg (separately graded) takes over. In-zone wall-clears still fire; frozen bypasses. CAVEAT:
+  the 0.5× ADR cap is scaled off the AVWAP support, so for very wide-ADR names (GLXY ADR 8.6%) it's generous —
+  Fix 1 (no B-arm) is the primary stop for GLXY; Fix 2 catches the more-extended breakout-pivot leg. Restart +
+  rescan to see it live; **forward-test before trusting (no backtest).** Tests: `tests/test_avwap_reclaim_gates.py`.
 - **Under a DESCENDING trendline = WAIT for the break, never buy beneath it (2026-06-09, DOCN; relaxed v2).**
   The sloped sibling of the IREN overhead-EMA + AXTI horizontal-wall "clear the wall" gates. When a genuine
   descending resistance line (lower highs off a recent peak) sits just overhead the entry, a confirm fired
@@ -200,6 +216,16 @@ Example:
   that tight isn't risk control, it's a coin-flip exit that throws the setup away before it can work. The
   initial_stop you identify at entry IS the stop; if 1× ADR of wiggle is too much to risk, the trade is too
   big — cut size, don't choke the stop. (from RKLB, 2026-06-05)
+- **Bottom-fishing a flush: right read, wrong stop = a loss. The stop goes UNDER the flush low, never near
+  entry — and you cut size to afford it.** AXTI (2026-06-11): correctly called the bottom — it flushed to
+  **82.31** (wick ~81.95), held the rising trendline, and reversed ~+4% to 85.55. But the stop sat too close
+  to entry, so the bottom **wick** shook it out for −$22 *before* the bounce it predicted. On a ~5%+ ADR name
+  a stop near entry is a guaranteed shakeout — the flush itself has more range than the stop. If you're going
+  to catch a knife: (1) put the stop **below the actual flush low / under the trendline** (here ~81.9), (2)
+  **cut size** so that wider stop still risks ≤1%, and (3) the higher-probability version is to skip the
+  literal bottom and **buy the reclaim** (a completed 5-min close back above the 9/21 EMA off the low) — same
+  trade, real confirmation, tighter honest stop. Being right on direction pays nothing if the stop can't
+  survive the entry. (from AXTI, 2026-06-11)
 - **The chase leak is quantified: 12 of 21 closed trades filled >5% above plan and averaged ≈ −0.7R; that
   pattern is the bulk of the −12R book.** AAOI Consolidation was bought +25.4% and +16.5% above its planned
   zone (both −1R); MXL +20.7%/+16.1%; INTC +8.2%. The fix is split across both actors: the ENGINE now stays
@@ -254,7 +280,10 @@ Example:
   planned $71.96 entry after a +7% spike). A single-stock breakout/AVWAP-reclaim has **no edge when the
   index it lives in is reversing down** — the market drags it back. RULES: (1) Before any entry, glance at
   SPX/QQQ/IWM — if ≥2 are red and rolling over off a rejection, **stand down**; cash is the position. (2)
-  **Never re-enter a name that just stopped you** (AXTI twice). (3) Chop and low-ADR mega-caps (INTC/TER/
+  **Never re-enter a name that just stopped you** mid-tilt (AXTI twice on 6-09 was revenge). NOTE: this is
+  about re-entering the SAME FAILED SETUP on tilt — not a blanket ban; on 2026-06-11 the AXTI **read was
+  right** (caught the 82.31 flush bottom, reversed ~+4%) and the loss was a stop-placement error, not the
+  name (see the bottom-fish stop lesson below). (3) Chop and low-ADR mega-caps (INTC/TER/
   AMKR) are not this strategy — trade clean RS leaders only. The ONE good call all day: **raising the FLNC
   stop to bank +$71.40** — protecting green in a hostile tape is correct, never apologize for it. Sizing
   was disciplined (each loss ≤0.54% → net −$108 ≈ −0.5% of the account); the leak was ENTERING, not size.

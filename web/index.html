@@ -523,22 +523,32 @@
                 <template x-if="now.buys && now.buys.length">
                   <div class="space-y-2">
                     <template x-for="b in now.buys" :key="b.ticker">
-                      <div class="rounded-xl p-3 border" style="background:rgba(34,224,161,.12);border-color:rgba(34,224,161,.5)">
+                      <div class="rounded-xl p-3 border"
+                           :style="b.early
+                             ? 'background:rgba(255,181,61,.13);border-color:rgba(255,181,61,.55)'
+                             : 'background:rgba(34,224,161,.12);border-color:rgba(34,224,161,.5)'">
                         <div class="flex items-center justify-between gap-2 flex-wrap">
                           <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-base font-extrabold text-up">🟢 BUY <span x-text="b.ticker"></span></span>
+                            <span class="text-base font-extrabold" :class="b.early ? 'text-warn' : 'text-up'"
+                                  x-text="(b.early ? '🟡' : '🟢') + ' BUY ' + b.ticker"></span>
+                            <span x-show="b.early" class="early-badge" title="EARLY = reclaimed support with buyers, but resistance is still overhead — tighter stop, higher risk; full confirm is a close above the wall.">EARLY</span>
                             <span class="w-6 text-center font-extrabold shrink-0" :style="'color:'+gradeColor(b.grade)" x-text="b.grade"></span>
                             <span class="text-xs text-slate-400 truncate" x-text="b.setup_type"></span>
                           </div>
                           <div class="flex items-center gap-2">
                             <div class="text-sm font-bold" x-text="(b.shares||'?')+' sh @ ~$'+(b.entry||'?')"></div>
-                            <button class="text-xs px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-300" @click="expandedPlan[b.ticker]=!expandedPlan[b.ticker]" title="Open the plan">📋 plan</button>
+                            <button class="text-xs px-1.5 py-0.5 rounded border"
+                                    :class="b.early ? 'border-amber-500/40 text-amber-300' : 'border-emerald-500/40 text-emerald-300'"
+                                    @click="expandedPlan[b.ticker]=!expandedPlan[b.ticker]" title="Open the plan">📋 plan</button>
                           </div>
                         </div>
                         <div class="text-sm text-slate-200 mt-1">stop <b x-text="'$'+(b.stop||'?')"></b>
                           <span class="text-slate-500" x-text="' · '+(b.risk_pct_actual!=null?b.risk_pct_actual+'% risk':'')+(b.pct_acct!=null?' · '+b.pct_acct+'% of acct':'')"></span></div>
-                        <div class="text-xs mt-1" style="color:#9bf0cf" x-text="b.confirm"></div>
-                        <div x-show="expandedPlan[b.ticker]" x-transition.opacity class="mt-2 pt-2 border-t border-emerald-500/20" x-html="planHtml(b)"></div>
+                        <div class="text-xs mt-1" :style="b.early ? 'color:#ffd080' : 'color:#9bf0cf'" x-text="b.confirm"></div>
+                        <div x-show="b.early" class="text-[10px] mt-1.5" style="color:#b89040">EARLY = reclaimed support with buyers, but resistance still overhead — tighter stop, higher risk. Full confirm = close above the wall.</div>
+                        <div x-show="expandedPlan[b.ticker]" x-transition.opacity class="mt-2 pt-2"
+                             :class="b.early ? 'border-t border-amber-500/20' : 'border-t border-emerald-500/20'"
+                             x-html="planHtml(b)"></div>
                         <div class="text-[10px] text-slate-500 mt-1">You place the order — this is the call, the decision is yours.</div>
                       </div>
                     </template>
@@ -573,6 +583,36 @@
                   <span x-show="now.light!=='red' && marketOpen">Nothing armed right now — I'll surface a setup here the moment one sets up, and beep when it confirms.</span>
                   <span x-show="now.light!=='red' && !marketOpen">Market closed — the best setups arm here during market hours, and I beep when one confirms its trigger.</span>
                 </div>
+                <!-- BREAKOUT WATCH — pre-arm lane (coiled RS leaders near pivot; silent, no grade, no beep) -->
+                <template x-if="now.breakout_watch && now.breakout_watch.length">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-wide font-bold mb-0.5" style="color:#ffb53d">🟡 Breakout Watch — coiled leaders</div>
+                    <div class="text-[11px] text-slate-500 mb-2">Top RS leaders within 2% of their pivot. Not buys yet — armed for the break.</div>
+                    <div class="space-y-1">
+                      <template x-for="w in now.breakout_watch" :key="w.ticker">
+                        <div class="rounded-lg" style="background:rgba(255,181,61,.07);border:1px solid rgba(255,181,61,.22)">
+                          <div class="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer" @click="expandedPlan[w.ticker+'_bw']=!expandedPlan[w.ticker+'_bw']" title="Open the plan">
+                            <span class="shrink-0 text-[11px]">📋</span>
+                            <span class="font-bold w-16 shrink-0" style="color:#ffd591" x-text="w.ticker"></span>
+                            <span class="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background:rgba(255,181,61,.15);color:#ffc843;border:1px solid rgba(255,181,61,.3)" x-text="'RS '+w.rs_score"></span>
+                            <span class="text-slate-400 text-xs flex-1 truncate min-w-0" x-text="w.dist_pct!=null ? w.dist_pct.toFixed(1)+'% from pivot' : 'near pivot'"></span>
+                            <span class="text-xs shrink-0" style="color:#ffb53d" x-text="w.break_level!=null ? 'break $'+w.break_level : ''"></span>
+                            <span class="text-[10px] text-slate-500 shrink-0" x-text="expandedPlan[w.ticker+'_bw']?'▲':'▼'"></span>
+                          </div>
+                          <div class="text-[11px] px-2.5 pb-1" style="color:#c8a840" x-show="w.confirm" x-text="w.confirm"></div>
+                          <div x-show="expandedPlan[w.ticker+'_bw']" x-transition.opacity class="px-3 pb-2.5 pt-1 border-t" style="border-color:rgba(255,181,61,.15)">
+                            <div class="flex flex-wrap gap-3 text-xs mb-2">
+                              <span class="text-slate-400">stop <b class="text-slate-200" x-text="'$'+(w.stop||'?')"></b></span>
+                              <span class="text-slate-400">trigger <b class="text-slate-200" x-text="'$'+(w.trigger||w.break_level||'?')"></b></span>
+                              <span class="text-slate-400">entry <b class="text-slate-200" x-text="'$'+(w.entry||'?')"></b></span>
+                            </div>
+                            <div class="text-[11px] text-slate-400 leading-relaxed" x-show="w.why" x-text="w.why"></div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
                 <div class="text-[11px] text-slate-500" x-text="'Watches only the ~12 best setups live (not the whole universe) · '+(now.computed_at||'')"></div>
               </div>
             </template>
@@ -1059,10 +1099,15 @@
                       </div>
                       <!-- STATUS PANEL: one state label + one condition line + the Lexicon confirms-on row -->
                       <div class="statusbox" :class="setupState(s,e).cls" :title="(confRec(s)&&confRec(s).confirm)||''">
-                        <div class="st-state"><span class="dot"></span> <span x-text="setupState(s,e).label"></span></div>
+                        <div class="st-state flex items-center gap-2">
+                          <span class="dot"></span>
+                          <span x-text="setupState(s,e).label"></span>
+                          <span x-show="setupState(s,e).cls==='early'" class="early-badge">EARLY</span>
+                        </div>
                         <!-- condition line (de-iconed so there's no double hourglass) -->
                         <div class="st-cond" x-show="setupState(s,e).cls==='grn'"><span x-text="cur"></span><span x-text="s.close"></span> is in the zone and the trigger is taken out — buyable now.</div>
-                        <div class="st-cond" x-show="setupState(s,e).cls!=='grn'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
+                        <div class="st-cond" x-show="setupState(s,e).cls==='early'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
+                        <div class="st-cond" x-show="setupState(s,e).cls!=='grn' && setupState(s,e).cls!=='early'" x-html="condText(e, s.close).replace(/\$/g, cur).replace(/(\$?[\d.]+)/, '<b>$1</b>')"></div>
                         <!-- Lexicon Phase-2 confirmation menu — only on an armed, not-yet-buyable setup -->
                         <!-- When an overhead wall gates the setup, show a single "close above $X" chip instead of the redundant generic menu -->
                         <div class="st-confirm" x-show="confStatus(s)==='armed' && setupState(s,e).cls!=='grn' && (wallConfirmText(entryConfirmRec(s,e)) || confirmMenuText(entryConfirmRec(s,e)))">

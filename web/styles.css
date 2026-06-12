@@ -279,16 +279,19 @@ body::before {
   background: rgba(255,181,61,.07); border: 1px solid rgba(255,181,61,.2);
   border-left: 3px solid var(--warn); border-radius: 12px; padding: 12px 15px;
 }
-.statusbox.grn { background: rgba(34,224,161,.08); border-color: rgba(34,224,161,.28); border-left-color: var(--up); }
-.statusbox.red { background: rgba(255,93,115,.08); border-color: rgba(255,93,115,.3);  border-left-color: var(--down); }
+.statusbox.grn   { background: rgba(34,224,161,.08);  border-color: rgba(34,224,161,.28);  border-left-color: var(--up); }
+.statusbox.early { background: rgba(255,181,61,.10);  border-color: rgba(255,181,61,.38);  border-left-color: var(--warn); }
+.statusbox.red   { background: rgba(255,93,115,.08);  border-color: rgba(255,93,115,.3);   border-left-color: var(--down); }
 .st-state { display: flex; align-items: center; gap: 8px; font-size: .66rem; font-weight: 700; color: var(--warn); }
-.statusbox.grn .st-state { color: var(--up); }
-.statusbox.red .st-state { color: var(--down); }
+.statusbox.grn   .st-state { color: var(--up); }
+.statusbox.early .st-state { color: var(--warn); }
+.statusbox.red   .st-state { color: var(--down); }
 .st-state .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse2 1.8s ease-in-out infinite; flex-shrink: 0; }
 .st-cond { font-size: .61rem; color: #e7d6ad; margin-top: 5px; line-height: 1.5; }
 .st-cond b { color: #fff; font-weight: 700; }
-.statusbox.grn .st-cond { color: #b7ecd2; }
-.statusbox.red .st-cond { color: #f4c0c8; }
+.statusbox.grn   .st-cond { color: #b7ecd2; }
+.statusbox.early .st-cond { color: #ffe7b0; }
+.statusbox.red   .st-cond { color: #f4c0c8; }
 .st-confirm {
   font-size: .57rem; color: var(--faint); margin-top: 9px; padding-top: 9px;
   border-top: 1px dashed rgba(255,255,255,.08); display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
@@ -297,6 +300,12 @@ body::before {
 .trg {
   font-size: .55rem; font-weight: 600; color: #bfe9ef; background: rgba(34,211,238,.1);
   border: 1px solid rgba(34,211,238,.25); padding: 2px 9px; border-radius: 7px;
+}
+/* EARLY badge — yellow pill pinned next to the ticker on early/semi-confirm buy cards */
+.early-badge {
+  font-size: .52rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: #1a1200; background: linear-gradient(90deg, #ffc843, #ffb020);
+  padding: 2px 7px; border-radius: 5px; flex-shrink: 0;
 }
 
 /* ---- divider between the two setups ---- */
@@ -893,9 +902,13 @@ body::before {
 /* BUY = hero, tight */
 .plan5 .buy { background: linear-gradient(180deg, rgba(34,224,161,.12), rgba(34,224,161,.04));
   border: 1px solid rgba(34,224,161,.28); border-radius: 11px; padding: 11px 13px; }
+.plan5 .buy.early { background: linear-gradient(180deg, rgba(255,181,61,.14), rgba(255,181,61,.05));
+  border-color: rgba(255,181,61,.35); }
 .plan5 .buy-l { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--up);
   text-transform: uppercase; display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.plan5 .buy.early .buy-l { color: var(--warn); }
 .plan5 .buy-t { font-size: 13.5px; line-height: 1.5; color: #d7f3e7; }
+.plan5 .buy.early .buy-t { color: #ffe9b8; }
 .plan5 .buy-t b { color: #fff; font-weight: 700; }
 
 /* levels strip — tight cells, key values only (NOT sentences) */

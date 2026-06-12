@@ -1302,6 +1302,15 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
     v = [b["volume"] for b in bars]
     o = [b["open"] for b in bars]
     close = c[-1]
+    # PRIOR (yesterday's) settled close — the last daily close STRICTLY BEFORE today's session. Used by the
+    # live confirmation engine's day-run chase gate (user 2026-06-12): "if the stock already rose more than
+    # half its daily ATR off yesterday's close, the buy is a chase." NOTE: `close` (=c[-1]) is BACKFILLED to
+    # the live/forming price intraday (feed-latest-bar-backfill), so it is NOT a reliable "yesterday" ref —
+    # we must look one bar back. When forming_last (live session, bars[-1] = today's forming bar), yesterday
+    # is c[-2]; at EOD (forming_last=False, bars[-1] = today's settled close), the most recent SETTLED close
+    # that precedes the next live session is c[-1]. Either way: the last fully-settled close before the
+    # live/forming price. None if too few bars (gate fails open). No lookahead (only bars <= today).
+    prior_close = (c[-2] if forming_last else c[-1]) if len(c) >= 2 else None
 
     _adr_rng = [(h[k] / l[k] - 1) * 100 for k in range(-20, 0) if l[k] > 0]
     adr = st.mean(_adr_rng) if _adr_rng else 0   # guard: all-zero/bad lows -> empty list would crash st.mean
@@ -1897,6 +1906,7 @@ def analyze(sym, bars, settings=None, forming_last=False, force_no_deep=False):
 
     return {
         "ticker": sym.upper(), "setup_type": setup_type, "close": round(close, 2),
+        "prior_close": round(prior_close, 2) if prior_close else None,   # yesterday's settled close (day-run chase gate)
         "adr": round(adr, 1), "above": above, "ext10": round(ext10, 1),
         "pull_from_high": round(pull_from_high, 1), "near_line": near_line,
         "avwap_ath": round(avwap_ath, 2), "avwap_earn": round(avwap_earn, 2) if avwap_earn else None,

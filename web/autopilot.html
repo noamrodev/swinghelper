@@ -31,8 +31,10 @@
   .sec-l{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; font-weight:800; margin:14px 0 6px; }
   .disc{ background:rgba(255,181,61,.10); border:1px solid rgba(255,181,61,.30); color:#ffd591; border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.55; }
   .buy{ background:linear-gradient(180deg,rgba(34,224,161,.16),rgba(34,224,161,.08)); border:1px solid rgba(34,224,161,.5); border-radius:14px; padding:12px 13px; margin-bottom:8px; box-shadow:0 14px 32px -26px rgba(0,0,0,.85); }
+  .buy.early{ background:linear-gradient(180deg,rgba(255,181,61,.18),rgba(255,181,61,.09)); border-color:rgba(255,181,61,.6); }
   .buy.flash{ animation:fl 1.1s ease-out 3; }
   @keyframes fl{ 0%{ box-shadow:0 0 0 0 rgba(34,224,161,.6);} 60%{ box-shadow:0 0 0 10px rgba(34,224,161,0);} 100%{ box-shadow:0 0 0 0 rgba(34,224,161,0);} }
+  .early-badge{ font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#1a1200; background:linear-gradient(90deg,#ffc843,#ffb020); padding:2px 7px; border-radius:5px; flex-shrink:0; vertical-align:middle; }
   .armed{ background:rgba(255,181,61,.10); border:1px solid rgba(255,181,61,.28); border-radius:12px; margin-bottom:6px; transition:border-color .16s ease; }
   @media (hover:hover){ .armed:hover{ border-color:rgba(255,181,61,.5); } }
   .armed-h{ display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer; font-size:14px; }
@@ -399,7 +401,7 @@ const AP = {
       ${mcell('Volume',vol,'amb',volDry)}</div>`;
     const thesis = e(pl.why || (p && p.why) || '');
     return `<div class="plan5">
-      <div class="buy"><div class="buy-l">🎯 Buy</div><div class="buy-t">${buyTxt}</div></div>
+      <div class="buy${p && p.early ? ' early' : ''}"><div class="buy-l">🎯 Buy${p && p.early ? ' <span class="early-badge">Early</span>' : ''}</div><div class="buy-t">${buyTxt}</div></div>
       ${levels}
       <div class="why"><div class="why-h">Why this setup</div>${whyGrid}${thesis?`<div class="thesis">${thesis}</div>`:''}</div>
       <a class="chart-btn" href="/?site=1&chart=${encodeURIComponent(e(p&&p.ticker))}" target="_blank" rel="noopener">📈 View chart</a>
@@ -527,16 +529,20 @@ const AP = {
     let html = '';
     const buys = d.buys||[], armed = d.armed||[];
     if (buys.length){
-      html += '<div class="sec-l up">🟢 Buy now — confirmed</div>';
+      const hasEarly = buys.some(b=>b.early), hasNormal = buys.some(b=>!b.early);
+      html += `<div class="sec-l up">${hasEarly&&!hasNormal?'🟡':'🟢'} Buy now — confirmed${hasEarly?' (some early)':''}</div>`;
       buys.forEach(b=>{
-        html += `<div class="buy${this.flash[b.ticker]?' flash':''}">
+        html += `<div class="buy${b.early?' early':''}${this.flash[b.ticker]?' flash':''}">
           <div class="row between">
-            <div class="row" style="gap:6px"><span class="up" style="font-weight:800">🟢 BUY ${e(b.ticker)}</span>
+            <div class="row" style="gap:6px">
+              <span style="font-weight:800; color:${b.early?'var(--warn)':'var(--up)'}">${b.early?'🟡':'🟢'} BUY ${e(b.ticker)}</span>
+              ${b.early?`<span class="early-badge" title="EARLY = reclaimed support with buyers, but resistance still overhead — tighter stop, higher risk; full confirm is a close above the wall.">EARLY</span>`:''}
               <span class="grade" style="color:${this.gradeColor(b.grade)}">${e(b.grade)}</span>
               <span class="mut" style="font-size:12px">${e(b.setup_type)}</span></div>
             <div style="font-weight:700; font-size:13px">~$${this.fmt(b.entry)} · stop $${this.fmt(b.stop)}</div>
           </div>
-          <div style="color:#9bf0cf; font-size:12px; margin-top:3px">${e(b.confirm||'')}</div>
+          <div style="color:${b.early?'#ffd080':'#9bf0cf'}; font-size:12px; margin-top:3px">${e(b.confirm||'')}</div>
+          ${b.early?`<div style="font-size:10px; color:#b89040; margin-top:4px">EARLY = reclaimed support with buyers, but resistance still overhead — tighter stop, higher risk. Full confirm = close above the wall.</div>`:''}
           <details style="margin-top:4px"><summary class="dim" style="cursor:pointer; font-size:12px">📋 plan</summary><div class="plan" style="border:0; padding-left:0">${this.planHtml(b)}</div></details>
           <div class="dim" style="font-size:10px; margin-top:3px">A setup idea, not a recommendation — you decide.</div>
         </div>`;
@@ -568,10 +574,42 @@ const AP = {
             ? 'Nothing armed right now — the best setups appear here the moment they line up, and you’ll be pinged when one confirms.'
             : 'Market closed — the best setups arm here during market hours, and you’ll be pinged when one confirms its trigger.')) + '</div>';
     }
+    // ── Breakout Watch — pre-arm lane (coiled RS leaders near pivot; silent, no grade) ──────────
+    const bw = d.breakout_watch || [];
+    if (bw.length) {
+      html += `<div class="sec-l" style="color:#ffb53d">🟡 Breakout Watch — coiled leaders</div>`;
+      html += `<div style="font-size:12px;color:#9aa8c2;margin:-4px 0 8px">Top RS leaders within 2% of their pivot. Not buys yet — armed for the break.</div>`;
+      bw.forEach((w, i) => {
+        const dist = w.dist_pct != null ? w.dist_pct.toFixed(1) + '% from pivot' : 'near pivot';
+        const trig = w.trigger != null ? 'break $' + w.trigger : (w.break_level != null ? 'break $' + w.break_level : '');
+        const stopTxt = w.stop != null ? '$' + w.stop : '?';
+        const entryTxt = w.entry != null ? '$' + w.entry : '?';
+        const triggerTxt = w.trigger != null ? '$' + w.trigger : (w.break_level != null ? '$' + w.break_level : '?');
+        html += `<div class="armed" style="background:rgba(255,181,61,.07);border-color:rgba(255,181,61,.22)">
+          <div class="armed-h" onclick="AP.toggleBw(${i})">
+            <span style="font-size:11px">📋</span>
+            <span class="tk" style="color:#ffd591;width:58px">${e(w.ticker)}</span>
+            <span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(255,181,61,.15);color:#ffc843;border:1px solid rgba(255,181,61,.3);flex:none">RS ${e(w.rs_score)}</span>
+            <span class="mut" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(dist)}</span>
+            <span style="font-size:12px;color:#ffb53d">${e(trig)}</span>
+            <span class="dim" id="bwarw${i}" style="font-size:10px">▼</span>
+          </div>
+          ${w.confirm ? `<div style="padding:3px 11px 7px;font-size:12px;color:#c8a840">${e(w.confirm)}</div>` : ''}
+          <div class="plan" id="bwplan${i}" style="display:none">
+            <div class="pr"><span class="pl">Stop</span><span style="color:#ff5a72;font-weight:700">${stopTxt}</span></div>
+            <div class="pr"><span class="pl">Trigger</span><span style="color:#ffd591;font-weight:700">${triggerTxt}</span></div>
+            <div class="pr"><span class="pl">Entry</span><span>${entryTxt}</span></div>
+            ${w.why ? `<div style="margin-top:6px;font-size:12px;color:#9aa8c2;line-height:1.55">${e(w.why)}</div>` : ''}
+          </div>
+        </div>`;
+      });
+    }
     document.getElementById('content').innerHTML = html;
     this.renderControls();
   },
   toggle(i){ const p=document.getElementById('plan'+i), a=document.getElementById('arw'+i);
+    const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
+  toggleBw(i){ const p=document.getElementById('bwplan'+i), a=document.getElementById('bwarw'+i);
     const open = p.style.display==='none'; p.style.display = open?'block':'none'; a.textContent = open?'▲':'▼'; },
 
   start(){

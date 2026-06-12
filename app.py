@@ -3271,6 +3271,29 @@ def _descending_trend_gate(entry_level, res_trendline, adr_pct):
     return bool(gate), (round(lvl, 2) if gate else None)
 
 
+def _day_run_is_chase(setup_type, cur_px, prior_close, adr_pct):
+    """GLOBAL day-run chase gate (user 2026-06-12, the CIFR case). The rule: "if the stock already rose more
+    than half its daily ATR off YESTERDAY's close, the buy is a chase." A CIFR Pullback @ AVWAP fired a BUY
+    at $24.95 near the high of a +10.5% candle (10% ADR) — a chase the existing ADR-SCALED stop/zone caps
+    were too loose to catch on a high-ADR name (a 10%-ADR stop "fits" a buy 10% off the lows). This is an
+    ABSOLUTE day-move cap measured from the PRIOR daily close (the full move INCLUDING any gap), independent
+    of where support sits.
+
+        day_run = (cur_px - prior_close) / prior_close        # fraction risen off yesterday's close
+        chase   = day_run > 0.5 * adr_pct/100                 # past half a day's ATR up → a chase
+
+    SCOPE = all setups EXCEPT Episodic Pivot. An EP gaps on news BY DEFINITION (that IS the setup) — it is
+    exempt here and keeps its own ep_volume gate. FAIL-OPEN: any missing/≤0 input returns False (never block
+    on missing data — e.g. an old scan without prior_close). Pure decision helper, unit-testable. No
+    lookahead: cur_px is the live tick, prior_close is yesterday's settled close (bars <= today)."""
+    if setup_type == "Episodic Pivot":
+        return False
+    if not cur_px or not prior_close or not adr_pct or cur_px <= 0 or prior_close <= 0 or adr_pct <= 0:
+        return False
+    day_run = (cur_px - prior_close) / prior_close
+    return day_run > 0.5 * adr_pct / 100.0
+
+
 def _ema_lbl_for(lvl, e9, e21):
     """Name the overhead EMA level: '9-EMA' / '21-EMA' / 'EMA'. Extracted so the stacked-wall gate can
     seed the label before (possibly) swapping it for a higher non-EMA wall."""
@@ -3335,6 +3358,59 @@ def _highest_overhead_wall(entry_level, adr_pct, ema_wall=None, walls=None, res_
     _trend = next((c for c in cands if c[1] == "trend"), None)
     level, kind = _trend if _trend else max(cands, key=lambda x: x[0])
     return True, round(level, 2), kind
+
+
+# Breakout-watch pre-arm: an index in one of these states is BACK above its 20/21-EMA (a reclaim after a
+# dip, or a clean uptrend) — the "rotation is healthy again" signal the trader watches for. "Pullback" /
+# "Bottoming" / correction states do NOT qualify (we never pre-arm breakouts into a market still under its MAs).
+_BW_RECLAIMED_STATES = ("Recovery", "Healthy uptrend")
+
+
+def _breakout_watch_active(market, posture):
+    """Breakout-watch pre-arm is live ONLY in a RECOVERING tape (user 2026-06-12): posture ≥ 60 AND at
+    least one index has reclaimed its 21-EMA (state Recovery / Healthy uptrend). Off in pullback/correction
+    tapes so coiled leaders are never pre-armed into a falling market. Reads regime only — never touches grades."""
+    if (posture or 0) < 60:
+        return False
+    return any((i.get("state") in _BW_RECLAIMED_STATES) for i in (market.get("indexes") or []))
+
+
+# The chase guard: a Breakout-Watch entry may sit at most this many ADRs above the 9-EMA. A genuine tight-base
+# breakout fires NEAR the rising short MA; a name rubber-banded farther than this above its 9-EMA is a chase,
+# not a base (user 2026-06-12, the SNDK case: +12.7% / 1.4× ADR above the 9-EMA on a vertical run — rejected).
+_BW_MAX_EXT_9EMA_ADR = 1.0
+
+
+def _breakout_watch_picks(graded, in_cands, skip_buy):
+    """The Breakout-Watch pre-arm shortlist (grade-INDEPENDENT): the tightest RS-leaders coiled right under
+    their pivot AND still near their rising 9-EMA (NOT extended / chasing). Selected on RAW strength so the
+    rubric's C/D grade-cap can't hide them. Returns up to 8 (suggestion, breakout-leg) pairs, best-RS first.
+    `parabolic` isn't filtered directly (it's a coarse grade-cap) — the precise chase guard is the entry's
+    distance above the 9-EMA in ADR units (`_BW_MAX_EXT_9EMA_ADR`). Pure function → unit-tested."""
+    out = []
+    for s in graded:
+        if (s.get("setup_type") != "Breakout" or s.get("ticker") in in_cands
+                or s.get("ticker") in skip_buy or s.get("earnings_soon")):
+            continue
+        rs, dh, tx = (s.get("rs_score") or 0), s.get("dist_hi"), s.get("tight_x")
+        if not (rs >= 90 and dh is not None and 0 <= dh <= 2.0 and s.get("above_50")
+                and not s.get("extended") and tx is not None and tx <= 8):
+            continue
+        bl = next((e for e in (s.get("entries") or [])             # the breakout (stop) leg carries the trigger/level
+                   if e.get("entry") and e.get("stop") and not e.get("stale")
+                   and e.get("entry_type") == "stop"), None)
+        if not bl:
+            continue
+        # CHASE GUARD: the breakout entry must sit within 1× ADR of the rising 9-EMA (else it's a chase far
+        # above the short MA — the SNDK reject). Need the 9-EMA, the ADR, and a sane entry to judge it.
+        e9 = s.get("ema9") or s.get("ema10")
+        entry, adr = bl.get("entry"), (s.get("adr") or 0)
+        adr_px = (entry * adr / 100) if (entry and adr) else None
+        if not (e9 and adr_px and (entry - e9) <= _BW_MAX_EXT_9EMA_ADR * adr_px):
+            continue
+        out.append((s, bl))
+    out.sort(key=lambda se: ((se[0].get("rs_score") or 0), -(se[0].get("dist_hi") or 99)), reverse=True)
+    return out[:8]                                                   # strict leaders only — short, high-signal list
 
 
 def compute_now(shared=False):
@@ -3596,7 +3672,19 @@ def compute_now(shared=False):
             # reclaim too, not be dropped for being one notch under A. Matches grading's `patient_quality`
             # (worth_waiting OR "AVWAP" in setup_type). The reclaim + buyers_confirm + stop-≤1×ADR gates still
             # govern the FIRE (this only widens WATCH, not BUY); breakouts/EPs + plain Pullbacks keep A/A+.
-            _patient_b = bool(s.get("worth_waiting") or ("AVWAP" in (s.get("setup_type") or "")))
+            # LEADERSHIP GATE on the AVWAP patient-B path (Burry 2026-06-11, the GLXY case): "Pullback @
+            # AVWAP" had NO relative-strength gate — ANY AVWAP setup scoring B armed a B in a weak/mixed tape
+            # regardless of RS, so a non-leader (GLXY RS53, trend_template False, a year of violent chop) slipped
+            # through and fired a "🟢 BUY B" alert. The Deep-Pullback patient-B path already self-gates to real
+            # leaders (rs_pct>=70 OR trend_template, via scanner reclassification at scanner.py ~2773-2775); mirror
+            # that EXACT threshold here so an AVWAP B only arms on a genuine leader. NOTE worth_waiting is set in
+            # scanner.analyze as `deep or consol` (setup_type == "Deep Pullback"/"Consolidation") — setup_type is
+            # mutually exclusive, so a "Pullback @ AVWAP" name ALWAYS has worth_waiting=False; the worth_waiting
+            # clause below therefore can NOT bypass this gate for an AVWAP non-leader (verified GLXY: ww=False).
+            # The deep-pullback worth_waiting path is unaffected (it self-gates upstream).
+            _is_avwap = "AVWAP" in (s.get("setup_type") or "")
+            _avwap_is_leader = _is_avwap and ((s.get("rs_pct") or 0) >= 70 or bool(s.get("trend_template")))
+            _patient_b = bool(s.get("worth_waiting") or _avwap_is_leader)
             # HEALTHY tape (green light) → arm A+/A/B for ANY setup, incl. breakouts/plain pullbacks (the
             # trader's rule 2026-06-10: "A+/A/B can be armed in a healthy market; lower than that, no").
             # In a mixed/weak tape we keep the stricter gate — B only for PATIENT support-buys (worth_waiting
@@ -3613,11 +3701,26 @@ def compute_now(shared=False):
             cands.append((s, best))
     cands.sort(key=lambda se: se[1].get("rating", 0), reverse=True)
     cands = cands[:18]                                     # shortlist cap — watch more names (5m bars are 2min-cached)
+    # ── BREAKOUT WATCH (pre-arm) — user 2026-06-12 ────────────────────────────────────────────────────
+    # Coiled RS-leaders sitting RIGHT under their pivot get crushed to C/D by the rubric in a fresh-off-a-
+    # pullback tape (SNDK RS100, 0.7% from pivot → C), so the A/A+/B arm gate drops them and the panel looks
+    # empty exactly when rotation is starting. When the tape is RECOVERING (posture≥60 AND ≥1 index reclaimed
+    # its 21-EMA) we PRE-ARM the tightest leaders — grade-INDEPENDENT, selected on RAW strength (RS / distance-
+    # to-pivot / base tightness) — into a SEPARATE 'Breakout Watch' lane. WATCH-ONLY: yellow, silent, NO letter
+    # grade (so it can't disagree with the gameplan's one-truth). They ride the SAME canonical confirm path, so
+    # if one actually breaks out (ORH + buyers-confirm + stop-≤1×ADR) it PROMOTES into `buys` and beeps like any
+    # other setup. Never loosens the BUY — only widens what's WATCHED. (Grades stay byte-for-byte: this reads
+    # graded output, never writes it.)
+    _prearm_keys = set()
+    if _breakout_watch_active(market, posture) and not deep_correction:
+        _pre = _breakout_watch_picks(graded, {s["ticker"] for s, _ in cands}, skip_buy)
+        _prearm_keys = {f"{s['ticker']}:{s.get('setup_type') or ''}" for s, _ in _pre}
+        cands = cands + _pre                                         # appended AFTER the 18-cap so watch leaders are never dropped
     # CONFIRMATION ENGINE (verified 2026-06-04 deep-research): a setup is a BUY the moment intraday price
     # TAKES OUT the OPENING-RANGE HIGH (high of the first 5-min candle). Stop = LOW OF DAY, capped ≤1× ADR
     # (if the day-low stop is wider than 1× ADR the name is too extended → skip, never widen). We pull 5-min
     # bars ONLY for the armed shortlist, ONLY in the regular session — never the whole universe.
-    buys, armed = [], []
+    buys, armed, breakout_watch = [], [], []               # breakout_watch = the pre-arm lane (yellow, silent)
     _frz_day = _CONFIRM_FREEZE.setdefault(_today, {})       # today's locked confirmation prices
     for _d in [d for d in _CONFIRM_FREEZE if d != _today]:  # bound memory to the current session
         _CONFIRM_FREEZE.pop(_d, None)
@@ -3714,6 +3817,7 @@ def compute_now(shared=False):
         # 5-min 9 EMA). Entry = the current price as it reclaims (near the 50); stop = JUST UNDER the 50
         # (tight, ~1× ADR-or-less). Below the 50 → armed, waiting for the reclaim. The 9/21 above = upside room.
         if is_deep:
+            rec_early = False                                     # EARLY (semi-confirm) flag → yellow card (user 2026-06-11)
             cur_px = b5[-1]["close"] if b5 else (s.get("close") or leg_entry)
             if not e50 or cur_px is None:                          # missing data → fall back to the planned leg, armed
                 deep_wait = True
@@ -3761,9 +3865,13 @@ def compute_now(shared=False):
                     frozen = _frz_day.get(fkey)
                     if frozen:
                         cand_entry, cand_stop, stop_lab = frozen["entry"], frozen["stop"], frozen.get("stop_lab")
+                        rec_early = bool(frozen.get("early"))     # a frozen EARLY entry stays EARLY (yellow) all day
                     else:
                         cand_stop = round(e50 * (1 - (sbuf or 0) / 100), 2)   # stop JUST UNDER the 50 (its invalidation)
                         stop_lab = "50 EMA"
+                    # ── GLOBAL DAY-RUN CHASE GATE (user 2026-06-12) — gate on the LIVE reclaim price, before any
+                    # freeze/fire; frozen (already fired today) is exempt. See _day_run_is_chase.
+                    _chase50 = bool(not frozen and _day_run_is_chase(setup_type, cur_px, s.get("prior_close"), adr_pct))
                     # ── "CLEAR THE WALL" GATE (user 2026-06-09 AXTI flat-wall + DOCN sloped-line; unified 2026-06-10) ──
                     # A 50-reclaim near the 50 can fire while resistance sits just overhead — buying straight into
                     # it (AXTI: reclaim ~$92 with the prior-day high $96.56 capping it; DOCN: ~$169 under a line
@@ -3777,10 +3885,59 @@ def compute_now(shared=False):
                         cand_entry, adr_pct, ema_wall=None, walls=_walls, res_trendline=s.get("res_trendline"))
                     _is_trend = (_wkind == "trend")
                     _wlbl = "descending resistance line" if _is_trend else "prior-day high"
-                    if _wall_gate and _wall:
+                    if not _chase50 and _wall_gate and _wall:    # chase → skip the wall logic, fall to the chase-armed fire chain
                         _wbuf = _wall * (1 + 0.003)               # 5-min close must clear the wall by ~0.3%
                         _wclosed = b5[-2]["close"] if (b5 and len(b5) >= 2) else None
                         if _wclosed is None or _wclosed < _wbuf:
+                            # ── EARLY (semi-confirm) — ADR-aware, user 2026-06-11 (the RDW case) ──────────────
+                            # The "clear the wall" gate is right for BREAKOUTS, but on a high-ADR DEEP PULLBACK
+                            # the support reclaim IS the trade (tight stop under the 50) and the overhead wall is
+                            # just room-to-target. Waiting to clear a far wall pushes the entry ~5% up and blows
+                            # the stop past 1× ADR → the engine used to drop it to "too extended / no call",
+                            # losing the GOOD entry. Fix: if the support-reclaim entry is tight (≤1× ADR) AND
+                            # clearing the wall would be a genuine CHASE (stop-from-the-wall > 1× ADR), fire the
+                            # reclaim entry NOW, flagged EARLY (yellow) with the wall as a ⚠ warning. All the
+                            # falling-knife gates upstream (reached_50 / held_above / turning_up) already passed,
+                            # so this is a real reclaim — just early, under overhead resistance.
+                            buyers_ok_e, _bw_e = scanner.buyers_confirm(b5, adr_pct)
+                            _adrpx = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
+                            _risk_rc = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
+                            _wall_px = round(_wall * (1 + (ebuf or 0) / 100), 2)
+                            _risk_wall = (_wall_px - cand_stop) if cand_stop else None
+                            early_ok = bool(buyers_ok_e and _adrpx and _risk_rc is not None and _risk_wall is not None
+                                            and _risk_rc <= 1.0 * _adrpx and _risk_wall > 1.0 * _adrpx and not frozen
+                                            and not _chase50)   # day-run chase → don't fire EARLY (falls to armed below)
+                            if early_ok:
+                                triggered = True
+                                rec_early = True
+                                entry, stop = cand_entry, cand_stop
+                                confirm_trigger = "RECLAIM_50_EARLY"
+                                _confirmed_fkeys.add(fkey)
+                                _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab,
+                                                  "trig": confirm_trigger, "early": True}
+                                _ovr = round((_wall - entry) / entry * 100, 1) if entry else None
+                                cmsg = (f"EARLY — reclaimed the 50 EMA (${_f(e50)}) with buyers stepping in. Early entry "
+                                        f"~${_f(entry)}, stop ${_f(stop)} (under the 50, ≤1× ADR). ⚠ The {_wlbl} "
+                                        f"(${_f(_wall)}) sits ~{_ovr}% overhead — this is EARLY and can fail at the wall. "
+                                        f"Full confirm = a 5-min CLOSE above ${_f(_wall)}.")
+                                sized = _size_leg(entry, stop)
+                                plan = {**_plan_for(setup_type, leg_entry, orh, stop, sized, triggered, too_extended,
+                                                    deep_below_50=bool(cur_px is not None and e50 and cur_px < e50)),
+                                        "why": s.get("why")}
+                                rec = {"ticker": s["ticker"], "grade": e.get("grade"), "setup_type": s.get("setup_type"),
+                                       "theme": s.get("theme"), "entry": entry, "stop": stop, "entry_type": e.get("entry_type"),
+                                       "kind": e.get("kind"), "trigger": entry, "break_level": _wall, "orh": None, "lod": lod,
+                                       "too_extended": False, "vol_wait": vol_wait, "deep_wait": False,
+                                       "buyers_wait": False, "zone": leg_entry, "buyable_now": True, "early": True,
+                                       "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
+                                       "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
+                                       "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
+                                       "why": s.get("why"), "confirmed": True, "confirm": cmsg, "plan": plan,
+                                       "p1m": s.get("p1m"), "p6m": s.get("p6m"), "pull_from_high": s.get("pull_from_high"),
+                                       "volc": s.get("volc"), "confirm_menu": cmenu,
+                                       "confirm_trigger": "RECLAIM_50_EARLY", "overhead": overhead}
+                                buys.append(rec)
+                                continue
                             deep_wait = True
                             cmsg = (f"Reclaimed the 50 EMA (${_f(e50)}) but the {_wlbl} (${_f(_wall)}) sits just "
                                     f"overhead — a reclaim under it buys into resistance. Fires on a 5-min CLOSE above "
@@ -3810,7 +3967,15 @@ def compute_now(shared=False):
                     buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
                     adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
                     raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
-                    if adr_px and raw_risk and raw_risk > 1.0 * adr_px:
+                    # re-judge the chase on the FINAL buy price: a wall-clear can lift cand_entry above cur_px,
+                    # and it's the cand_entry that would get frozen — so gate on what actually gets bought.
+                    _chase50 = _chase50 or (not frozen and _day_run_is_chase(setup_type, cand_entry, s.get("prior_close"), adr_pct))
+                    if _chase50:                                 # GLOBAL day-run chase gate (user 2026-06-12) → stay armed
+                        too_extended = True                      # reuses the extended → armed path; chased price NEVER frozen
+                        _dr = round((cand_entry / s["prior_close"] - 1) * 100, 1)
+                        cmsg = (f"Already ran +{_dr}% off yesterday's close (>0.5× ADR = a chase of the day's move) — "
+                                f"staying armed; wait for a pullback closer to support. No chase up here.")
+                    elif adr_px and raw_risk and raw_risk > 1.0 * adr_px:
                         too_extended = True                      # already too far above the 50 → stop > 1× ADR
                         cmsg = (f"Bounced off the 50 EMA (${_f(e50)}) but the stop ${_f(cand_stop)} is already wider than "
                                 f"1× ADR from here — too extended off the 50. No call (don't widen the stop).")
@@ -3820,14 +3985,18 @@ def compute_now(shared=False):
                                 f"(waiting for the spin: buyers stepping in over the 5-min 9 EMA).")
                     else:
                         triggered = True
-                        confirm_trigger = (("CLEAR_TREND" if _is_trend else "CLEAR_WALL")
-                                           if (_wall_gate and _wall) else "RECLAIM_50")
+                        confirm_trigger = ("RECLAIM_50_EARLY" if rec_early else
+                                           (("CLEAR_TREND" if _is_trend else "CLEAR_WALL")
+                                            if (_wall_gate and _wall) else "RECLAIM_50"))
                         entry, stop = cand_entry, cand_stop
                         _confirmed_fkeys.add(fkey)
                         if not frozen:                           # first confirm → LOCK the buy price + stop for the day
                             _frz_day[fkey] = {"entry": cand_entry, "stop": cand_stop, "stop_lab": stop_lab,
-                                              "trig": confirm_trigger}
-                        if _wall_gate and _wall:
+                                              "trig": confirm_trigger, "early": rec_early}
+                        if rec_early:                            # a frozen EARLY entry (wall gate bypassed once frozen) stays yellow + labeled
+                            cmsg = (f"EARLY (held) — early 50-reclaim entry from earlier today. Buy ~${_f(cand_entry)}, "
+                                    f"stop ${_f(cand_stop)} (under the 50). Was an early entry under overhead resistance.")
+                        elif _wall_gate and _wall:
                             cmsg = (f"CONFIRMED — cleared the {_wlbl} (${_f(_wall)}) on a 5-min close (no chase "
                                     f"beneath it). Buy ~${_f(cand_entry)}, stop ${_f(cand_stop)} (under the 50).")
                         else:
@@ -3843,7 +4012,7 @@ def compute_now(shared=False):
                    "kind": e.get("kind"), "trigger": e50 or (s.get("prior_high") or leg_entry),
                    "break_level": None, "orh": None, "lod": lod, "too_extended": too_extended, "vol_wait": vol_wait,
                    "deep_wait": deep_wait, "buyers_wait": buyers_wait, "zone": leg_entry,
-                   "buyable_now": bool(e.get("buyable_now")),
+                   "buyable_now": bool(e.get("buyable_now")), "early": rec_early,
                    "trigger_note": e.get("trigger_note") or s.get("trigger_note"),
                    "shares": sized.get("shares"), "dollar_risk": sized.get("dollar_risk"),
                    "risk_pct_actual": sized.get("risk_pct_actual"), "pct_acct": sized.get("pct_acct"),
@@ -3942,7 +4111,13 @@ def compute_now(shared=False):
                     buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
                     adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
                     raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
-                    if not frozen and adr_px and raw_risk and raw_risk > 1.0 * adr_px:
+                    # GLOBAL day-run chase gate (user 2026-06-12) — gate on the LIVE price, before freeze/fire; frozen exempt.
+                    if not frozen and _day_run_is_chase(setup_type, cur_px, s.get("prior_close"), adr_pct):
+                        too_extended = True                      # day-run chase → stay armed; chased price NEVER frozen
+                        _dr = round((cur_px / s["prior_close"] - 1) * 100, 1)
+                        cmsg = (f"Already ran +{_dr}% off yesterday's close (>0.5× ADR = a chase of the day's move) — "
+                                f"staying armed; wait for a pullback closer to support. No chase up here.")
+                    elif not frozen and adr_px and raw_risk and raw_risk > 1.0 * adr_px:
                         too_extended = True                      # clear too far above the AVWAP → stop > 1× ADR
                         cmsg = (f"Closed above the {_ema_lbl} (${_f(oh_ema)}) but the stop ${_f(cand_stop)} (under the AVWAP) "
                                 f"is already wider than 1x ADR from here — too extended. No call (don't widen the stop).")
@@ -4029,6 +4204,17 @@ def compute_now(shared=False):
                     buyers_ok, buyers_why = scanner.buyers_confirm(b5, adr_pct)
                     adr_px = (cand_entry * adr_pct / 100) if (cand_entry and adr_pct) else None
                     raw_risk = (cand_entry - cand_stop) if (cand_entry and cand_stop) else None
+                    # ── GLOBAL DAY-RUN CHASE GATE (user 2026-06-12, the CIFR case) ────────────────────────────
+                    # An ADR-SCALED stop/zone cap is too loose on a high-ADR name: CIFR (10% ADR) reclaimed its
+                    # AVWAP and fired a BUY $24.95 near the high of a +10.5% candle — the stop "fit" inside 1× ADR
+                    # yet the name had already run >0.5× ADR off yesterday's close = a chase of the day's move.
+                    # This ABSOLUTE cap (measured from prior_close, full move incl. any gap) catches it. Gate on
+                    # the LIVE reclaim price, before freeze/fire; frozen exempt. Trips → stay ARMED (no chase).
+                    if not frozen and _day_run_is_chase(setup_type, cur_px, s.get("prior_close"), adr_pct):
+                        too_extended = True                      # day-run chase → stay armed; chased price NEVER frozen
+                        _dr = round((cur_px / s["prior_close"] - 1) * 100, 1)
+                        cmsg = (f"Already ran +{_dr}% off yesterday's close (>0.5× ADR = a chase of the day's move) — "
+                                f"staying armed; wait for a pullback closer to support. No chase up here.")
                     # ── GATE 1: NEAR-AVWAP cap = 0.5× ADR (user 2026-06-10, the ONTO case) ────────────────────
                     # The reclaim must confirm NEAR the AVWAP. The old 1× ADR cap let the buy fire up to ~1× ADR
                     # ABOVE the AVWAP (ONTO: reclaim fired $289.75 with the AVWAP $274.95 = ~1× ADR above, at the
@@ -4036,7 +4222,7 @@ def compute_now(shared=False):
                     # AVWAP we'll buy), NOT just a stop-width note — tighten it to 0.5× ADR. Trips → stay ARMED for
                     # a retest closer to the AVWAP, no chase. (Path A's EMA-clear cap at ~app.py:3935 stays 1.0× ADR:
                     # the EMA-clear entry legitimately sits up near the cleared EMA — don't touch it.)
-                    if not frozen and adr_px and raw_risk and raw_risk > 0.5 * adr_px:
+                    elif not frozen and adr_px and raw_risk and raw_risk > 0.5 * adr_px:
                         too_extended = True                      # too far above the AVWAP → no chase, wait for a closer retest
                         cmsg = (f"Bounced off the AVWAP (${_f(_avwap_sup)}) but ${_f(cand_entry)} is already >0.5× ADR ABOVE "
                                 f"the AVWAP — too far above it to buy. Staying armed for a retest closer to the AVWAP "
@@ -4092,6 +4278,24 @@ def compute_now(shared=False):
                                     cmsg = (f"Cleared the {_blbl} (${_f(_bl)}) but buying there puts the stop ${_f(cand_stop)} "
                                             f"(under the AVWAP ${_f(_avwap_sup)}) wider than 1× ADR — the bounce already ran. "
                                             f"No chase (no clean entry up here).")
+                                # ── POST-CLEAR ZONE-DRIFT gate (Burry 2026-06-11, the GLXY/CRDO/AAOI bug) ──────────
+                                # Gate 1's 0.5× ADR near-zone cap only ran on the PRE-clear entry; clearing an overhead
+                                # wall could then push the POST-clear entry far ABOVE the AVWAP pullback zone and fire a
+                                # BREAKOUT entry on a PULLBACK label (GLXY fired $31.16 = +4.2% / ~0.5× ADR above the
+                                # $29.90 AVWAP zone). Re-check how far _post drifted from the PULLBACK zone_top (harder /
+                                # more reliable than the knife-edge _avwap_sup), mirroring the ORH-path zone-drift gate at
+                                # ~app.py:4233. Blocks ONLY when the post-clear entry is OUTSIDE the pullback zone — a
+                                # legit AVWAP pullback that must clear a horizontal wall sitting WITHIN its zone still
+                                # fires. Frozen (already fired today) bypasses. When tripped, stay ARMED: the breakout leg
+                                # (a separate, properly-graded entry) takes over.
+                                elif (not frozen and adr_pct and (s.get("zone_top") or leg_entry or _avwap_sup)
+                                      and (_post - (s.get("zone_top") or leg_entry or _avwap_sup))
+                                          > 0.5 * (_avwap_sup * adr_pct / 100)):
+                                    _zone_ref = s.get("zone_top") or leg_entry or _avwap_sup
+                                    too_extended = True          # wall-clear pushed entry too far above the AVWAP pullback zone
+                                    cmsg = (f"Cleared the {_blbl} (${_f(_bl)}) but the entry ${_f(_post)} is >0.5× ADR above the "
+                                            f"AVWAP pullback zone (${_f(_zone_ref)}) — the dip is gone. Staying armed; the "
+                                            f"breakout leg takes over (a pullback label can't fire a breakout entry).")
                                 else:
                                     triggered = True
                                     confirm_trigger = ("CLEAR_TREND" if _bk == "trend"
@@ -4183,7 +4387,15 @@ def compute_now(shared=False):
             _td_gate, _td_lvl = (False, None) if frozen else _descending_trend_gate(
                 cand_entry, s.get("res_trendline"), adr_pct)
             _td_block = bool(_td_gate and _td_lvl and not _closed_above(b5, _td_lvl))
-            if zone_drift:
+            # GLOBAL day-run chase gate (user 2026-06-12) — ALL setups except EP (EP gaps on news by definition;
+            # _day_run_is_chase returns False for it). Gate on the LIVE price, before freeze/fire; frozen exempt.
+            _day_chase = bool(not frozen and _day_run_is_chase(setup_type, cur_px, s.get("prior_close"), adr_pct))
+            if _day_chase:
+                too_extended = True                          # day-run chase → stay armed; chased price NEVER frozen
+                _dr = round((cur_px / s["prior_close"] - 1) * 100, 1)
+                cmsg = (f"{trig_desc.capitalize()}, but it already ran +{_dr}% off yesterday's close (>0.5× ADR = a "
+                        f"chase of the day's move) — staying armed; wait for a pullback closer to support. No chase up here.")
+            elif zone_drift:
                 too_extended = True                          # keep it armed (reuses the extended → armed path)
                 _drift_pct = round((cand_entry / _zref - 1) * 100, 1)
                 cmsg = (f"{trig_desc.capitalize()}, but it's already +{_drift_pct}% above the buy zone "
@@ -4290,7 +4502,18 @@ def compute_now(shared=False):
                "pull_from_high": s.get("pull_from_high"), "volc": s.get("volc"),
                "confirm_menu": cmenu, "confirm_trigger": confirm_trigger,
                "overhead": overhead}
-        (buys if triggered else armed).append(rec)
+        if fkey in _prearm_keys and not triggered:
+            # PRE-ARMED leader, not yet broken out → the Breakout Watch lane (yellow, silent, no letter grade
+            # so it never conflicts with the gameplan's one-truth). RS + distance-to-pivot drive its display.
+            rec["prearm"] = True
+            rec["grade"] = None
+            rec["rs_score"] = s.get("rs_score")
+            rec["dist_pct"] = s.get("dist_hi")
+            breakout_watch.append(rec)
+        else:
+            if fkey in _prearm_keys:                          # a pre-armed leader actually broke out → promote to a real BUY
+                rec["promoted_from_watch"] = True
+            (buys if triggered else armed).append(rec)
 
     # UNFREEZE setups that were watched this poll but are NO LONGER confirmed (faded / re-armed) — so a genuine
     # re-break later locks a FRESH price instead of showing the stale one. Setups not processed (dropped from the
@@ -4306,6 +4529,7 @@ def compute_now(shared=False):
     _GR = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1}
     buys.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
     armed.sort(key=lambda r: _GR.get(r.get("grade"), 0), reverse=True)
+    breakout_watch.sort(key=lambda r: (r.get("rs_score") or 0, -(r.get("dist_pct") or 99)), reverse=True)
 
     # MARKET CLOSED → no LIVE buy calls (user 2026-06-09, the after-hours DOCN spam). A buy that confirmed/
     # froze during the session lingers in `buys` after the close via the frozen-price reuse — falsely showing
@@ -4361,7 +4585,7 @@ def compute_now(shared=False):
 
     result = {"computed_at": time.strftime("%Y-%m-%d %H:%M"),
               "light": light, "stance": stance, "verdict": verdict,
-              "todo": todo, "holds": holds, "buys": buys, "armed": armed,
+              "todo": todo, "holds": holds, "buys": buys, "armed": armed, "breakout_watch": breakout_watch,
               "posture": posture, "label": label, "fear_greed": fg, "defend": defend,
               "tape_guard": tape_guard, "tape_turn": tape_turn,
               "market_state": market.get("market_state"),
@@ -4395,6 +4619,7 @@ def compute_autopilot():
     n = compute_now(shared=True)   # position-agnostic: identical list for the owner's preview AND every friend
     buys = [_autopilot_clean(b) for b in n.get("buys", [])]
     armed = [_autopilot_clean(a) for a in n.get("armed", [])]
+    breakout_watch = [_autopilot_clean(w) for w in n.get("breakout_watch", [])]   # pre-arm lane (levels only)
     # TAPE GUARD warning in Auto Pilot (user 2026-06-09 named Telegram + Auto Pilot specifically). LOCAL-ONLY:
     # compute_now(shared=True) suppresses tape_guard for the friends/hosted feed, so here we recompute it
     # directly ONLY when local (not HOSTED) and the toggle is on. Friends (HOSTED) never see this key → the
@@ -4429,7 +4654,10 @@ def compute_autopilot():
                    f"Stand down on new buys; cash is a position."
                    + (f" (⚡ Tape Turn forming — watch, not confirmed yet.)" if tape_turn.get("on") else ""))
     elif buys:
-        verdict = f"🟢 {len(buys)} confirmed entr{'y' if len(buys) == 1 else 'ies'} — {buys[0]['ticker']} just triggered. Your call."
+        _lead_early = bool(buys[0].get('early'))            # EARLY (semi-confirm) lead → yellow headline (user 2026-06-11)
+        verdict = (f"{'🟡' if _lead_early else '🟢'} {len(buys)} "
+                   f"{'early' if _lead_early else 'confirmed'} entr{'y' if len(buys) == 1 else 'ies'} — "
+                   f"{buys[0]['ticker']} just triggered{' (EARLY — resistance overhead)' if _lead_early else ''}. Your call.")
     elif armed:
         verdict = (f"{len(armed)} setup{'s' if len(armed) != 1 else ''} armed (best: {armed[0]['ticker']}). "
                    f"No buy yet — you'll be alerted the moment one confirms its trigger.")
@@ -4442,7 +4670,8 @@ def compute_autopilot():
     _sid = _sug.get("screener_id") or next((sc.get("id") for sc in read_json(screeners_f(), [])), None)
     return {"computed_at": n.get("computed_at"), "updated_at": time.strftime("%H:%M:%S"),
             "light": n.get("light"), "stance": n.get("stance"), "verdict": verdict,
-            "buys": buys, "armed": armed, "posture": n.get("posture"), "label": n.get("label"),
+            "buys": buys, "armed": armed, "breakout_watch": breakout_watch,
+            "posture": n.get("posture"), "label": n.get("label"),
             "tape_guard": tape_guard, "tape_turn": tape_turn,
             "fear_greed": n.get("fear_greed"), "market_state": n.get("market_state"),
             "scanned_at": _sug.get("scanned_at"), "stale": _stale, "hosted": HOSTED,
@@ -6489,8 +6718,13 @@ def _now_watcher():
                     for b in buys:
                         body = (f"{b.get('shares')} sh @ ${b.get('entry')}, stop ${b.get('stop')} "
                                 f"({b.get('risk_pct_actual')}% risk). {b.get('confirm', '')}").strip()
+                        # EARLY (semi-confirm) buys → yellow title + yellow light so the phone/desktop/feed
+                        # all flag "early, can fail at the wall" instead of a clean green BUY (user 2026-06-11).
+                        _early = bool(b.get('early'))
+                        _btitle = (f"🟡 EARLY BUY {b['ticker']} · {b.get('grade')}" if _early
+                                   else f"🟢 BUY {b['ticker']} · {b.get('grade')}")
                         alerts.append((f"BUY:{b['ticker']}", "BUY", True,
-                                       f"🟢 BUY {b['ticker']} · {b.get('grade')}", body, "green"))
+                                       _btitle, body, "yellow" if _early else "green"))
                 cur_keys = {a[0] for a in alerts}
                 # Dedupe ONLY via the persisted ledger + cooldown — NOT a blanket "first loop seeds
                 # everything silently". That seeding swallowed a freshly-confirmed BUY on every restart
@@ -7270,6 +7504,7 @@ def _tg_morning_brief():
     if d.get("on"):
         out.append("🛡️ " + (d.get("reason") or "Defend mode on."))
     buys, armed = n.get("buys") or [], n.get("armed") or []
+    breakout_watch = n.get("breakout_watch") or []
     # Show the TRUE count in the header and never silently truncate — the brief must match the Live-entries
     # panel (compute_now's full list), not hide the tail (2026-06-08: 11 armed showed as 6, dropping 5).
     # Generous caps so the normal book shows in full; only an unusually long tail collapses to "+N more".
@@ -7286,6 +7521,12 @@ def _tg_morning_brief():
             out.append(f"• *{a['ticker']}* {a.get('grade')} {a.get('setup_type')} — {a.get('confirm', '')}")
         if len(armed) > 15:
             out.append(f"• …+{len(armed) - 15} more — open the app")
+    if breakout_watch:
+        # PRE-ARM lane: coiled RS-leaders under their pivot (no letter grade — not a buy yet, watch-only/silent).
+        out.append(f"\n🟡 *Breakout Watch ({len(breakout_watch)})* — coiled leaders near their pivot:")
+        for w in breakout_watch[:8]:
+            out.append(f"• *{w['ticker']}* RS {w.get('rs_score')} · {w.get('dist_pct')}% from pivot — "
+                       f"breaks > ${_f(w.get('break_level') or w.get('trigger'))}")
     if not buys and not armed:
         top = _top_graded(5)
         if top:
